@@ -1,0 +1,615 @@
+package app.onyx.ui
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Fullscreen
+import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Translate
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.onyx.AppController
+import app.onyx.core.PrefsData
+import app.onyx.lyrics.LyricLine
+import app.onyx.lyrics.LyricsDoc
+import app.onyx.lyrics.LyricsState
+import app.onyx.ui.components.BlurredBackdrop
+import app.onyx.ui.components.CircleButton
+import app.onyx.ui.components.GlassPill
+import app.onyx.ui.theme.OnyxDim
+import app.onyx.ui.theme.OnyxFaint
+import app.onyx.ui.theme.OnyxWhite
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+@Composable
+fun LyricsScreen(
+    controller: AppController,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val media by controller.media.state.collectAsStateWithLifecycle()
+    val prefs by controller.prefs.data.collectAsStateWithLifecycle(initialValue = PrefsData())
+    val lyrics by controller.lyrics.state.collectAsStateWithLifecycle()
+    val scratch = rememberCoroutineScope()
+    val context = LocalContext.current
+    val view = LocalView.current
+
+    var fullscreen by rememberSaveable { mutableStateOf(false) }
+
+    val position = media.positionMs + prefs.lyricOffsetMs
+    val doc = (lyrics as? LyricsState.Ready)?.doc
+    val art = media.now.art
+
+    var accent by remember { mutableStateOf(Color.Transparent) }
+    LaunchedEffect(art) {
+        accent = if (art == null) {
+            Color.Transparent
+        } else {
+            withContext(Dispatchers.Default) {
+                runCatching {
+                    val tiny = android.graphics.Bitmap.createScaledBitmap(art, 1, 1, true)
+                    val px = tiny.getPixel(0, 0)
+                    if (tiny !== art) tiny.recycle()
+                    Color(px)
+                }.getOrDefault(Color.Transparent)
+            }
+        }
+    }
+
+    BackHandler(enabled = fullscreen) { fullscreen = false }
+
+    DisposableEffect(fullscreen) {
+        val window = (context as? android.app.Activity)?.window
+        val bars = window?.let { WindowCompat.getInsetsController(it, view) }
+        if (bars != null) {
+            bars.systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            if (fullscreen) {
+                bars.hide(WindowInsetsCompat.Type.systemBars())
+            } else {
+                bars.show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+        onDispose {
+            bars?.show(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+
+    Box(modifier.fillMaxSize()) {
+        BlurredBackdrop(
+            art = media.now.art ?: media.now.artUri,
+            blur = 120.dp,
+            artAlpha = 0.85f,
+            scrimTop = 0.45f,
+            scrimMid = 0.60f,
+            scrimBottom = 0.88f,
+        )
+        if (accent.alpha > 0.02f) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                accent.copy(alpha = 0.38f),
+                                Color.Transparent,
+                                Color.Transparent,
+                            ),
+                        ),
+                    ),
+            )
+        }
+
+        Column(Modifier.fillMaxSize()) {
+            if (!fullscreen) {
+                TopBar(
+                    title = media.now.title,
+                    artist = media.now.artist,
+                    provider = doc?.provider,
+                    karaoke = doc?.karaoke == true,
+                    translating = prefs.translate,
+                    onToggleTranslate = {
+                        val next = !prefs.translate
+                        scratch.launch {
+                            controller.prefs.setTranslate(next)
+                            if (next) controller.lyrics.translateCurrent()
+                        }
+                    },
+                    onFullscreen = { fullscreen = true },
+                    onBack = onBack,
+                )
+            }
+
+            Box(modifier = Modifier.weight(1f)) {
+                when (val s = lyrics) {
+                    LyricsState.Idle -> CenterMessage(
+                        title = "Тишина",
+                        text = "Запусти трек — текст подтянется сам.",
+                    )
+                    LyricsState.Loading -> Loading()
+                    is LyricsState.Error -> CenterMessage(
+                        title = "Текст не найден",
+                        text = s.message + "\nПопробуй другой трек или повтори поиск.",
+                        action = "Повторить",
+                        onAction = { controller.lyrics.retry() },
+                    )
+                    is LyricsState.Ready -> LyricsBody(
+                        doc = s.doc,
+                        position = position,
+                        playing = media.now.isPlaying,
+                        fontSize = prefs.lyricFontSize,
+                        karaoke = prefs.karaoke,
+                        fullscreen = fullscreen,
+                        showTranslation = prefs.translate,
+                    )
+                }
+                // Soft fades so the text never collides with the chrome.
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(if (fullscreen) 150.dp else 110.dp)
+                        .align(Alignment.TopCenter)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color(0xFF050506).copy(alpha = 0.88f), Color.Transparent),
+                            ),
+                        ),
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(if (fullscreen) 170.dp else 130.dp)
+                        .align(Alignment.BottomCenter)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.Transparent, Color(0xFF050506).copy(alpha = 0.92f)),
+                            ),
+                        ),
+                )
+            }
+
+            if (!fullscreen) {
+                BottomBar(
+                    fontSize = prefs.lyricFontSize,
+                    onFontSize = { size ->
+                        scratch.launch { controller.prefs.setFontSize(size.coerceIn(20f, 48f)) }
+                    },
+                    offsetMs = prefs.lyricOffsetMs,
+                    onOffset = { ms ->
+                        scratch.launch { controller.prefs.setOffset((ms / 100).toLong() * 100) }
+                    },
+                    onRetry = { controller.lyrics.retry() },
+                )
+            }
+        }
+
+        if (fullscreen) {
+            CircleButton(
+                icon = Icons.Rounded.Close,
+                contentDescription = "Выйти из полноэкранного режима",
+                size = 38.dp,
+                iconSize = 18.dp,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .statusBarsPadding()
+                    .padding(14.dp),
+                onClick = { fullscreen = false },
+            )
+        }
+    }
+}
+
+@Composable
+private fun TopBar(
+    title: String,
+    artist: String,
+    provider: String?,
+    karaoke: Boolean,
+    translating: Boolean,
+    onToggleTranslate: () -> Unit,
+    onFullscreen: () -> Unit,
+    onBack: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 14.dp)
+            .padding(top = 14.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CircleButton(
+            icon = Icons.AutoMirrored.Rounded.ArrowBack,
+            contentDescription = "Назад",
+            size = 42.dp,
+            iconSize = 20.dp,
+            onClick = onBack,
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = title.ifBlank { "ONYX" },
+                color = OnyxWhite,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = buildString {
+                    if (artist.isNotBlank()) append(artist)
+                    if (provider != null) {
+                        if (isNotEmpty()) append(" · ")
+                        append(provider)
+                    }
+                    if (karaoke) append(" · karaoke")
+                },
+                color = OnyxFaint,
+                fontSize = 10.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        CircleButton(
+            icon = Icons.Rounded.Fullscreen,
+            contentDescription = "Полноэкранный режим",
+            size = 38.dp,
+            iconSize = 18.dp,
+            onClick = onFullscreen,
+        )
+        Spacer(Modifier.width(6.dp))
+        GlassPill(
+            text = "Перевод",
+            selected = translating,
+            icon = Icons.Rounded.Translate,
+            onClick = onToggleTranslate,
+        )
+    }
+}
+
+@Composable
+private fun Loading() {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        CircularProgressIndicator(
+            color = OnyxWhite,
+            strokeWidth = 2.dp,
+            modifier = Modifier.size(28.dp),
+        )
+        Spacer(Modifier.height(14.dp))
+        Text("Ищем текст…", color = OnyxDim, fontSize = 13.sp)
+    }
+}
+
+@Composable
+private fun CenterMessage(
+    title: String,
+    text: String,
+    action: String? = null,
+    onAction: (() -> Unit)? = null,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 34.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(
+            text = title,
+            color = OnyxWhite,
+            fontSize = 26.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = (-0.5).sp,
+        )
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = text,
+            color = OnyxDim,
+            fontSize = 13.sp,
+            lineHeight = 19.sp,
+            textAlign = TextAlign.Center,
+        )
+        if (action != null && onAction != null) {
+            Spacer(Modifier.height(18.dp))
+            GlassPill(text = action, selected = true, icon = Icons.Rounded.Refresh, onClick = onAction)
+        }
+    }
+}
+
+@Composable
+private fun LyricsBody(
+    doc: LyricsDoc,
+    position: Long,
+    playing: Boolean,
+    fontSize: Float,
+    karaoke: Boolean,
+    fullscreen: Boolean,
+    showTranslation: Boolean,
+) {
+    val activeIndex = remember(doc, position) { activeLineIndex(doc, position) }
+
+    // MediaSession reports position in ~300 ms steps. Interpolate between those
+    // updates so the karaoke fill and word colours move every frame instead of
+    // jumping in chunks.
+    var smoothPosition by remember { mutableLongStateOf(position) }
+    LaunchedEffect(position) {
+        // Only re-anchor on seeks/pauses; small differences are just reporting lag.
+        if (kotlin.math.abs(position - smoothPosition) > 450) smoothPosition = position
+    }
+    val lineHasWords = doc.lines.getOrNull(activeIndex)?.words?.isNotEmpty() == true
+    LaunchedEffect(playing, activeIndex, lineHasWords) {
+        if (!playing || !lineHasWords) return@LaunchedEffect
+        var last = 0L
+        while (true) {
+            androidx.compose.runtime.withFrameNanos { now ->
+                if (last == 0L) {
+                    last = now
+                } else if (now - last >= 28_000_000L) {
+                    smoothPosition += (now - last) / 1_000_000L
+                    last = now
+                }
+            }
+        }
+    }
+
+    if (!doc.synced) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 26.dp),
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Text(
+                text = doc.lines.joinToString("\n\n") { it.text },
+                color = OnyxWhite,
+                fontSize = (fontSize * 0.65f).sp,
+                lineHeight = (fontSize * 0.95f).sp,
+                fontWeight = FontWeight.Medium,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        return
+    }
+
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val verticalPad = if (fullscreen) (maxHeight / 2.1f).coerceAtLeast(90.dp)
+        else (maxHeight / 2.2f).coerceAtLeast(80.dp)
+        val state = rememberLazyListState()
+        LaunchedEffect(activeIndex) {
+            if (activeIndex >= 0) {
+                // animated scroll is fine now that the offset is zero; the earlier
+                // "-padPx" correction was what pushed lines to the bottom edge.
+                state.animateScrollToItem(activeIndex)
+            }
+        }
+
+        LazyColumn(
+            state = state,
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                horizontal = if (fullscreen) 34.dp else 26.dp,
+                vertical = verticalPad,
+            ),
+            verticalArrangement = Arrangement.spacedBy(if (fullscreen) 22.dp else 18.dp),
+        ) {
+            itemsIndexed(doc.lines) { index, line ->
+                val active = index == activeIndex
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .animateContentSize(),
+                ) {
+                    LyricLineText(
+                        line = line,
+                        active = active,
+                        position = if (active) smoothPosition else position,
+                        fontSize = if (fullscreen) fontSize * 1.08f else fontSize,
+                        karaoke = karaoke,
+                    )
+                    val translation = line.translation
+                    if (showTranslation && translation != null) {
+                        Spacer(Modifier.height(if (active) 8.dp else 4.dp))
+                        Text(
+                            text = translation,
+                            color = if (active) Color.White.copy(alpha = 0.62f) else Color.White.copy(alpha = 0.26f),
+                            fontSize = (fontSize * if (active) 0.48f else 0.42f).sp,
+                            lineHeight = (fontSize * if (active) 0.62f else 0.54f).sp,
+                            fontWeight = FontWeight.Normal,
+                            textAlign = TextAlign.Start,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LyricLineText(
+    line: LyricLine,
+    active: Boolean,
+    position: Long,
+    fontSize: Float,
+    karaoke: Boolean,
+) {
+    val size by animateFloatAsState(
+        targetValue = if (active) fontSize else fontSize * 0.66f,
+        label = "lineSize",
+    )
+    val baseColor = when {
+        active -> OnyxWhite
+        line.startMs <= position -> Color.White.copy(alpha = 0.42f)
+        else -> Color.White.copy(alpha = 0.22f)
+    }
+
+    val text: AnnotatedString = if (karaoke && line.words.isNotEmpty()) {
+        buildAnnotatedString {
+            line.words.forEach { word ->
+                val span = (word.endMs - word.startMs).coerceAtLeast(1L)
+                val wordProgress = ((position - word.startMs).toFloat() / span)
+                    .coerceIn(0f, 1f)
+                withStyle(
+                    SpanStyle(
+                        color = when {
+                            !active -> baseColor
+                            position >= word.endMs -> OnyxWhite
+                            else -> androidx.compose.ui.graphics.lerp(
+                                Color.White.copy(alpha = 0.22f),
+                                OnyxWhite,
+                                wordProgress,
+                            )
+                        },
+                        fontWeight = FontWeight.Bold,
+                    ),
+                ) {
+                    append(word.text)
+                }
+            }
+        }
+    } else {
+        buildAnnotatedString {
+            withStyle(SpanStyle(color = baseColor, fontWeight = FontWeight.Bold)) {
+                append(line.text)
+            }
+        }
+    }
+
+    Text(
+        text = text,
+        fontSize = size.sp,
+        lineHeight = (size * 1.12f).sp,
+        letterSpacing = (-0.4).sp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .alpha(if (active) 1f else if (line.startMs <= position) 0.9f else 0.65f),
+    )
+}
+
+private fun activeLineIndex(doc: LyricsDoc, position: Long): Int {
+    if (!doc.synced) return -1
+    var index = -1
+    for (i in doc.lines.indices) {
+        if (doc.lines[i].startMs <= position) index = i else break
+    }
+    return index
+}
+
+@Composable
+private fun BottomBar(
+    fontSize: Float,
+    onFontSize: (Float) -> Unit,
+    offsetMs: Long,
+    onOffset: (Long) -> Unit,
+    onRetry: () -> Unit,
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 18.dp)
+            .padding(top = 4.dp, bottom = 14.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            GlassPill(text = "A−", selected = false, onClick = { onFontSize(fontSize - 2f) })
+            GlassPill(text = "A+", selected = false, onClick = { onFontSize(fontSize + 2f) })
+            Text(
+                text = "Aa ${fontSize.toInt()}",
+                color = OnyxFaint,
+                fontSize = 10.sp,
+                modifier = Modifier.padding(start = 2.dp),
+            )
+            Spacer(Modifier.weight(1f))
+            CircleButton(
+                icon = Icons.Rounded.Refresh,
+                contentDescription = "Искать заново",
+                size = 38.dp,
+                iconSize = 17.dp,
+                onClick = onRetry,
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Text(
+                text = "Смещение",
+                color = OnyxFaint,
+                fontSize = 10.sp,
+                letterSpacing = 0.8.sp,
+            )
+            GlassPill(text = "−0.1", selected = false, onClick = { onOffset(offsetMs - 100) })
+            GlassPill(
+                text = if (offsetMs == 0L) "0 мс" else "$offsetMs мс",
+                selected = offsetMs != 0L,
+                onClick = { onOffset(0) },
+            )
+            GlassPill(text = "+0.1", selected = false, onClick = { onOffset(offsetMs + 100) })
+        }
+    }
+}

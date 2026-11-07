@@ -1,0 +1,327 @@
+package app.onyx.ui.components
+
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import app.onyx.ui.theme.OnyxDim
+import app.onyx.ui.theme.OnyxFaint
+import app.onyx.ui.theme.OnyxLine
+import app.onyx.ui.theme.OnyxWhite
+import coil.compose.AsyncImage
+import kotlin.math.roundToInt
+
+@Composable
+fun GlassSurface(
+    modifier: Modifier = Modifier,
+    shape: Shape = RoundedCornerShape(28.dp),
+    strong: Boolean = false,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    val top = if (strong) 0.16f else 0.085f
+    val bottom = if (strong) 0.06f else 0.03f
+    Box(
+        modifier = modifier
+            .clip(shape)
+            .background(
+                Brush.verticalGradient(
+                    listOf(Color.White.copy(alpha = top), Color.White.copy(alpha = bottom)),
+                ),
+            )
+            .border(
+                BorderStroke(1.dp, Color.White.copy(alpha = if (strong) 0.16f else 0.09f)),
+                shape,
+            ),
+        content = content,
+    )
+}
+
+@Composable
+fun GlassCard(
+    modifier: Modifier = Modifier,
+    shape: Shape = RoundedCornerShape(28.dp),
+    strong: Boolean = false,
+    padding: Dp = 18.dp,
+    content: @Composable ColumnScope.() -> Unit,
+) {
+    GlassSurface(modifier = modifier, shape = shape, strong = strong) {
+        Column(modifier = Modifier.padding(padding), content = content)
+    }
+}
+
+@Composable
+fun SectionLabel(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text = text.uppercase(),
+        modifier = modifier,
+        color = OnyxFaint,
+        fontSize = 10.sp,
+        fontWeight = FontWeight.SemiBold,
+        letterSpacing = 1.8.sp,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+    )
+}
+
+@Composable
+fun GlassPill(
+    text: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    icon: ImageVector? = null,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+    val bg by animateColorAsState(
+        targetValue = when {
+            !enabled -> Color.White.copy(alpha = 0.03f)
+            selected -> OnyxWhite
+            else -> Color.White.copy(alpha = 0.055f)
+        },
+        label = "pillBg",
+    )
+    val fg by animateColorAsState(
+        targetValue = when {
+            !enabled -> OnyxFaint
+            selected -> Color(0xFF08080A)
+            else -> OnyxWhite
+        },
+        label = "pillFg",
+    )
+    val shape = RoundedCornerShape(50)
+    Row(
+        modifier = modifier
+            .clip(shape)
+            .background(bg)
+            .border(1.dp, if (selected) Color.Transparent else OnyxLine, shape)
+            .clickable(enabled = enabled) { onClick() }
+            .padding(horizontal = 15.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        if (icon != null) {
+            Icon(icon, contentDescription = null, tint = fg, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(7.dp))
+        }
+        Text(
+            text = text,
+            color = fg,
+            fontSize = 13.sp,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+fun CircleButton(
+    icon: ImageVector,
+    contentDescription: String?,
+    modifier: Modifier = Modifier,
+    size: Dp = 52.dp,
+    filled: Boolean = false,
+    enabled: Boolean = true,
+    iconSize: Dp = 22.dp,
+    onClick: () -> Unit,
+) {
+    val bg = if (filled) OnyxWhite else Color.White.copy(alpha = 0.06f)
+    val fg = if (filled) Color(0xFF08080A) else if (enabled) OnyxWhite else OnyxFaint
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(bg)
+            .border(1.dp, if (filled) Color.Transparent else OnyxLine, CircleShape)
+            .clickable(enabled = enabled, interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                onClick()
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = contentDescription, tint = fg, modifier = Modifier.size(iconSize))
+    }
+}
+
+@Composable
+fun OnyxSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+    onValueChangeFinished: (() -> Unit)? = null,
+    enabled: Boolean = true,
+) {
+    Slider(
+        value = value.coerceIn(0f, 1f),
+        onValueChange = onValueChange,
+        modifier = modifier.height(28.dp),
+        enabled = enabled,
+        onValueChangeFinished = onValueChangeFinished,
+        colors = SliderDefaults.colors(
+            thumbColor = OnyxWhite,
+            activeTrackColor = OnyxWhite,
+            inactiveTrackColor = Color.White.copy(alpha = 0.13f),
+            disabledThumbColor = OnyxFaint,
+            disabledActiveTrackColor = OnyxFaint,
+            disabledInactiveTrackColor = Color.White.copy(alpha = 0.07f),
+        ),
+    )
+}
+
+@Composable
+fun OnyxSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, enabled: Boolean = true) {
+    Switch(
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        enabled = enabled,
+        colors = SwitchDefaults.colors(
+            checkedThumbColor = Color(0xFF08080A),
+            checkedTrackColor = OnyxWhite,
+            checkedBorderColor = Color.Transparent,
+            uncheckedThumbColor = OnyxDim,
+            uncheckedTrackColor = Color.White.copy(alpha = 0.06f),
+            uncheckedBorderColor = OnyxLine,
+        ),
+    )
+}
+
+@Composable
+fun BatteryMeter(
+    label: String,
+    level: Int,
+    wearing: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val known = level >= 0
+    val fraction by animateFloatAsState(
+        targetValue = if (known) level / 100f else 0f,
+        label = "battery",
+    )
+    Column(modifier = modifier) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = label,
+                color = OnyxDim,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                letterSpacing = 0.8.sp,
+            )
+            Spacer(Modifier.width(6.dp))
+            if (wearing) {
+                Box(
+                    Modifier
+                        .size(5.dp)
+                        .clip(CircleShape)
+                        .background(OnyxWhite),
+                )
+                Spacer(Modifier.width(4.dp))
+                Text("в ухе", color = OnyxFaint, fontSize = 9.sp)
+            }
+        }
+        Spacer(Modifier.height(7.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(5.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.White.copy(alpha = 0.10f)),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(fraction.coerceIn(0f, 1f))
+                        .height(5.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(OnyxWhite),
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = if (known) "$level" else "—",
+                color = OnyxWhite,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+    }
+}
+
+@Composable
+fun BlurredBackdrop(
+    art: Any?,
+    modifier: Modifier = Modifier,
+    blur: Dp = 80.dp,
+    artAlpha: Float = 0.5f,
+    scrimTop: Float = 0.86f,
+    scrimMid: Float = 0.94f,
+    scrimBottom: Float = 0.98f,
+) {
+    Box(modifier = modifier.fillMaxSize().background(Color(0xFF050506))) {
+        if (art != null) {
+            AsyncImage(
+                model = art,
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        scaleX = 1.18f
+                        scaleY = 1.18f
+                    }
+                    .blur(blur),
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                alpha = artAlpha,
+            )
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        0f to Color(0xFF050506).copy(alpha = scrimTop),
+                        0.35f to Color(0xFF050506).copy(alpha = scrimMid),
+                        0.62f to Color(0xFF070708).copy(alpha = scrimMid),
+                        1f to Color(0xFF050506).copy(alpha = scrimBottom),
+                    ),
+                ),
+        )
+    }
+}

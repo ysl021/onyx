@@ -1,0 +1,27 @@
+# Gradle / Android
+.gradle/
+.kotlin/
+build/
+app/build/
+local.properties
+captures/
+*.apk
+*.aab
+*.jks
+*.keystore
+*.p12
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Local secrets
+secrets.properties
+
+# Local toolchain and reference sources (huge, GPLv3 upstream)
+tools/
+
+# OS
+.DS_Store
+Thumbs.db

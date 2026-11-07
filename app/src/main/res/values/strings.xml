@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ONYX</string>
+    <string name="tile_noise">ONYX · Шумодав</string>
+    <string name="tile_oneear">ONYX · ANC на одно ухо</string>
+</resources>
