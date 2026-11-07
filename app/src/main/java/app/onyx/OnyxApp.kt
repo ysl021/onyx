@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Translate
@@ -55,6 +56,7 @@ import androidx.compose.ui.unit.sp
 import app.onyx.ui.HomeScreen
 import app.onyx.ui.IntroScreen
 import app.onyx.ui.LyricsScreen
+import app.onyx.ui.QueueScreen
 import app.onyx.ui.SettingsScreen
 import app.onyx.ui.components.GlassSurface
 import app.onyx.ui.theme.OnyxBlack
@@ -63,7 +65,7 @@ import app.onyx.ui.theme.OnyxFaint
 import app.onyx.ui.theme.OnyxWhite
 import kotlinx.coroutines.delay
 
-private enum class Tab { Player, Lyrics, Settings }
+private enum class Tab { Player, Lyrics, Queue, Settings }
 
 @Composable
 fun OnyxApp() {
@@ -71,6 +73,7 @@ fun OnyxApp() {
     val controller = remember { AppController.get(context).also { it.start() } }
     var tab by rememberSaveable { mutableStateOf(Tab.Player) }
     var showIntro by rememberSaveable { mutableStateOf(true) }
+    var lyricsFullscreen by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(controller) {
@@ -90,50 +93,67 @@ fun OnyxApp() {
     }
 
     Box(modifier = Modifier.fillMaxSize().background(OnyxBlack)) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding(),
-        ) {
-            AnimatedContent(
-                targetState = tab,
-                transitionSpec = {
-                    val forward = targetState.ordinal > initialState.ordinal
-                    val dir = if (forward) 1 else -1
-                    (fadeIn(tween(220)) + slideInHorizontally(tween(260)) { it / 12 * dir })
-                        .togetherWith(
-                            fadeOut(tween(160)) + slideOutHorizontally(tween(200)) { -it / 16 * dir },
+        Column(Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .statusBarsPadding(),
+            ) {
+                AnimatedContent(
+                    targetState = tab,
+                    transitionSpec = {
+                        val forward = targetState.ordinal > initialState.ordinal
+                        val dir = if (forward) 1 else -1
+                        (fadeIn(tween(220)) + slideInHorizontally(tween(260)) { it / 12 * dir })
+                            .togetherWith(
+                                fadeOut(tween(160)) + slideOutHorizontally(tween(200)) { -it / 16 * dir },
+                            )
+                    },
+                    label = "tab",
+                ) { current ->
+                    when (current) {
+                        Tab.Player -> HomeScreen(
+                            controller = controller,
+                            onOpenLyrics = { tab = Tab.Lyrics },
+                            onOpenQueue = { tab = Tab.Queue },
+                            onOpenSettings = { tab = Tab.Settings },
                         )
-                },
-                label = "tab",
-            ) { current ->
-                when (current) {
-                    Tab.Player -> HomeScreen(
-                        controller = controller,
-                        onOpenLyrics = { tab = Tab.Lyrics },
-                        onOpenSettings = { tab = Tab.Settings },
-                    )
-                    Tab.Lyrics -> LyricsScreen(
-                        controller = controller,
-                        onBack = { tab = Tab.Player },
-                    )
-                    Tab.Settings -> SettingsScreen(
-                        controller = controller,
-                        onBack = { tab = Tab.Player },
+                        Tab.Lyrics -> LyricsScreen(
+                            controller = controller,
+                            onBack = { tab = Tab.Player },
+                            onFullscreenChanged = { lyricsFullscreen = it },
+                        )
+                        Tab.Queue -> QueueScreen(
+                            controller = controller,
+                            onOpenSettings = { tab = Tab.Settings },
+                        )
+                        Tab.Settings -> SettingsScreen(
+                            controller = controller,
+                            onBack = { tab = Tab.Player },
+                        )
+                    }
+                }
+            }
+
+            if (tab != Tab.Lyrics || !lyricsFullscreen) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(OnyxBlack)
+                        .navigationBarsPadding()
+                        .padding(horizontal = 18.dp, vertical = 10.dp),
+                ) {
+                    BottomNav(
+                        tab = tab,
+                        onSelect = {
+                            lyricsFullscreen = false
+                            tab = it
+                        },
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
             }
-        }
-
-        if (tab != Tab.Lyrics) {
-            BottomNav(
-                tab = tab,
-                onSelect = { tab = it },
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .navigationBarsPadding()
-                    .padding(bottom = 14.dp),
-            )
         }
 
         AnimatedVisibility(
@@ -195,6 +215,12 @@ private fun BottomNav(
                 onClick = { onSelect(Tab.Lyrics) },
             )
             NavItem(
+                icon = Icons.AutoMirrored.Rounded.QueueMusic,
+                label = "Очередь",
+                selected = tab == Tab.Queue,
+                onClick = { onSelect(Tab.Queue) },
+            )
+            NavItem(
                 icon = Icons.Rounded.Settings,
                 label = "Настройки",
                 selected = tab == Tab.Settings,
@@ -240,7 +266,7 @@ private fun NavItem(
                 interactionSource = interaction,
                 indication = null,
             ) { onClick() }
-            .padding(horizontal = 18.dp, vertical = 9.dp),
+            .padding(horizontal = 13.dp, vertical = 9.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Icon(

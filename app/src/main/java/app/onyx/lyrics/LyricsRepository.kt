@@ -25,6 +25,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
+import org.jsoup.Jsoup
 import kotlinx.serialization.json.jsonObject
 import okhttp3.Request
 import java.io.File
@@ -135,9 +136,10 @@ class LyricsRepository(
             ?: runCatching { musixmatch(now, prefsNow.translate) }.getOrNull()
             ?: runCatching { spotify(now) }.getOrNull()
             ?: runCatching { lrclib(now) }.getOrNull()
+            ?: runCatching { genius(now) }.getOrNull()
 
         if (found == null) {
-            _state.value = LyricsState.Error("Нет ни в Spicy Lyrics, ни в Musixmatch, ни в Spotify, ни в LRCLIB")
+            _state.value = LyricsState.Error("Нет ни в Spicy Lyrics, ни в Musixmatch, ни в Spotify, ни в LRCLIB, ни в Genius")
             return
         }
         if (app.onyx.BuildConfig.DEBUG) {
@@ -707,6 +709,49 @@ class LyricsRepository(
             return docOf(texts, provider = "LRCLIB", now = now)
         }
         return null
+    }
+
+    // -------------------------------------------------------------------- Genius
+
+    private suspend fun genius(now: NowPlaying): LyricsDoc? {
+        val query = enc("${now.artist} ${now.title}".trim())
+        val searchUrl = "https://genius.com/api/search/song?per_page=10&q=$query"
+        val searchReq = Request.Builder()
+            .url(searchUrl)
+            .header("Accept", "application/json")
+            .header("User-Agent", Http.UA)
+            .build()
+        val searchBody = get(searchReq) ?: return null
+        val root = runCatching { json.parseToJsonElement(searchBody).jsonObject }.getOrNull() ?: return null
+        val sections = root["response"]?.jsonObject?.get("sections")?.jsonArray ?: return null
+        val url = sections.asSequence()
+            .mapNotNull { it.jsonObject["hits"]?.jsonArray }
+            .flatMap { it.asSequence() }
+            .mapNotNull { it.jsonObject["result"]?.jsonObject }
+            .mapNotNull { it["url"]?.str() }
+            .firstOrNull { it.isNotBlank() }
+            ?: return null
+
+        val pageReq = Request.Builder()
+            .url(url)
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+            .header("Accept", "text/html")
+            .build()
+        val html = get(pageReq) ?: return null
+        val doc = runCatching { Jsoup.parse(html) }.getOrNull() ?: return null
+        val containers = doc.select("div[data-lyrics-container=true]")
+        if (containers.isEmpty()) return null
+        val text = containers.joinToString("\n") { el ->
+            el.select("br").forEach { br -> br.replaceWith(org.jsoup.nodes.TextNode("\n")) }
+            el.wholeText()
+        }
+        val lines = text.lines()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .filterNot { it.startsWith("Embed") }
+        if (lines.isEmpty()) return null
+        return docOf(lines, provider = "Genius", now = now)
     }
 
     // ---------------------------------------------------------------- Translation

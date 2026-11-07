@@ -83,7 +83,6 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
 
     var clientId by remember { mutableStateOf(prefs.spotifyClientId) }
-    var spicyKey by remember { mutableStateOf(prefs.spicyKey) }
     var fontSize by remember { mutableFloatStateOf(prefs.lyricFontSize) }
     var offset by remember { mutableFloatStateOf(prefs.lyricOffsetMs.toFloat()) }
     var listenerOn by remember { mutableStateOf(isListenerEnabled(context)) }
@@ -102,9 +101,6 @@ fun SettingsScreen(
 
     LaunchedEffect(prefs.spotifyClientId) {
         if (clientId.isBlank()) clientId = prefs.spotifyClientId
-    }
-    LaunchedEffect(prefs.spicyKey) {
-        if (spicyKey.isBlank()) spicyKey = prefs.spicyKey
     }
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
@@ -129,7 +125,7 @@ fun SettingsScreen(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 18.dp)
-            .padding(bottom = 130.dp),
+            .padding(bottom = 20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Row(
@@ -303,37 +299,12 @@ fun SettingsScreen(
                 lineHeight = 17.sp,
             )
             Spacer(Modifier.height(10.dp))
-            OutlinedTextField(
-                value = spicyKey,
-                onValueChange = { spicyKey = it.trim() },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                label = { Text("Spicy Lyrics API key", fontSize = 11.sp) },
-                textStyle = androidx.compose.ui.text.TextStyle(
-                    color = OnyxWhite,
-                    fontSize = 13.sp,
-                ),
-                shape = RoundedCornerShape(14.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = OnyxWhite.copy(alpha = 0.45f),
-                    unfocusedBorderColor = OnyxLine,
-                    focusedLabelColor = OnyxDim,
-                    unfocusedLabelColor = OnyxFaint,
-                    cursorColor = OnyxWhite,
-                    focusedContainerColor = Color.Transparent,
-                    unfocusedContainerColor = Color.Transparent,
-                ),
-            )
-            Spacer(Modifier.height(8.dp))
-            GlassPill(
-                text = "Сохранить ключ",
-                selected = false,
-                onClick = {
-                    scope.launch {
-                        controller.prefs.setSpicyKey(spicyKey)
-                        controller.toast("Ключ Spicy Lyrics сохранён")
-                    }
-                },
+            Text(
+                text = "Ключ Spicy Lyrics встроен в сборку. Если источник недоступен, " +
+                    "ONYX автоматически перейдёт к Musixmatch, Genius и LRCLIB.",
+                color = OnyxFaint,
+                fontSize = 11.sp,
+                lineHeight = 15.sp,
             )
             Spacer(Modifier.height(18.dp))
             ToggleRow(

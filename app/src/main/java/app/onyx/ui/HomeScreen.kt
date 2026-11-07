@@ -82,6 +82,7 @@ import kotlinx.coroutines.launch
 fun HomeScreen(
     controller: AppController,
     onOpenLyrics: () -> Unit,
+    onOpenQueue: () -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -108,7 +109,7 @@ fun HomeScreen(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 18.dp)
-                .padding(top = 16.dp, bottom = 130.dp),
+                .padding(top = 16.dp, bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Header(onOpenSettings)
@@ -132,6 +133,7 @@ fun HomeScreen(
                 connected = connected,
                 queue = queue,
                 onOpenSettings = onOpenSettings,
+                onOpenQueue = onOpenQueue,
                 onRepeat = { state ->
                     scope.launch {
                         val ok = controller.spotify.setRepeat(state)
@@ -600,6 +602,7 @@ private fun QueueCard(
     connected: Boolean,
     queue: QueueData?,
     onOpenSettings: () -> Unit,
+    onOpenQueue: () -> Unit,
     onRepeat: (String) -> Unit,
 ) {
     if (!connected) {
@@ -641,21 +644,27 @@ private fun QueueCard(
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             GlassPill(
-                text = "Повтор выкл",
+                text = "Выкл",
                 selected = data.repeatState == "off",
                 onClick = { onRepeat("off") },
             )
             GlassPill(
-                text = "Повтор",
+                text = "Плейлист",
                 selected = data.repeatState == "context",
                 onClick = { onRepeat("context") },
             )
             GlassPill(
-                text = "Повтор 1",
+                text = "Трек",
                 selected = data.repeatState == "track",
                 onClick = { onRepeat("track") },
             )
         }
+        Spacer(Modifier.height(10.dp))
+        GlassPill(
+            text = "Вся очередь",
+            selected = false,
+            onClick = onOpenQueue,
+        )
         Spacer(Modifier.height(12.dp))
         if (data.next.isEmpty()) {
             Text("Очередь пуста", color = OnyxFaint, fontSize = 12.sp)

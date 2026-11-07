@@ -3,7 +3,12 @@ package app.onyx.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -45,6 +50,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -81,6 +87,7 @@ import kotlinx.coroutines.withContext
 fun LyricsScreen(
     controller: AppController,
     onBack: () -> Unit,
+    onFullscreenChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val media by controller.media.state.collectAsStateWithLifecycle()
@@ -113,6 +120,11 @@ fun LyricsScreen(
     }
 
     BackHandler(enabled = fullscreen) { fullscreen = false }
+
+    LaunchedEffect(fullscreen) { onFullscreenChanged(fullscreen) }
+    DisposableEffect(Unit) {
+        onDispose { onFullscreenChanged(false) }
+    }
 
     DisposableEffect(fullscreen) {
         val window = (context as? android.app.Activity)?.window
@@ -164,6 +176,7 @@ fun LyricsScreen(
                     provider = doc?.provider,
                     karaoke = doc?.karaoke == true,
                     translating = prefs.translate,
+                    art = media.now.art ?: media.now.artUri,
                     onToggleTranslate = {
                         val next = !prefs.translate
                         scratch.launch {
@@ -227,6 +240,8 @@ fun LyricsScreen(
             if (!fullscreen) {
                 BottomBar(
                     fontSize = prefs.lyricFontSize,
+                    karaoke = prefs.karaoke,
+                    onKaraoke = { scratch.launch { controller.prefs.setKaraoke(!prefs.karaoke) } },
                     onFontSize = { size ->
                         scratch.launch { controller.prefs.setFontSize(size.coerceIn(20f, 48f)) }
                     },
@@ -262,6 +277,7 @@ private fun TopBar(
     provider: String?,
     karaoke: Boolean,
     translating: Boolean,
+    art: Any?,
     onToggleTranslate: () -> Unit,
     onFullscreen: () -> Unit,
     onBack: () -> Unit,
@@ -280,7 +296,23 @@ private fun TopBar(
             iconSize = 20.dp,
             onClick = onBack,
         )
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(10.dp))
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+                .background(Color.White.copy(alpha = 0.06f)),
+        ) {
+            if (art != null) {
+                coil.compose.AsyncImage(
+                    model = art,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                )
+            }
+        }
+        Spacer(Modifier.width(10.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title.ifBlank { "ONYX" },
@@ -297,7 +329,7 @@ private fun TopBar(
                         if (isNotEmpty()) append(" · ")
                         append(provider)
                     }
-                    if (karaoke) append(" · karaoke")
+                    if (karaoke) append(" · караоке")
                 },
                 color = OnyxFaint,
                 fontSize = 10.sp,
@@ -307,18 +339,20 @@ private fun TopBar(
         }
         Spacer(Modifier.width(8.dp))
         CircleButton(
+            icon = Icons.Rounded.Translate,
+            contentDescription = "Перевод",
+            size = 38.dp,
+            iconSize = 18.dp,
+            filled = translating,
+            onClick = onToggleTranslate,
+        )
+        Spacer(Modifier.width(6.dp))
+        CircleButton(
             icon = Icons.Rounded.Fullscreen,
             contentDescription = "Полноэкранный режим",
             size = 38.dp,
             iconSize = 18.dp,
             onClick = onFullscreen,
-        )
-        Spacer(Modifier.width(6.dp))
-        GlassPill(
-            text = "Перевод",
-            selected = translating,
-            icon = Icons.Rounded.Translate,
-            onClick = onToggleTranslate,
         )
     }
 }
@@ -432,6 +466,46 @@ private fun LyricsBody(
         return
     }
 
+    // Text-first mode: no auto-centering, no word fill. The user can scroll
+    // through the whole song like a normal lyrics page.
+    if (!karaoke) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(
+                start = if (fullscreen) 34.dp else 26.dp,
+                end = if (fullscreen) 34.dp else 26.dp,
+                top = 24.dp,
+                bottom = 28.dp,
+            ),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            itemsIndexed(doc.lines) { index, line ->
+                val active = index == activeIndex
+                Column(Modifier.fillMaxWidth()) {
+                    Text(
+                        text = line.text,
+                        color = if (active) OnyxWhite else OnyxWhite.copy(alpha = 0.68f),
+                        fontSize = (fontSize * 0.82f).sp,
+                        lineHeight = (fontSize * 1.08f).sp,
+                        fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
+                        letterSpacing = (-0.3).sp,
+                    )
+                    val translation = line.translation
+                    if (showTranslation && translation != null) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = translation,
+                            color = OnyxWhite.copy(alpha = if (active) 0.56f else 0.36f),
+                            fontSize = (fontSize * 0.46f).sp,
+                            lineHeight = (fontSize * 0.60f).sp,
+                        )
+                    }
+                }
+            }
+        }
+        return
+    }
+
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val verticalPad = if (fullscreen) (maxHeight / 2.1f).coerceAtLeast(90.dp)
         else (maxHeight / 2.2f).coerceAtLeast(80.dp)
@@ -478,6 +552,17 @@ private fun LyricsBody(
                             fontWeight = FontWeight.Normal,
                             textAlign = TextAlign.Start,
                         )
+                    }
+                    if (active) {
+                        val next = doc.lines.getOrNull(index + 1)
+                        val lastEnd = line.words.lastOrNull()?.endMs ?: line.endMs
+                        val showDots = next != null &&
+                            next.startMs - lastEnd > 2500 &&
+                            smoothPosition in lastEnd until next.startMs
+                        if (showDots) {
+                            Spacer(Modifier.height(6.dp))
+                            PauseDots()
+                        }
                     }
                 }
             }
@@ -546,6 +631,37 @@ private fun LyricLineText(
     )
 }
 
+@Composable
+private fun PauseDots() {
+    val transition = rememberInfiniteTransition(label = "pauseDots")
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(vertical = 4.dp),
+    ) {
+        repeat(3) { i ->
+            val alpha by transition.animateFloat(
+                initialValue = 0.2f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = androidx.compose.animation.core.tween(
+                        durationMillis = 620,
+                        delayMillis = i * 150,
+                    ),
+                    repeatMode = RepeatMode.Reverse,
+                ),
+                label = "dot$i",
+            )
+            Box(
+                Modifier
+                    .size(6.dp)
+                    .clip(CircleShape)
+                    .background(OnyxWhite.copy(alpha = alpha)),
+            )
+        }
+    }
+}
+
 private fun activeLineIndex(doc: LyricsDoc, position: Long): Int {
     if (!doc.synced) return -1
     var index = -1
@@ -558,6 +674,8 @@ private fun activeLineIndex(doc: LyricsDoc, position: Long): Int {
 @Composable
 private fun BottomBar(
     fontSize: Float,
+    karaoke: Boolean,
+    onKaraoke: () -> Unit,
     onFontSize: (Float) -> Unit,
     offsetMs: Long,
     onOffset: (Long) -> Unit,
@@ -576,6 +694,7 @@ private fun BottomBar(
         ) {
             GlassPill(text = "A−", selected = false, onClick = { onFontSize(fontSize - 2f) })
             GlassPill(text = "A+", selected = false, onClick = { onFontSize(fontSize + 2f) })
+            GlassPill(text = "Караоке", selected = karaoke, onClick = onKaraoke)
             Text(
                 text = "Aa ${fontSize.toInt()}",
                 color = OnyxFaint,
