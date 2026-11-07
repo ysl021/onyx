@@ -1,13 +1,22 @@
 package app.onyx
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,12 +46,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.onyx.ui.HomeScreen
+import app.onyx.ui.IntroScreen
 import app.onyx.ui.LyricsScreen
 import app.onyx.ui.SettingsScreen
 import app.onyx.ui.components.GlassSurface
@@ -59,6 +70,7 @@ fun OnyxApp() {
     val context = LocalContext.current
     val controller = remember { AppController.get(context).also { it.start() } }
     var tab by rememberSaveable { mutableStateOf(Tab.Player) }
+    var showIntro by rememberSaveable { mutableStateOf(true) }
     var message by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(controller) {
@@ -83,20 +95,33 @@ fun OnyxApp() {
                 .fillMaxSize()
                 .statusBarsPadding(),
         ) {
-            when (tab) {
-                Tab.Player -> HomeScreen(
-                    controller = controller,
-                    onOpenLyrics = { tab = Tab.Lyrics },
-                    onOpenSettings = { tab = Tab.Settings },
-                )
-                Tab.Lyrics -> LyricsScreen(
-                    controller = controller,
-                    onBack = { tab = Tab.Player },
-                )
-                Tab.Settings -> SettingsScreen(
-                    controller = controller,
-                    onBack = { tab = Tab.Player },
-                )
+            AnimatedContent(
+                targetState = tab,
+                transitionSpec = {
+                    val forward = targetState.ordinal > initialState.ordinal
+                    val dir = if (forward) 1 else -1
+                    (fadeIn(tween(220)) + slideInHorizontally(tween(260)) { it / 12 * dir })
+                        .togetherWith(
+                            fadeOut(tween(160)) + slideOutHorizontally(tween(200)) { -it / 16 * dir },
+                        )
+                },
+                label = "tab",
+            ) { current ->
+                when (current) {
+                    Tab.Player -> HomeScreen(
+                        controller = controller,
+                        onOpenLyrics = { tab = Tab.Lyrics },
+                        onOpenSettings = { tab = Tab.Settings },
+                    )
+                    Tab.Lyrics -> LyricsScreen(
+                        controller = controller,
+                        onBack = { tab = Tab.Player },
+                    )
+                    Tab.Settings -> SettingsScreen(
+                        controller = controller,
+                        onBack = { tab = Tab.Player },
+                    )
+                }
             }
         }
 
@@ -133,6 +158,10 @@ fun OnyxApp() {
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 11.dp),
                 )
             }
+        }
+
+        if (showIntro) {
+            IntroScreen(onFinish = { showIntro = false })
         }
     }
 }
@@ -183,23 +212,46 @@ private fun NavItem(
     onClick: () -> Unit,
 ) {
     val shape = RoundedCornerShape(16.dp)
+    val bg by animateColorAsState(
+        targetValue = if (selected) OnyxWhite else Color.Transparent,
+        animationSpec = tween(240),
+        label = "navBg",
+    )
+    val fg by animateColorAsState(
+        targetValue = if (selected) Color(0xFF08080A) else OnyxDim,
+        animationSpec = tween(240),
+        label = "navFg",
+    )
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.94f else 1f,
+        label = "navPress",
+    )
     Column(
         modifier = Modifier
+            .graphicsLayer {
+                scaleX = pressScale
+                scaleY = pressScale
+            }
             .clip(shape)
-            .background(if (selected) OnyxWhite else Color.Transparent)
-            .clickable { onClick() }
+            .background(bg)
+            .clickable(
+                interactionSource = interaction,
+                indication = null,
+            ) { onClick() }
             .padding(horizontal = 18.dp, vertical = 9.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Icon(
             icon,
             contentDescription = label,
-            tint = if (selected) Color(0xFF08080A) else OnyxDim,
+            tint = fg,
             modifier = Modifier.size(20.dp),
         )
         Text(
             text = label,
-            color = if (selected) Color(0xFF08080A) else OnyxFaint,
+            color = fg,
             fontSize = 9.sp,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
             letterSpacing = 0.4.sp,

@@ -7,6 +7,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -38,6 +39,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -129,13 +131,27 @@ fun GlassPill(
         },
         label = "pillFg",
     )
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed && enabled) 0.965f else 1f,
+        label = "pillPress",
+    )
     val shape = RoundedCornerShape(50)
     Row(
         modifier = modifier
+            .graphicsLayer {
+                scaleX = pressScale
+                scaleY = pressScale
+            }
             .clip(shape)
             .background(bg)
             .border(1.dp, if (selected) Color.Transparent else OnyxLine, shape)
-            .clickable(enabled = enabled) { onClick() }
+            .clickable(
+                enabled = enabled,
+                interactionSource = interaction,
+                indication = null,
+            ) { onClick() }
             .padding(horizontal = 15.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
@@ -167,13 +183,27 @@ fun CircleButton(
 ) {
     val bg = if (filled) OnyxWhite else Color.White.copy(alpha = 0.06f)
     val fg = if (filled) Color(0xFF08080A) else if (enabled) OnyxWhite else OnyxFaint
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed && enabled) 0.93f else 1f,
+        label = "circlePress",
+    )
     Box(
         modifier = modifier
+            .graphicsLayer {
+                scaleX = pressScale
+                scaleY = pressScale
+            }
             .size(size)
             .clip(CircleShape)
             .background(bg)
             .border(1.dp, if (filled) Color.Transparent else OnyxLine, CircleShape)
-            .clickable(enabled = enabled, interactionSource = remember { MutableInteractionSource() }, indication = null) {
+            .clickable(
+                enabled = enabled,
+                interactionSource = interaction,
+                indication = null,
+            ) {
                 onClick()
             },
         contentAlignment = Alignment.Center,
