@@ -214,6 +214,7 @@ private fun Spectrum(
     modifier: Modifier = Modifier,
 ) {
     val color = OnyxWhite
+    val hasSignal = wave.isNotEmpty() && wave.any { abs(it) > 0.012f }
     Canvas(modifier) {
         val bars = 64
         val w = size.width
@@ -222,7 +223,7 @@ private fun Spectrum(
         val step = w / bars
         val barWidth = (step * 0.42f).coerceAtLeast(1.5f)
         for (i in 0 until bars) {
-            val sample = if (wave.isNotEmpty()) {
+            val sample = if (hasSignal) {
                 wave[(i * wave.size / bars).coerceIn(0, wave.size - 1)]
             } else {
                 sin(fallbackPhase + i * 0.42f).toFloat() * 0.55f
