@@ -41,6 +41,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -84,6 +86,8 @@ fun SettingsScreen(
 
     var clientId by remember { mutableStateOf(prefs.spotifyClientId) }
     var fontSize by remember { mutableFloatStateOf(prefs.lyricFontSize) }
+    var section by rememberSaveable { mutableStateOf(0) }
+    var showEq by rememberSaveable { mutableStateOf(false) }
     var offset by remember { mutableFloatStateOf(prefs.lyricOffsetMs.toFloat()) }
     var listenerOn by remember { mutableStateOf(isListenerEnabled(context)) }
     var batteryFree by remember { mutableStateOf(isBatteryFree(context)) }
@@ -118,7 +122,33 @@ fun SettingsScreen(
         }
     }
 
+    val musicFolderLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree(),
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                )
+            }
+            val name = runCatching { DocumentFile.fromTreeUri(context, uri)?.name }
+                .getOrNull() ?: uri.lastPathSegment ?: "Папка"
+            controller.localLibrary.setFolder(uri, name)
+            controller.toast("Папка сохранена")
+        }
+    }
+
     val connected = prefs.spotifyRefresh.isNotBlank() || prefs.spotifyAccess.isNotBlank()
+
+    if (showEq) {
+        EqualizerScreen(
+            controller = controller,
+            onBack = { showEq = false },
+            modifier = modifier,
+        )
+        return
+    }
 
     Column(
         modifier = modifier
@@ -151,7 +181,7 @@ fun SettingsScreen(
                     letterSpacing = (-0.5).sp,
                 )
                 Text(
-                    text = "ONYX · v0.1",
+                    text = "ONYX · v0.3",
                     color = OnyxFaint,
                     fontSize = 10.sp,
                     letterSpacing = 1.4.sp,
@@ -159,6 +189,23 @@ fun SettingsScreen(
             }
         }
 
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            GlassPill(
+                text = "Основные",
+                selected = section == 0,
+                onClick = { section = 0 },
+            )
+            GlassPill(
+                text = "Внешний вид",
+                selected = section == 1,
+                onClick = { section = 1 },
+            )
+        }
+
+        if (section == 0) {
         // ------------------------------------------------------------- Spotify
         GlassCard(modifier = Modifier.fillMaxWidth()) {
             SectionLabel("Spotify")
@@ -185,6 +232,12 @@ fun SettingsScreen(
                             text = "Очередь и повтор доступны",
                             color = OnyxFaint,
                             fontSize = 11.sp,
+                        )
+                        Text(
+                            text = "Управление воспроизведением требует активной Premium-подписки.",
+                            color = OnyxFaint,
+                            fontSize = 10.sp,
+                            lineHeight = 14.sp,
                         )
                     }
                     Icon(
@@ -428,6 +481,61 @@ fun SettingsScreen(
         }
 
         GlassCard(modifier = Modifier.fillMaxWidth()) {
+            SectionLabel("Локальная музыка")
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = if (prefs.localFolderName.isBlank()) "Папка не выбрана"
+                else "Папка: ${prefs.localFolderName}",
+                color = if (prefs.localFolderName.isBlank()) OnyxFaint else OnyxWhite,
+                fontSize = 13.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                GlassPill(
+                    text = if (prefs.localFolderName.isBlank()) "Выбрать папку" else "Сменить папку",
+                    selected = true,
+                    onClick = { musicFolderLauncher.launch(null) },
+                )
+                if (prefs.localFolderUri.isNotBlank()) {
+                    GlassPill(
+                        text = "Очистить",
+                        selected = false,
+                        onClick = { controller.localLibrary.clearFolder() },
+                    )
+                }
+            }
+        }
+
+        GlassCard(modifier = Modifier.fillMaxWidth()) {
+            SectionLabel("Звук")
+            Spacer(Modifier.height(10.dp))
+            Text(
+                "Эквалайзер с пресетами и ручной настройкой полос. " +
+                    "Работает через общий аудиовыход; на части Bluetooth-устройств эффект может быть недоступен.",
+                color = OnyxDim,
+                fontSize = 12.sp,
+                lineHeight = 17.sp,
+            )
+            Spacer(Modifier.height(12.dp))
+            GlassPill(
+                text = "Открыть эквалайзер",
+                selected = true,
+                onClick = { showEq = true },
+            )
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = "Двойное прослушивание: публичный Android API не даёт приложению два независимых " +
+                    "медиавыхода. На Samsung используй «Dual audio» в Sound Assistant; ONYX управляет " +
+                    "активным маршрутом и общим эквалайзером.",
+                color = OnyxFaint,
+                fontSize = 10.sp,
+                lineHeight = 15.sp,
+            )
+        }
+
+        GlassCard(modifier = Modifier.fillMaxWidth()) {
             SectionLabel("О приложении")
             Spacer(Modifier.height(8.dp))
             Text(
@@ -439,6 +547,56 @@ fun SettingsScreen(
                 lineHeight = 17.sp,
             )
         }
+        } else {
+            AppearanceSection(controller, prefs, scope)
+        }
+    }
+}
+
+@Composable
+private fun AppearanceSection(
+    controller: AppController,
+    prefs: app.onyx.core.PrefsData,
+    scope: kotlinx.coroutines.CoroutineScope,
+) {
+    GlassCard(modifier = Modifier.fillMaxWidth()) {
+        SectionLabel("Тема")
+        Spacer(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            GlassPill(
+                text = "Тёмная",
+                selected = prefs.themeMode == app.onyx.core.ThemeMode.DARK,
+                onClick = { scope.launch { controller.prefs.setThemeMode(app.onyx.core.ThemeMode.DARK) } },
+            )
+            GlassPill(
+                text = "Светлая",
+                selected = prefs.themeMode == app.onyx.core.ThemeMode.LIGHT,
+                onClick = { scope.launch { controller.prefs.setThemeMode(app.onyx.core.ThemeMode.LIGHT) } },
+            )
+            GlassPill(
+                text = "Система",
+                selected = prefs.themeMode == app.onyx.core.ThemeMode.SYSTEM,
+                onClick = { scope.launch { controller.prefs.setThemeMode(app.onyx.core.ThemeMode.SYSTEM) } },
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = "Светлая тема меняет фон, стекло и цвет текста. Переключение анимировано.",
+            color = OnyxFaint,
+            fontSize = 11.sp,
+            lineHeight = 15.sp,
+        )
+    }
+
+    GlassCard(modifier = Modifier.fillMaxWidth()) {
+        SectionLabel("Фон")
+        Spacer(Modifier.height(12.dp))
+        ToggleRow(
+            title = "Фон по обложке",
+            subtitle = "Размытая обложка и цветовой оттенок на всех экранах",
+            checked = prefs.coverBackdrop,
+            onChange = { scope.launch { controller.prefs.setCoverBackdrop(it) } },
+        )
     }
 }
 
@@ -511,7 +669,7 @@ private fun StatusRow(
                 fontWeight = FontWeight.Medium,
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
-                    .background(Color.White.copy(alpha = 0.08f))
+                    .background(OnyxWhite.copy(alpha = 0.08f))
                     .clickable { onAction() }
                     .padding(horizontal = 12.dp, vertical = 7.dp),
             )
@@ -528,7 +686,7 @@ private fun RedirectBox(onCopied: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(Color.White.copy(alpha = 0.05f))
+            .background(OnyxWhite.copy(alpha = 0.05f))
             .clickable {
                 val cm = context.getSystemService(ClipboardManager::class.java)
                 cm?.setPrimaryClip(ClipData.newPlainText("redirect", REDIRECT))

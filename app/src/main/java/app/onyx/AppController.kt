@@ -6,11 +6,14 @@ import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
 import app.onyx.buds.BudsService
+import app.onyx.audio.SoundEffects
 import app.onyx.core.Prefs
 import app.onyx.lyrics.LyricsRepository
 import app.onyx.media.MediaRepository
 import app.onyx.media.OutputRouter
 import app.onyx.media.HeadphonesRepository
+import app.onyx.music.LocalLibrary
+import app.onyx.music.LocalPlaybackController
 import app.onyx.spotify.SpotifyClient
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
@@ -31,6 +34,9 @@ class AppController private constructor(context: Context) {
     val router = OutputRouter(appContext)
     val headphones = HeadphonesRepository(appContext)
     val spotify = SpotifyClient(appContext, prefs)
+    val sound = SoundEffects(appContext, prefs)
+    val localLibrary = LocalLibrary(appContext, prefs)
+    val localPlayer = LocalPlaybackController(appContext, localLibrary)
     val lyrics = LyricsRepository(appContext, prefs) { spotify.token() }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -42,6 +48,8 @@ class AppController private constructor(context: Context) {
     fun start() {
         media.start()
         headphones.refresh()
+        sound.init()
+        localPlayer.connect()
         startBudsIfAllowed()
         if (watcher != null) return
         watcher = scope.launch {
@@ -97,6 +105,9 @@ class AppController private constructor(context: Context) {
         watcher?.cancel()
         watcher = null
         lyrics.close()
+        sound.close()
+        localPlayer.close()
+        localLibrary.close()
         media.close()
     }
 

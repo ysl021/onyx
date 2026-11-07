@@ -27,8 +27,8 @@ android {
         applicationId = "app.onyx"
         minSdk = 31
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 3
+        versionName = "0.3.0"
 
         buildConfigField("String", "SPICY_KEY", "\"${secret("SPICY_KEY")}\"")
     }
@@ -84,6 +84,9 @@ dependencies {
     implementation("androidx.browser:browser:1.8.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jsoup:jsoup:1.18.1")
+    implementation("androidx.media3:media3-exoplayer:1.4.1")
+    implementation("androidx.media3:media3-session:1.4.1")
+    implementation("androidx.documentfile:documentfile:1.0.1")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

@@ -47,10 +47,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.onyx.ui.theme.OnyxAccent
 import app.onyx.ui.theme.OnyxDim
 import app.onyx.ui.theme.OnyxFaint
 import app.onyx.ui.theme.OnyxLine
 import app.onyx.ui.theme.OnyxWhite
+import app.onyx.ui.theme.LocalOnyx
 import coil.compose.AsyncImage
 import kotlin.math.roundToInt
 
@@ -61,18 +63,36 @@ fun GlassSurface(
     strong: Boolean = false,
     content: @Composable BoxScope.() -> Unit,
 ) {
-    val top = if (strong) 0.16f else 0.085f
-    val bottom = if (strong) 0.06f else 0.03f
+    val palette = LocalOnyx.current
+    val base = if (palette.isLight) Color.Black else Color.White
+    val top = when {
+        palette.isLight && strong -> 0.07f
+        palette.isLight -> 0.045f
+        strong -> 0.16f
+        else -> 0.085f
+    }
+    val bottom = when {
+        palette.isLight && strong -> 0.035f
+        palette.isLight -> 0.02f
+        strong -> 0.06f
+        else -> 0.03f
+    }
+    val border = when {
+        palette.isLight && strong -> 0.10f
+        palette.isLight -> 0.07f
+        strong -> 0.16f
+        else -> 0.09f
+    }
     Box(
         modifier = modifier
             .clip(shape)
             .background(
                 Brush.verticalGradient(
-                    listOf(Color.White.copy(alpha = top), Color.White.copy(alpha = bottom)),
+                    listOf(base.copy(alpha = top), base.copy(alpha = bottom)),
                 ),
             )
             .border(
-                BorderStroke(1.dp, Color.White.copy(alpha = if (strong) 0.16f else 0.09f)),
+                BorderStroke(1.dp, base.copy(alpha = border)),
                 shape,
             ),
         content = content,
@@ -115,18 +135,19 @@ fun GlassPill(
     enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
+    val palette = LocalOnyx.current
     val bg by animateColorAsState(
         targetValue = when {
-            !enabled -> Color.White.copy(alpha = 0.03f)
-            selected -> OnyxWhite
-            else -> Color.White.copy(alpha = 0.055f)
+            !enabled -> if (palette.isLight) Color.Black.copy(alpha = 0.03f) else Color.White.copy(alpha = 0.03f)
+            selected -> OnyxAccent
+            else -> if (palette.isLight) Color.Black.copy(alpha = 0.05f) else Color.White.copy(alpha = 0.055f)
         },
         label = "pillBg",
     )
     val fg by animateColorAsState(
         targetValue = when {
             !enabled -> OnyxFaint
-            selected -> Color(0xFF08080A)
+            selected -> if (palette.isLight) Color.White else Color(0xFF08080A)
             else -> OnyxWhite
         },
         label = "pillFg",
@@ -181,8 +202,17 @@ fun CircleButton(
     iconSize: Dp = 22.dp,
     onClick: () -> Unit,
 ) {
-    val bg = if (filled) OnyxWhite else Color.White.copy(alpha = 0.06f)
-    val fg = if (filled) Color(0xFF08080A) else if (enabled) OnyxWhite else OnyxFaint
+    val palette = LocalOnyx.current
+    val bg = when {
+        filled -> OnyxAccent
+        palette.isLight -> Color.Black.copy(alpha = 0.05f)
+        else -> Color.White.copy(alpha = 0.06f)
+    }
+    val fg = when {
+        filled -> if (palette.isLight) Color.White else Color(0xFF08080A)
+        enabled -> OnyxWhite
+        else -> OnyxFaint
+    }
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val pressScale by animateFloatAsState(
@@ -316,6 +346,25 @@ fun BatteryMeter(
 }
 
 @Composable
+fun AsyncArt(model: Any?, modifier: Modifier = Modifier) {
+    val palette = LocalOnyx.current
+    Box(
+        modifier = modifier.background(
+            if (palette.isLight) Color.Black.copy(alpha = 0.06f) else Color.White.copy(alpha = 0.06f),
+        ),
+    ) {
+        if (model != null) {
+            AsyncImage(
+                model = model,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            )
+        }
+    }
+}
+
+@Composable
 fun BlurredBackdrop(
     art: Any?,
     modifier: Modifier = Modifier,
@@ -325,7 +374,9 @@ fun BlurredBackdrop(
     scrimMid: Float = 0.94f,
     scrimBottom: Float = 0.98f,
 ) {
-    Box(modifier = modifier.fillMaxSize().background(Color(0xFF050506))) {
+    val palette = LocalOnyx.current
+    val base = palette.black
+    Box(modifier = modifier.fillMaxSize().background(base)) {
         if (art != null) {
             AsyncImage(
                 model = art,
@@ -338,7 +389,7 @@ fun BlurredBackdrop(
                     }
                     .blur(blur),
                 contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                alpha = artAlpha,
+                alpha = artAlpha * if (palette.isLight) 0.55f else 1f,
             )
         }
         Box(
@@ -346,10 +397,10 @@ fun BlurredBackdrop(
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        0f to Color(0xFF050506).copy(alpha = scrimTop),
-                        0.35f to Color(0xFF050506).copy(alpha = scrimMid),
-                        0.62f to Color(0xFF070708).copy(alpha = scrimMid),
-                        1f to Color(0xFF050506).copy(alpha = scrimBottom),
+                        0f to base.copy(alpha = scrimTop),
+                        0.35f to base.copy(alpha = scrimMid),
+                        0.62f to base.copy(alpha = scrimMid),
+                        1f to base.copy(alpha = scrimBottom),
                     ),
                 ),
         )

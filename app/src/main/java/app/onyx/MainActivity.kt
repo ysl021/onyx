@@ -10,7 +10,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
-import app.onyx.ui.theme.OnyxTheme
 
 class MainActivity : ComponentActivity() {
 
@@ -28,9 +27,7 @@ class MainActivity : ComponentActivity() {
         )
         AppController.get(this).start()
         setContent {
-            OnyxTheme {
-                OnyxApp()
-            }
+            OnyxApp()
         }
         requestStartupPermissions()
     }

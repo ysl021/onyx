@@ -83,10 +83,18 @@ class MediaRepository private constructor(private val appContext: Context) {
     private fun bind(list: List<MediaController>?) {
         val sessions = list.orEmpty()
         if (sessions.isNotEmpty()) _state.update { it.copy(hasAccess = true) }
-        val candidate = sessions.firstOrNull {
+        val own = sessions.firstOrNull {
+            it.packageName == appContext.packageName &&
+                it.playbackState?.state == PlaybackState.STATE_PLAYING
+        }
+        val otherPlaying = sessions.firstOrNull {
             it.packageName != appContext.packageName &&
                 it.playbackState?.state == PlaybackState.STATE_PLAYING
-        } ?: sessions.firstOrNull { it.packageName == SPOTIFY } ?: sessions.firstOrNull()
+        }
+        val candidate = own
+            ?: otherPlaying
+            ?: sessions.firstOrNull { it.packageName == SPOTIFY }
+            ?: sessions.firstOrNull()
         if (candidate?.sessionToken == controller?.sessionToken) {
             publish()
             return

@@ -55,6 +55,11 @@ class HeadphonesRepository(context: Context) {
 
     /** Some stacks only broadcast while a GATT client is connected; ask once on open. */
     fun refresh() {
+        if (ContextCompat.checkSelfPermission(
+                app,
+                android.Manifest.permission.BLUETOOTH_CONNECT,
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) return
         val adapter = app.getSystemService(BluetoothManager::class.java)?.adapter ?: return
         try {
             for (device in adapter.bondedDevices) {

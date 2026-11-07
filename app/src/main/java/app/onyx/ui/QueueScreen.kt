@@ -74,7 +74,6 @@ fun QueueScreen(
     }
 
     Box(modifier.fillMaxSize()) {
-        BlurredBackdrop(art = media.now.art ?: media.now.artUri)
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(

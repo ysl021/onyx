@@ -101,23 +101,6 @@ fun LyricsScreen(
 
     val position = media.positionMs + prefs.lyricOffsetMs
     val doc = (lyrics as? LyricsState.Ready)?.doc
-    val art = media.now.art
-
-    var accent by remember { mutableStateOf(Color.Transparent) }
-    LaunchedEffect(art) {
-        accent = if (art == null) {
-            Color.Transparent
-        } else {
-            withContext(Dispatchers.Default) {
-                runCatching {
-                    val tiny = android.graphics.Bitmap.createScaledBitmap(art, 1, 1, true)
-                    val px = tiny.getPixel(0, 0)
-                    if (tiny !== art) tiny.recycle()
-                    Color(px)
-                }.getOrDefault(Color.Transparent)
-            }
-        }
-    }
 
     BackHandler(enabled = fullscreen) { fullscreen = false }
 
@@ -144,30 +127,6 @@ fun LyricsScreen(
     }
 
     Box(modifier.fillMaxSize()) {
-        BlurredBackdrop(
-            art = media.now.art ?: media.now.artUri,
-            blur = 120.dp,
-            artAlpha = 0.85f,
-            scrimTop = 0.45f,
-            scrimMid = 0.60f,
-            scrimBottom = 0.88f,
-        )
-        if (accent.alpha > 0.02f) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(
-                                accent.copy(alpha = 0.38f),
-                                Color.Transparent,
-                                Color.Transparent,
-                            ),
-                        ),
-                    ),
-            )
-        }
-
         Column(Modifier.fillMaxSize()) {
             if (!fullscreen) {
                 TopBar(
@@ -212,29 +171,6 @@ fun LyricsScreen(
                         showTranslation = prefs.translate,
                     )
                 }
-                // Soft fades so the text never collides with the chrome.
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(if (fullscreen) 150.dp else 110.dp)
-                        .align(Alignment.TopCenter)
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(Color(0xFF050506).copy(alpha = 0.88f), Color.Transparent),
-                            ),
-                        ),
-                )
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(if (fullscreen) 170.dp else 130.dp)
-                        .align(Alignment.BottomCenter)
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(Color.Transparent, Color(0xFF050506).copy(alpha = 0.92f)),
-                            ),
-                        ),
-                )
             }
 
             if (!fullscreen) {
@@ -301,7 +237,7 @@ private fun TopBar(
             modifier = Modifier
                 .size(44.dp)
                 .clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
-                .background(Color.White.copy(alpha = 0.06f)),
+                .background(OnyxWhite.copy(alpha = 0.06f)),
         ) {
             if (art != null) {
                 coil.compose.AsyncImage(
@@ -438,7 +374,7 @@ private fun LyricsBody(
             androidx.compose.runtime.withFrameNanos { now ->
                 if (last == 0L) {
                     last = now
-                } else if (now - last >= 28_000_000L) {
+                } else {
                     smoothPosition += (now - last) / 1_000_000L
                     last = now
                 }
@@ -546,7 +482,7 @@ private fun LyricsBody(
                         Spacer(Modifier.height(if (active) 8.dp else 4.dp))
                         Text(
                             text = translation,
-                            color = if (active) Color.White.copy(alpha = 0.62f) else Color.White.copy(alpha = 0.26f),
+                            color = if (active) OnyxWhite.copy(alpha = 0.62f) else OnyxWhite.copy(alpha = 0.26f),
                             fontSize = (fontSize * if (active) 0.48f else 0.42f).sp,
                             lineHeight = (fontSize * if (active) 0.62f else 0.54f).sp,
                             fontWeight = FontWeight.Normal,
@@ -584,8 +520,8 @@ private fun LyricLineText(
     )
     val baseColor = when {
         active -> OnyxWhite
-        line.startMs <= position -> Color.White.copy(alpha = 0.42f)
-        else -> Color.White.copy(alpha = 0.22f)
+        line.startMs <= position -> OnyxWhite.copy(alpha = 0.42f)
+        else -> OnyxWhite.copy(alpha = 0.22f)
     }
 
     val text: AnnotatedString = if (karaoke && line.words.isNotEmpty()) {
@@ -600,7 +536,7 @@ private fun LyricLineText(
                             !active -> baseColor
                             position >= word.endMs -> OnyxWhite
                             else -> androidx.compose.ui.graphics.lerp(
-                                Color.White.copy(alpha = 0.22f),
+                                OnyxWhite.copy(alpha = 0.22f),
                                 OnyxWhite,
                                 wordProgress,
                             )

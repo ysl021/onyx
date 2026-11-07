@@ -1,7 +1,14 @@
 ﻿package app.onyx.ui
 
 import android.content.Intent
+import android.bluetooth.BluetoothManager
+import android.os.Build
 import android.provider.Settings
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -48,6 +55,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -97,13 +105,31 @@ fun HomeScreen(
     val connected = prefs.spotifyRefresh.isNotBlank() || prefs.spotifyAccess.isNotBlank()
     var queue by remember { mutableStateOf<QueueData?>(null) }
     var queueVersion by remember { mutableStateOf(0) }
+    val localName = remember {
+        if (androidx.core.content.ContextCompat.checkSelfPermission(
+                context,
+                android.Manifest.permission.BLUETOOTH_CONNECT,
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            null
+        } else {
+            runCatching {
+                context.getSystemService(BluetoothManager::class.java)?.adapter?.name
+            }.getOrNull()?.takeIf { it.isNotBlank() }
+        }
+    }
+    val remoteDevice = queue?.deviceName?.takeIf { name ->
+        name.isNotBlank() &&
+            localName != null &&
+            !name.equals(localName, ignoreCase = true) &&
+            !name.equals(Build.MODEL, ignoreCase = true)
+    }
 
     LaunchedEffect(media.now.mediaId, media.now.title, media.now.artist, connected, queueVersion) {
         queue = if (connected) runCatching { controller.spotify.queue() }.getOrNull() else null
     }
 
     Box(modifier.fillMaxSize()) {
-        BlurredBackdrop(art = media.now.art ?: media.now.artUri)
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -118,6 +144,9 @@ fun HomeScreen(
             }
             Hero(media, onOpenLyrics)
             Controls(controller, media)
+            if (remoteDevice != null) {
+                RemotePlaybackBanner(remoteDevice)
+            }
             OutputCard(
                 routes = routes,
                 onSelect = { controller.router.select(it) },
@@ -225,16 +254,34 @@ private fun Hero(media: MediaState, onOpenLyrics: () -> Unit) {
                 .fillMaxWidth(0.68f)
                 .aspectRatio(1f)
                 .clip(RoundedCornerShape(26.dp))
-                .background(Color.White.copy(alpha = 0.04f))
+                .background(OnyxWhite.copy(alpha = 0.04f))
                 .clickable { onOpenLyrics() },
             contentAlignment = Alignment.Center,
         ) {
             val model = now.art ?: now.artUri
+            val drift = rememberInfiniteTransition(label = "cover").animateFloat(
+                initialValue = 0f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(16_000),
+                    repeatMode = RepeatMode.Reverse,
+                ),
+                label = "drift",
+            )
             if (model != null) {
                 AsyncImage(
                     model = model,
                     contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            val d = drift.value
+                            val s = 1.04f + 0.05f * d
+                            scaleX = s
+                            scaleY = s
+                            translationX = (d - 0.5f) * 10f
+                            translationY = (d - 0.5f) * 16f
+                        },
                     contentScale = ContentScale.Crop,
                 )
             } else {
@@ -408,6 +455,35 @@ private fun OutputCard(
                         onClick = { onSelect(route.id) },
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RemotePlaybackBanner(device: String) {
+    GlassCard(modifier = Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                Icons.Rounded.Bluetooth,
+                contentDescription = null,
+                tint = OnyxWhite,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.width(10.dp))
+            Column {
+                Text(
+                    text = "Играет на другом устройстве",
+                    color = OnyxWhite,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Text(
+                    text = "$device · управление с этого телефона может быть недоступно",
+                    color = OnyxFaint,
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
+                )
             }
         }
     }
@@ -687,7 +763,7 @@ private fun QueueCard(
                     modifier = Modifier
                         .size(38.dp)
                         .clip(RoundedCornerShape(9.dp))
-                        .background(Color.White.copy(alpha = 0.05f)),
+                        .background(OnyxWhite.copy(alpha = 0.05f)),
                 ) {
                     if (track.art != null) {
                         AsyncImage(

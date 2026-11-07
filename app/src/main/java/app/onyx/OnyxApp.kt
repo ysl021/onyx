@@ -17,6 +17,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,7 +32,9 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.GraphicEq
+import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material3.Icon
@@ -50,27 +53,50 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.onyx.core.PrefsData
+import app.onyx.core.ThemeMode
 import app.onyx.ui.HomeScreen
 import app.onyx.ui.IntroScreen
 import app.onyx.ui.LyricsScreen
+import app.onyx.ui.MusicScreen
 import app.onyx.ui.QueueScreen
 import app.onyx.ui.SettingsScreen
+import app.onyx.ui.VisualizerScreen
+import app.onyx.ui.components.BlurredBackdrop
 import app.onyx.ui.components.GlassSurface
 import app.onyx.ui.theme.OnyxBlack
 import app.onyx.ui.theme.OnyxDim
 import app.onyx.ui.theme.OnyxFaint
+import app.onyx.ui.theme.OnyxTheme
 import app.onyx.ui.theme.OnyxWhite
 import kotlinx.coroutines.delay
 
-private enum class Tab { Player, Lyrics, Queue, Settings }
+private enum class Tab { Player, Lyrics, Queue, Music, Visualizer, Settings }
 
 @Composable
 fun OnyxApp() {
     val context = LocalContext.current
     val controller = remember { AppController.get(context).also { it.start() } }
+    val prefs by controller.prefs.data.collectAsStateWithLifecycle(initialValue = PrefsData())
+    val media by controller.media.state.collectAsStateWithLifecycle()
+    val view = LocalView.current
+    val dark = when (prefs.themeMode) {
+        ThemeMode.DARK -> true
+        ThemeMode.LIGHT -> false
+        ThemeMode.SYSTEM -> isSystemInDarkTheme()
+    }
+    LaunchedEffect(dark) {
+        val window = (context as? android.app.Activity)?.window ?: return@LaunchedEffect
+        val controller = WindowCompat.getInsetsController(window, view)
+        controller.isAppearanceLightStatusBars = !dark
+        controller.isAppearanceLightNavigationBars = false
+    }
     var tab by rememberSaveable { mutableStateOf(Tab.Player) }
     var showIntro by rememberSaveable { mutableStateOf(true) }
     var lyricsFullscreen by remember { mutableStateOf(false) }
@@ -92,7 +118,11 @@ fun OnyxApp() {
         tab = Tab.Player
     }
 
+    OnyxTheme(prefs.themeMode) {
     Box(modifier = Modifier.fillMaxSize().background(OnyxBlack)) {
+        if (prefs.coverBackdrop) {
+            BlurredBackdrop(art = media.now.art ?: media.now.artUri)
+        }
         Column(Modifier.fillMaxSize()) {
             Box(
                 modifier = Modifier
@@ -128,6 +158,8 @@ fun OnyxApp() {
                             controller = controller,
                             onOpenSettings = { tab = Tab.Settings },
                         )
+                        Tab.Music -> MusicScreen(controller = controller)
+                        Tab.Visualizer -> VisualizerScreen(controller = controller)
                         Tab.Settings -> SettingsScreen(
                             controller = controller,
                             onBack = { tab = Tab.Player },
@@ -140,7 +172,6 @@ fun OnyxApp() {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(OnyxBlack)
                         .navigationBarsPadding()
                         .padding(horizontal = 18.dp, vertical = 10.dp),
                 ) {
@@ -184,6 +215,7 @@ fun OnyxApp() {
             IntroScreen(onFinish = { showIntro = false })
         }
     }
+    }
 }
 
 @Composable
@@ -198,7 +230,9 @@ private fun BottomNav(
         strong = true,
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 7.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -206,24 +240,42 @@ private fun BottomNav(
                 icon = Icons.Rounded.GraphicEq,
                 label = "Плеер",
                 selected = tab == Tab.Player,
+                modifier = Modifier.weight(1f),
                 onClick = { onSelect(Tab.Player) },
             )
             NavItem(
                 icon = Icons.Rounded.Translate,
                 label = "Текст",
                 selected = tab == Tab.Lyrics,
+                modifier = Modifier.weight(1f),
                 onClick = { onSelect(Tab.Lyrics) },
             )
             NavItem(
                 icon = Icons.AutoMirrored.Rounded.QueueMusic,
                 label = "Очередь",
                 selected = tab == Tab.Queue,
+                modifier = Modifier.weight(1f),
                 onClick = { onSelect(Tab.Queue) },
+            )
+            NavItem(
+                icon = Icons.Rounded.LibraryMusic,
+                label = "Музыка",
+                selected = tab == Tab.Music,
+                modifier = Modifier.weight(1f),
+                onClick = { onSelect(Tab.Music) },
+            )
+            NavItem(
+                icon = Icons.Rounded.BarChart,
+                label = "Визуал",
+                selected = tab == Tab.Visualizer,
+                modifier = Modifier.weight(1f),
+                onClick = { onSelect(Tab.Visualizer) },
             )
             NavItem(
                 icon = Icons.Rounded.Settings,
                 label = "Настройки",
                 selected = tab == Tab.Settings,
+                modifier = Modifier.weight(1f),
                 onClick = { onSelect(Tab.Settings) },
             )
         }
@@ -235,16 +287,22 @@ private fun NavItem(
     icon: ImageVector,
     label: String,
     selected: Boolean,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     val shape = RoundedCornerShape(16.dp)
+    val palette = app.onyx.ui.theme.LocalOnyx.current
     val bg by animateColorAsState(
-        targetValue = if (selected) OnyxWhite else Color.Transparent,
+        targetValue = if (selected) app.onyx.ui.theme.OnyxAccent else Color.Transparent,
         animationSpec = tween(240),
         label = "navBg",
     )
     val fg by animateColorAsState(
-        targetValue = if (selected) Color(0xFF08080A) else OnyxDim,
+        targetValue = when {
+            selected && palette.isLight -> Color.White
+            selected -> Color(0xFF08080A)
+            else -> OnyxDim
+        },
         animationSpec = tween(240),
         label = "navFg",
     )
@@ -255,7 +313,7 @@ private fun NavItem(
         label = "navPress",
     )
     Column(
-        modifier = Modifier
+        modifier = modifier
             .graphicsLayer {
                 scaleX = pressScale
                 scaleY = pressScale
@@ -266,21 +324,22 @@ private fun NavItem(
                 interactionSource = interaction,
                 indication = null,
             ) { onClick() }
-            .padding(horizontal = 13.dp, vertical = 9.dp),
+            .padding(horizontal = 2.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Icon(
             icon,
             contentDescription = label,
             tint = fg,
-            modifier = Modifier.size(20.dp),
+            modifier = Modifier.size(19.dp),
         )
         Text(
             text = label,
             color = fg,
-            fontSize = 9.sp,
+            fontSize = 8.sp,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-            letterSpacing = 0.4.sp,
+            letterSpacing = 0.1.sp,
+            maxLines = 1,
         )
     }
 }

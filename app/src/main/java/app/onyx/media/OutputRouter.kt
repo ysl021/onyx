@@ -83,9 +83,14 @@ class OutputRouter(private val context: Context) {
             val isPhone = lower.contains("speaker") || lower.contains("phone") ||
                 lower.contains("телефон") || lower.contains("this device") ||
                 lower.contains("builtin")
-            val isBt = info.type == MediaRoute2Info.TYPE_BLUETOOTH_A2DP ||
-                info.type == MediaRoute2Info.TYPE_BLE_HEADSET ||
-                info.type == MediaRoute2Info.TYPE_HEARING_AID ||
+            val typeBt = if (android.os.Build.VERSION.SDK_INT >= 34) {
+                info.type == MediaRoute2Info.TYPE_BLUETOOTH_A2DP ||
+                    info.type == MediaRoute2Info.TYPE_BLE_HEADSET ||
+                    info.type == MediaRoute2Info.TYPE_HEARING_AID
+            } else {
+                false
+            }
+            val isBt = typeBt ||
                 lower.contains("bluetooth") || lower.contains("a2dp") ||
                 lower.contains("buds") || lower.contains("headset") ||
                 lower.contains("наушник")
