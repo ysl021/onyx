@@ -195,7 +195,7 @@ fun MusicScreen(
                 )
             }
             GlassPill(
-                text = "+ Добавить",
+                text = tr("+ Добавить", "+ Add"),
                 selected = false,
                 onClick = { picker.launch(null) },
             )
@@ -203,7 +203,7 @@ fun MusicScreen(
 
         if (library.scanning) {
             Text(
-                "Сканируем… ${library.progress}%",
+                tr("Сканируем", "Scanning") + "… ${library.progress}%",
                 color = OnyxFaint,
                 fontSize = 10.sp,
                 modifier = Modifier.padding(horizontal = 18.dp, vertical = 6.dp),
@@ -255,8 +255,8 @@ fun MusicScreen(
             if (!library.scanning && filtered.isEmpty()) {
                 item {
                     Text(
-                        if (query.isBlank()) "В папке пока нет треков."
-                        else tr("Ничего не найдено.", "Nothing found."),
+                        if (query.isBlank()) tr("В папке пока нет треков.", "No tracks in this folder.")
+                        else tr(tr("Ничего не найдено.", "Nothing found."), "Nothing found."),
                         color = OnyxFaint,
                         fontSize = 11.sp,
                         modifier = Modifier.padding(vertical = 12.dp),

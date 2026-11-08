@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -36,6 +37,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -63,6 +66,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.onyx.AppController
 import app.onyx.buds.BudsService
 import app.onyx.ui.components.CircleButton
+import app.onyx.ui.components.CustomBackdrop
 import app.onyx.ui.components.GlassCard
 import app.onyx.ui.components.GlassPill
 import app.onyx.ui.components.OnyxSlider
@@ -71,6 +75,7 @@ import app.onyx.ui.components.SectionLabel
 import app.onyx.ui.theme.OnyxDim
 import app.onyx.ui.theme.OnyxFaint
 import app.onyx.ui.theme.OnyxLine
+import app.onyx.ui.theme.OnyxSurface
 import app.onyx.ui.theme.OnyxWhite
 import kotlinx.coroutines.launch
 
@@ -91,6 +96,9 @@ fun SettingsScreen(
     var section by rememberSaveable { mutableStateOf(0) }
     var showEq by rememberSaveable { mutableStateOf(false) }
     var pendingBgPage by remember { mutableStateOf<String?>(null) }
+    var previewBgPage by remember { mutableStateOf<String?>(null) }
+    var previewBgUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    var previewAll by remember { mutableStateOf(false) }
     var offset by remember { mutableFloatStateOf(prefs.lyricOffsetMs.toFloat()) }
     var listenerOn by remember { mutableStateOf(isListenerEnabled(context)) }
     var batteryFree by remember { mutableStateOf(isBatteryFree(context)) }
@@ -119,9 +127,9 @@ fun SettingsScreen(
         ActivityResultContracts.RequestMultiplePermissions(),
     ) { result ->
         if (result.values.all { it }) {
-            controller.toast("Разрешения выданы")
+            controller.toast(tr("Разрешения выданы", "Permissions granted"))
         } else {
-            controller.toast("Не все разрешения выданы")
+            controller.toast(tr("Не все разрешения выданы", "Not all permissions granted"))
         }
     }
 
@@ -136,9 +144,9 @@ fun SettingsScreen(
                 )
             }
             val name = runCatching { DocumentFile.fromTreeUri(context, uri)?.name }
-                .getOrNull() ?: uri.lastPathSegment ?: "Папка"
+                .getOrNull() ?: uri.lastPathSegment ?: tr("Папка", "Folder")
             controller.localLibrary.addFolder(uri, name)
-            controller.toast("Папка сохранена")
+            controller.toast(tr("Папка сохранена", "Folder saved"))
         }
     }
 
@@ -148,23 +156,9 @@ fun SettingsScreen(
         val page = pendingBgPage
         pendingBgPage = null
         if (uri != null && page != null) {
-            scope.launch {
-                val saved = runCatching {
-                    val f = java.io.File(context.filesDir, "bg_$page.jpg")
-                    context.contentResolver.openInputStream(uri)?.use { input ->
-                        f.outputStream().use { out -> input.copyTo(out) }
-                    }
-                    f.absolutePath
-                }.getOrNull()
-                if (saved != null) {
-                    val map = decodeBackgrounds(prefs.pageBackgrounds).toMutableMap()
-                    map[page] = saved
-                    controller.prefs.setPageBackgrounds(encodeBackgrounds(map))
-                    controller.toast("Фон обновлён")
-                } else {
-                    controller.toast("Не удалось загрузить фото")
-                }
-            }
+            previewBgPage = page
+            previewBgUri = uri
+            previewAll = false
         }
     }
 
@@ -210,7 +204,7 @@ fun SettingsScreen(
                     letterSpacing = (-0.5).sp,
                 )
                 Text(
-                    text = "ONYX · v0.4",
+                    text = "ONYX · v0.5",
                     color = OnyxFaint,
                     fontSize = 10.sp,
                     letterSpacing = 1.4.sp,
@@ -250,7 +244,7 @@ fun SettingsScreen(
                     Spacer(Modifier.width(8.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = prefs.spotifyUser.ifBlank { "Аккаунт подключён" },
+                            text = prefs.spotifyUser.ifBlank { tr("Аккаунт подключён", "Account connected") },
                             color = OnyxWhite,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.SemiBold,
@@ -258,12 +252,21 @@ fun SettingsScreen(
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
-                            text = "Очередь и повтор доступны",
+                            text = tr("Очередь и повтор доступны", "Queue and repeat available"),
                             color = OnyxFaint,
                             fontSize = 11.sp,
                         )
                         Text(
-                            text = "Управление воспроизведением требует активной Premium-подписки.",
+                            text = tr("Управление воспроизведением требует активной Premium-подписки.", "Playback control requires an active Premium subscription."),
+                            color = OnyxFaint,
+                            fontSize = 10.sp,
+                            lineHeight = 14.sp,
+                        )
+                        Text(
+                            text = tr(
+                                "В РФ часть Spotify API (плейлисты, поиск) может быть недоступна; плеер и очередь обычно работают.",
+                                "Some Spotify API endpoints (playlists, search) may be unavailable in this region; playback and queue usually work.",
+                            ),
                             color = OnyxFaint,
                             fontSize = 10.sp,
                             lineHeight = 14.sp,
@@ -278,7 +281,7 @@ fun SettingsScreen(
                             .clickable {
                                 scope.launch {
                                     controller.prefs.clearSpotify()
-                                    controller.toast("Spotify отключён")
+                                    controller.toast(tr("Spotify отключён", "Spotify disconnected"))
                                 }
                             },
                     )
@@ -293,8 +296,8 @@ fun SettingsScreen(
                 )
             } else {
                 Text(
-                    text = "Приложение работает с твоим личным Spotify-приложением. " +
-                        "Создай его в Spotify Dashboard и вставь Client ID.",
+                    text = tr("Приложение работает с твоим личным Spotify-приложением. " +
+                        "Создай его в Spotify Dashboard и вставь Client ID.", "ONYX uses your own Spotify app. Create one in the Spotify Dashboard and paste its Client ID."),
                     color = OnyxDim,
                     fontSize = 12.sp,
                     lineHeight = 17.sp,
@@ -322,7 +325,7 @@ fun SettingsScreen(
                     ),
                 )
                 Spacer(Modifier.height(10.dp))
-                RedirectBox { controller.toast("Redirect URI скопирован") }
+                RedirectBox { controller.toast(tr("Redirect URI скопирован", "Redirect URI copied")) }
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     GlassPill(
@@ -332,7 +335,7 @@ fun SettingsScreen(
                         onClick = {
                             scope.launch {
                                 controller.prefs.setClientId(clientId)
-                                controller.toast("Client ID сохранён")
+                                controller.toast(tr("Client ID сохранён", "Client ID saved"))
                             }
                         },
                     )
@@ -374,16 +377,16 @@ fun SettingsScreen(
             SectionLabel(tr("Текст и караоке", "Lyrics & karaoke"))
             Spacer(Modifier.height(12.dp))
             Text(
-                text = "Spicy Lyrics · общинная база TTML. Отдаёт текст и тайминги " +
-                    "даже для ремиксов и slowed-версий, которых нет в Musixmatch.",
+                text = tr("Spicy Lyrics · общинная база TTML. Отдаёт текст и тайминги " +
+                    "даже для ремиксов и slowed-версий, которых нет в Musixmatch.", "Spicy Lyrics is a community TTML catalogue with timings for remixes and slowed versions Musixmatch does not cover."),
                 color = OnyxDim,
                 fontSize = 12.sp,
                 lineHeight = 17.sp,
             )
             Spacer(Modifier.height(10.dp))
             Text(
-                text = "Ключ Spicy Lyrics встроен в сборку. Если источник недоступен, " +
-                    "ONYX автоматически перейдёт к Musixmatch, Genius и LRCLIB.",
+                text = tr("Ключ Spicy Lyrics встроен в сборку. Если источник недоступен, " +
+                    "ONYX автоматически перейдёт к Musixmatch, Genius и LRCLIB.", "The Spicy Lyrics key is built into this APK. If unavailable, ONYX falls back to Musixmatch, Genius and LRCLIB."),
                 color = OnyxFaint,
                 fontSize = 11.sp,
                 lineHeight = 15.sp,
@@ -391,20 +394,20 @@ fun SettingsScreen(
             Spacer(Modifier.height(18.dp))
             ToggleRow(
                 title = tr("Караоке по словам", "Word karaoke"),
-                subtitle = "Плавная подсветка слов, если провайдер отдал тайминги",
+                subtitle = tr("Плавная подсветка слов, если провайдер отдал тайминги", "Smooth word highlighting when timings are available"),
                 checked = prefs.karaoke,
                 onChange = { scope.launch { controller.prefs.setKaraoke(it) } },
             )
             Spacer(Modifier.height(12.dp))
             ToggleRow(
                 title = tr("Русский перевод", "Russian translation"),
-                subtitle = "Spicy/Musixmatch, затем Google",
+                subtitle = tr("Spicy/Musixmatch, затем Google", "Spicy/Musixmatch, then Google"),
                 checked = prefs.translate,
                 onChange = { scope.launch { controller.prefs.setTranslate(it) } },
             )
             Spacer(Modifier.height(18.dp))
             SliderRow(
-                title = "Размер текста",
+                title = tr("Размер текста", "Lyrics size"),
                 value = "${fontSize.toInt()}",
                 sliderValue = (fontSize - 20f) / 28f,
                 onChange = { fontSize = 20f + it * 28f },
@@ -412,7 +415,7 @@ fun SettingsScreen(
             )
             Spacer(Modifier.height(10.dp))
             SliderRow(
-                title = "Смещение текста",
+                title = tr("Смещение текста", "Lyrics offset"),
                 value = "${(offset / 100).toInt() * 100} мс",
                 sliderValue = (offset + 3000f) / 6000f,
                 onChange = { offset = -3000f + it * 6000f },
@@ -428,10 +431,10 @@ fun SettingsScreen(
             SectionLabel(tr("Наушники", "Headphones"))
             Spacer(Modifier.height(12.dp))
             Text(
-                text = "ONYX управляет Galaxy Buds по служебному SPP-каналу Samsung. " +
+                text = tr("ONYX управляет Galaxy Buds по служебному SPP-каналу Samsung. " +
                     "Другие Bluetooth-наушники работают как обычный аудиовыход: " +
                     "плеер, громкость и переключение маршрута. Автоподключения к Buds нет — " +
-                    "только по кнопке.",
+                    "только по кнопке.", "ONYX controls Galaxy Buds over Samsung SPP. Other Bluetooth headphones work as a standard audio output: player, volume and route switching. There is no automatic SPP reconnect."),
                 color = OnyxDim,
                 fontSize = 12.sp,
                 lineHeight = 17.sp,
@@ -451,7 +454,7 @@ fun SettingsScreen(
             }
             Spacer(Modifier.height(10.dp))
             Text(
-                text = "Для стабильного SPP на Samsung отключи менеджер (один раз, через adb):\n" +
+                text = tr("Для стабильного SPP на Samsung отключи менеджер (один раз, через adb):", "For stable SPP on Samsung, disable the manager once via adb:") + "\n" +
                     "adb shell pm disable-user --user 0 com.samsung.accessory.paranmgr",
                 color = OnyxFaint,
                 fontSize = 10.sp,
@@ -514,7 +517,7 @@ fun SettingsScreen(
             Spacer(Modifier.height(10.dp))
             if (prefs.localFolders.isEmpty()) {
                 Text(
-                    "Папки не выбраны",
+                    tr("Папки не выбраны", "No folders selected"),
                     color = OnyxFaint,
                     fontSize = 13.sp,
                 )
@@ -566,8 +569,8 @@ fun SettingsScreen(
             SectionLabel(tr("Звук", "Sound"))
             Spacer(Modifier.height(10.dp))
             Text(
-                "Эквалайзер с пресетами и ручной настройкой полос. " +
-                    "Работает через общий аудиовыход; на части Bluetooth-устройств эффект может быть недоступен.",
+                tr("Эквалайзер с пресетами и ручной настройкой полос. " +
+                    "Работает через общий аудиовыход; на части Bluetooth-устройств эффект может быть недоступен.", "Equalizer with presets and manual bands. Uses the global audio output; may be unavailable on some Bluetooth devices."),
                 color = OnyxDim,
                 fontSize = 12.sp,
                 lineHeight = 17.sp,
@@ -593,9 +596,9 @@ fun SettingsScreen(
             SectionLabel(tr("О приложении", "About"))
             Spacer(Modifier.height(8.dp))
             Text(
-                text = "ONYX — личный пульт управления музыкой. " +
+                text = tr("ONYX — личный пульт управления музыкой. " +
                     "Медиа, Bluetooth-маршруты, Galaxy Buds и другие наушники, Spotify и тексты " +
-                    "Spicy Lyrics в одном месте. Протокол Buds портирован из GalaxyBudsClient (GPLv3).",
+                    "Spicy Lyrics в одном месте. Протокол Buds портирован из GalaxyBudsClient (GPLv3).", "ONYX is a personal music control center: media, Bluetooth routes, Galaxy Buds and other headphones, Spotify and Spicy Lyrics in one place. Buds protocol ported from GalaxyBudsClient (GPLv3)."),
                 color = OnyxDim,
                 fontSize = 12.sp,
                 lineHeight = 17.sp,
@@ -609,6 +612,52 @@ fun SettingsScreen(
                 onPickBackground = { page ->
                     pendingBgPage = page
                     backgroundPicker.launch(arrayOf("image/*"))
+                },
+            )
+        }
+
+        val previewUri = previewBgUri
+        val previewPage = previewBgPage
+        if (previewUri != null && previewPage != null) {
+            BackgroundPreviewDialog(
+                uri = previewUri,
+                applyAll = previewAll,
+                onApplyAll = { previewAll = it },
+                onDismiss = {
+                    previewBgUri = null
+                    previewBgPage = null
+                },
+                onApply = {
+                    scope.launch {
+                        val pages = if (previewAll) {
+                            listOf("player", "lyrics", "queue", "music", "visualizer", "settings")
+                        } else {
+                            listOf(previewPage)
+                        }
+                        val target = java.io.File(
+                            context.filesDir,
+                            if (previewAll) "bg_all.jpg" else "bg_$previewPage.jpg",
+                        )
+                        val saved = runCatching {
+                            context.contentResolver.openInputStream(previewUri)?.use { input ->
+                                target.outputStream().use { out -> input.copyTo(out) }
+                            }
+                            target.absolutePath
+                        }.getOrNull()
+                        if (saved != null) {
+                            val bg = decodeBackgrounds(prefs.pageBackgrounds).toMutableMap()
+                            pages.forEach { bg[it] = saved }
+                            controller.prefs.setPageBackgrounds(encodeBackgrounds(bg))
+                            val blur = decodeBackgrounds(prefs.pageBackgroundBlur).toMutableMap()
+                            pages.forEach { blur[it] = "0" }
+                            controller.prefs.setPageBackgroundBlur(encodeBackgrounds(blur))
+                            controller.toast(tr("Фон применён", "Background applied"))
+                            previewBgUri = null
+                            previewBgPage = null
+                        } else {
+                            controller.toast(tr("Не удалось загрузить фото", "Could not load the photo"))
+                        }
+                    }
                 },
             )
         }
@@ -630,11 +679,11 @@ private fun AppearanceSection(
     val pages = prefs.coverPages.split(',').filter { it.isNotBlank() }.toSet()
 
     GlassCard(modifier = Modifier.fillMaxWidth()) {
-        SectionLabel("Язык · Language")
+        SectionLabel(tr("Язык", "Language"))
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             GlassPill(
-                text = "Русский",
+                text = tr("Русский", "Russian"),
                 selected = prefs.language == app.onyx.core.AppLanguage.RU,
                 onClick = { scope.launch { controller.prefs.setLanguage(app.onyx.core.AppLanguage.RU) } },
             )
@@ -646,7 +695,7 @@ private fun AppearanceSection(
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            "Интерфейс переключается с плавным затуханием.",
+            tr("Интерфейс переключается с плавным затуханием.", "The interface switches with a soft fade."),
             color = OnyxFaint,
             fontSize = 11.sp,
         )
@@ -724,7 +773,7 @@ private fun AppearanceSection(
         }
         Spacer(Modifier.height(10.dp))
         Text(
-            text = "Светлая тема меняет фон, стекло и цвет текста. Переключение анимировано.",
+            text = tr("Светлая тема меняет фон, стекло и цвет текста. Переключение анимировано.", "Light theme changes the background, glass and text colors with a smooth animation."),
             color = OnyxFaint,
             fontSize = 11.sp,
             lineHeight = 15.sp,
@@ -764,7 +813,7 @@ private fun AppearanceSection(
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            tr("Применяется к активной строке и заливке слов.", "Applies to the active line and word fill."),
+            tr(tr("Применяется к активной строке и заливке слов.", "Applied to the active line and word fill."), "Applies to the active line and word fill."),
             color = OnyxFaint,
             fontSize = 10.sp,
         )
@@ -775,7 +824,7 @@ private fun AppearanceSection(
         Spacer(Modifier.height(12.dp))
         ToggleRow(
             title = tr("Фон по обложке", "Cover background"),
-            subtitle = "Размытая обложка и цветовой оттенок",
+            subtitle = tr("Размытая обложка и цветовой оттенок", "Blurred cover and color tint"),
             checked = prefs.coverBackdrop,
             onChange = { scope.launch { controller.prefs.setCoverBackdrop(it) } },
         )
@@ -794,6 +843,7 @@ private fun AppearanceSection(
             "player" to tr("Плеер", "Player"),
             "lyrics" to tr("Текст", "Lyrics"),
             "queue" to tr("Очередь", "Queue"),
+            "playlists" to tr("Плейлисты", "Playlists"),
             "music" to tr("Музыка", "Music"),
             "visualizer" to tr("Визуал", "Visual"),
             "settings" to tr("Настройки", "Settings"),
@@ -801,7 +851,7 @@ private fun AppearanceSection(
         pageItems.forEachIndexed { index, (key, label) ->
             ToggleRow(
                 title = label,
-                subtitle = "Фон из обложки на этой странице",
+                subtitle = tr("Фон из обложки на этой странице", "Cover background on this page"),
                 checked = pages.contains(key),
                 onChange = { on ->
                     val next = if (on) pages + key else pages - key
@@ -820,6 +870,7 @@ private fun AppearanceSection(
             "player" to tr("Плеер", "Player"),
             "lyrics" to tr("Текст", "Lyrics"),
             "queue" to tr("Очередь", "Queue"),
+            "playlists" to tr("Плейлисты", "Playlists"),
             "music" to tr("Музыка", "Music"),
             "visualizer" to tr("Визуал", "Visual"),
             "settings" to tr("Настройки", "Settings"),
@@ -853,6 +904,18 @@ private fun AppearanceSection(
                     )
                 }
             }
+            if (backgrounds[key] != null) {
+                val blurNow = decodeBackgrounds(prefs.pageBackgroundBlur)[key]?.toIntOrNull() ?: 0
+                PageBlurRow(
+                    label = tr("Размытие фона", "Background blur"),
+                    initial = blurNow,
+                    onFinish = { value ->
+                        val blur = decodeBackgrounds(prefs.pageBackgroundBlur).toMutableMap()
+                        blur[key] = value.toString()
+                        scope.launch { controller.prefs.setPageBackgroundBlur(encodeBackgrounds(blur)) }
+                    },
+                )
+            }
             if (index != pages.lastIndex) Spacer(Modifier.height(8.dp))
         }
         Spacer(Modifier.height(8.dp))
@@ -879,6 +942,29 @@ private fun AppearanceSection(
             selected = prefs.lyricFont,
             onSelect = { scope.launch { controller.prefs.setLyricFont(it) } },
             onDismiss = { showLyricFont = false },
+        )
+    }
+}
+
+@Composable
+private fun PageBlurRow(
+    label: String,
+    initial: Int,
+    onFinish: (Int) -> Unit,
+) {
+    var value by remember(initial) { mutableFloatStateOf(initial.toFloat()) }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            "$label ${value.toInt()}%",
+            color = OnyxFaint,
+            fontSize = 10.sp,
+            modifier = Modifier.width(120.dp),
+        )
+        OnyxSlider(
+            value = (value / 100f).coerceIn(0f, 1f),
+            onValueChange = { value = it * 100f },
+            onValueChangeFinished = { onFinish(value.toInt()) },
+            modifier = Modifier.weight(1f),
         )
     }
 }
@@ -1008,6 +1094,65 @@ private fun hasBluetooth(context: Context): Boolean =
 private fun isBatteryFree(context: Context): Boolean {
     val pm = context.getSystemService(PowerManager::class.java) ?: return true
     return pm.isIgnoringBatteryOptimizations(context.packageName)
+}
+
+@Composable
+private fun BackgroundPreviewDialog(
+    uri: android.net.Uri,
+    applyAll: Boolean,
+    onApplyAll: (Boolean) -> Unit,
+    onDismiss: () -> Unit,
+    onApply: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = OnyxSurface,
+        title = { Text(tr("Предпросмотр фона", "Background preview"), color = OnyxWhite, fontWeight = FontWeight.Bold) },
+        text = {
+            Column {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(220.dp)
+                        .clip(RoundedCornerShape(16.dp)),
+                ) {
+                    CustomBackdrop(art = uri, blurPercent = 0)
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.BottomStart)
+                            .padding(14.dp),
+                    ) {
+                        Text("ONYX", color = OnyxWhite, fontSize = 22.sp, fontWeight = FontWeight.Black)
+                        Text(
+                            tr("Так будет выглядеть страница", "This is how the page will look"),
+                            color = OnyxWhite.copy(alpha = 0.7f),
+                            fontSize = 10.sp,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        tr("Применить ко всем страницам", "Apply to all pages"),
+                        color = OnyxDim,
+                        fontSize = 12.sp,
+                        modifier = Modifier.weight(1f),
+                    )
+                    OnyxSwitch(checked = applyAll, onCheckedChange = onApplyAll)
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onApply) {
+                Text(tr("Применить", "Apply"), color = OnyxWhite, fontWeight = FontWeight.SemiBold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(tr("Отмена", "Cancel"), color = OnyxDim)
+            }
+        },
+    )
 }
 
 private fun decodeBackgrounds(raw: String): Map<String, String> {

@@ -168,19 +168,19 @@ fun QueueScreen(
                         RepeatPill(tr("Выкл", "Off"), state == "off", Modifier.weight(1f)) {
                             scope.launch {
                                 if (controller.spotify.setRepeat("off")) version++
-                                else controller.toast("Spotify не разрешил повтор — проверь Premium")
+                                else controller.toast(tr("Spotify не разрешил повтор — проверь Premium", "Spotify refused repeat — check Premium"))
                             }
                         }
                         RepeatPill(tr("Плейлист", "Playlist"), state == "context", Modifier.weight(1f)) {
                             scope.launch {
                                 if (controller.spotify.setRepeat("context")) version++
-                                else controller.toast("Spotify не разрешил повтор — проверь Premium")
+                                else controller.toast(tr("Spotify не разрешил повтор — проверь Premium", "Spotify refused repeat — check Premium"))
                             }
                         }
                         RepeatPill(tr("Трек", "Track"), state == "track", Modifier.weight(1f)) {
                             scope.launch {
                                 if (controller.spotify.setRepeat("track")) version++
-                                else controller.toast("Spotify не разрешил повтор — проверь Premium")
+                                else controller.toast(tr("Spotify не разрешил повтор — проверь Premium", "Spotify refused repeat — check Premium"))
                             }
                         }
                     }
@@ -207,7 +207,7 @@ fun QueueScreen(
                             val ok = controller.spotify.playTrack(track.uri)
                             if (!ok) controller.toast(
                                 tr(
-                                    "Spotify не разрешил запуск — проверь Premium и активное устройство",
+                                    tr("Spotify не разрешил запуск — проверь Premium и активное устройство", "Spotify refused playback — check Premium and the active device"),
                                     "Spotify refused playback — check Premium and the active device",
                                 ),
                             )

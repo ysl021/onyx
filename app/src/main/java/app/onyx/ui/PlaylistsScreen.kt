@@ -169,8 +169,8 @@ fun PlaylistsScreen(
                             Spacer(Modifier.height(8.dp))
                             Text(
                                 tr(
-                                    "Переподключи Spotify, чтобы разрешить доступ к плейлистам.",
-                                    "Reconnect Spotify to allow playlist access.",
+                                    "Spotify API недоступен в этом регионе или нужен перелогин. Плейлисты и запуск треков могут не работать.",
+                                    "Spotify API is unavailable in this region or a re-login is required. Playlists and track playback may not work.",
                                 ),
                                 color = OnyxDim,
                                 fontSize = 12.sp,
@@ -258,7 +258,7 @@ fun PlaylistsScreen(
                                         val ok = controller.spotify.playTrack(track.uri)
                                         if (!ok) controller.toast(
                                             tr(
-                                                "Spotify не разрешил запуск — проверь Premium",
+                                                tr("Spotify не разрешил запуск — проверь Premium", "Spotify refused playback — check Premium"),
                                                 "Spotify refused playback — check Premium",
                                             ),
                                         )

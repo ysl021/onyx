@@ -169,7 +169,7 @@ fun HomeScreen(
                         if (ok) {
                             queueVersion++
                         } else {
-                            controller.toast("Spotify не разрешил повтор — проверь Premium")
+                            controller.toast(tr("Spotify не разрешил повтор — проверь Premium", "Spotify refused repeat — check Premium"))
                         }
                     }
                 },
@@ -221,7 +221,7 @@ private fun AccessBanner() {
         )
         Spacer(Modifier.height(4.dp))
         Text(
-            text = "Разреши ONYX доступ к уведомлениям — так приложение видит, что играет.",
+            text = tr("Разреши ONYX доступ к уведомлениям — так приложение видит, что играет.", "Allow notification access so ONYX can see what is playing."),
             color = OnyxDim,
             fontSize = 12.sp,
             lineHeight = 17.sp,
@@ -295,7 +295,7 @@ private fun Hero(media: MediaState, onOpenLyrics: () -> Unit) {
         }
         Spacer(Modifier.height(18.dp))
         Text(
-            text = now.title.ifBlank { "Ничего не играет" },
+            text = now.title.ifBlank { tr("Ничего не играет", "Nothing playing") },
             color = OnyxWhite,
             fontSize = 25.sp,
             lineHeight = 30.sp,
@@ -308,7 +308,7 @@ private fun Hero(media: MediaState, onOpenLyrics: () -> Unit) {
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            text = if (now.artist.isBlank()) "Запусти музыку на телефоне" else now.artist,
+            text = if (now.artist.isBlank()) tr("Запусти музыку на телефоне", "Start music on your phone") else now.artist,
             color = OnyxDim,
             fontSize = 14.sp,
             textAlign = TextAlign.Center,
@@ -388,7 +388,7 @@ private fun Controls(controller: AppController, media: MediaState) {
         ) {
             CircleButton(
                 icon = Icons.Rounded.SkipPrevious,
-                contentDescription = "Предыдущий трек",
+                contentDescription = tr("Предыдущий трек", "Previous track"),
                 size = 54.dp,
                 enabled = now.hasTrack,
                 onClick = { controller.media.previous() },
@@ -396,7 +396,7 @@ private fun Controls(controller: AppController, media: MediaState) {
             Spacer(Modifier.width(22.dp))
             CircleButton(
                 icon = if (now.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                contentDescription = if (now.isPlaying) "Пауза" else "Играть",
+                contentDescription = if (now.isPlaying) tr("Пауза", "Pause") else tr("Играть", "Play"),
                 size = 74.dp,
                 filled = true,
                 iconSize = 32.dp,
@@ -406,7 +406,7 @@ private fun Controls(controller: AppController, media: MediaState) {
             Spacer(Modifier.width(22.dp))
             CircleButton(
                 icon = Icons.Rounded.SkipNext,
-                contentDescription = "Следующий трек",
+                contentDescription = tr("Следующий трек", "Next track"),
                 size = 54.dp,
                 enabled = now.hasTrack,
                 onClick = { controller.media.next() },
@@ -479,7 +479,7 @@ private fun RemotePlaybackBanner(device: String) {
                     fontWeight = FontWeight.SemiBold,
                 )
                 Text(
-                    text = "$device · управление с этого телефона может быть недоступно",
+                    text = tr("$device · управление с этого телефона может быть недоступно", "$device · controls from this phone may be unavailable"),
                     color = OnyxFaint,
                     fontSize = 11.sp,
                     lineHeight = 15.sp,
@@ -533,7 +533,7 @@ private fun BudsCard(
                     )
                     Text(
                         text = buildString {
-                            append("Подключено · базовое управление")
+                            append(tr("Подключено · базовое управление", "Connected · basic controls"))
                             if (activeBattery >= 0) append(" · $activeBattery%")
                         },
                         color = OnyxFaint,
@@ -543,8 +543,8 @@ private fun BudsCard(
             }
             Spacer(Modifier.height(12.dp))
             Text(
-                text = "Плеер, громкость и переключение вывода работают для любых наушников. " +
-                    "ANC и расширенное управление доступны только для Galaxy Buds.",
+                text = tr("Плеер, громкость и переключение вывода работают для любых наушников. " +
+                    "ANC и расширенное управление доступны только для Galaxy Buds.", "Player, volume and output switching work with any headphones. ANC and advanced controls are Galaxy Buds only."),
                 color = OnyxDim,
                 fontSize = 12.sp,
                 lineHeight = 17.sp,
@@ -569,7 +569,7 @@ private fun BudsCard(
             }
             Spacer(Modifier.height(4.dp))
             Text(
-                text = "Galaxy Buds: нажми ↻, чтобы открыть SPP-канал и включить ANC.",
+                text = tr("Galaxy Buds: нажми ↻, чтобы открыть SPP-канал и включить ANC.", "Galaxy Buds: tap ↻ to open the SPP channel and enable ANC."),
                 color = OnyxFaint,
                 fontSize = 11.sp,
             )
@@ -608,8 +608,8 @@ private fun BudsCard(
             )
             Spacer(Modifier.height(4.dp))
             Text(
-                text = "Автоподключение отключено: ONYX не будет пытаться сам, " +
-                    "пока ты не нажмёшь кнопку.",
+                text = tr("Автоподключение отключено: ONYX не будет пытаться сам, " +
+                    "пока ты не нажмёшь кнопку.", "Auto-connect is off: ONYX will not retry until you press the button."),
                 color = OnyxFaint,
                 fontSize = 11.sp,
                 lineHeight = 15.sp,
@@ -694,7 +694,7 @@ private fun QueueCard(
             }
             Spacer(Modifier.height(8.dp))
             Text(
-                text = "Подключи аккаунт, чтобы видеть очередь, повтор и обложки.",
+                text = tr("Подключи аккаунт, чтобы видеть очередь, повтор и обложки.", "Connect an account to see the queue, repeat and artwork."),
                 color = OnyxDim,
                 fontSize = 13.sp,
                 lineHeight = 18.sp,
@@ -749,7 +749,7 @@ private fun QueueCard(
         )
         Spacer(Modifier.height(12.dp))
         if (data.next.isEmpty()) {
-            Text("Очередь пуста", color = OnyxFaint, fontSize = 12.sp)
+            Text(tr("Очередь пуста", "Queue is empty"), color = OnyxFaint, fontSize = 12.sp)
             return@GlassCard
         }
         data.next.take(3).forEachIndexed { index, track ->

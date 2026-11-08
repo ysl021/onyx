@@ -38,6 +38,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -52,6 +53,9 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.onyx.AppController
 import app.onyx.audio.VisualizerController
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.drawscope.Stroke
+import app.onyx.ui.components.AsyncArt
 import app.onyx.ui.components.CircleButton
 import app.onyx.ui.components.GlassCard
 import app.onyx.ui.components.GlassPill
@@ -60,6 +64,7 @@ import app.onyx.ui.theme.OnyxDim
 import app.onyx.ui.theme.OnyxFaint
 import app.onyx.ui.theme.OnyxWhite
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.sin
 
 @Composable
@@ -167,9 +172,10 @@ fun VisualizerScreen(
                     wave = wave,
                     fft = fft,
                     fallbackPhase = phase,
+                    art = media.now.art ?: media.now.artUri,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(280.dp),
+                        .height(320.dp),
                 )
             }
 
@@ -214,46 +220,61 @@ private fun Spectrum(
     wave: FloatArray,
     fft: FloatArray,
     fallbackPhase: Float,
+    art: Any?,
     modifier: Modifier = Modifier,
 ) {
     val color = OnyxWhite
     val hasFft = fft.isNotEmpty() && fft.any { it > 0.02f }
     val hasWave = wave.isNotEmpty() && wave.any { abs(it) > 0.012f }
-    Canvas(modifier) {
-        val bars = 64
-        val w = size.width
-        val h = size.height
-        val mid = h * 0.52f
-        val step = w / bars
-        val barWidth = (step * 0.42f).coerceAtLeast(1.5f)
-        for (i in 0 until bars) {
-            val sample = when {
-                hasFft -> fft[(i * fft.size / bars).coerceIn(0, fft.size - 1)]
-                hasWave -> wave[(i * wave.size / bars).coerceIn(0, wave.size - 1)]
-                else -> sin(fallbackPhase + i * 0.42f).toFloat() * 0.55f
+    Box(modifier, contentAlignment = Alignment.Center) {
+        AsyncArt(
+            model = art,
+            modifier = Modifier
+                .size(136.dp)
+                .clip(CircleShape),
+        )
+        Canvas(Modifier.fillMaxSize()) {
+            val cx = size.width / 2f
+            val cy = size.height / 2f
+            val inner = size.minDimension * 0.235f
+            val maxLen = size.minDimension * 0.22f
+            val bars = 96
+            val twoPi = (Math.PI * 2).toFloat()
+            for (i in 0 until bars) {
+                val angle = -Math.PI.toFloat() / 2f + i * twoPi / bars
+                val sample = when {
+                    hasFft -> fft[(i * fft.size / bars).coerceIn(0, fft.size - 1)]
+                    hasWave -> wave[(i * wave.size / bars).coerceIn(0, wave.size - 1)]
+                    else -> sin(fallbackPhase + i * 0.42f).toFloat() * 0.55f
+                }
+                val amp = (abs(sample) * maxLen).coerceAtLeast(2f)
+                val dx = cos(angle)
+                val dy = sin(angle)
+                val start = Offset(cx + dx * inner, cy + dy * inner)
+                val end = Offset(cx + dx * (inner + amp), cy + dy * (inner + amp))
+                drawLine(
+                    color = color.copy(alpha = 0.10f),
+                    start = start,
+                    end = Offset(
+                        cx + dx * (inner + amp * 1.25f),
+                        cy + dy * (inner + amp * 1.25f),
+                    ),
+                    strokeWidth = 5f,
+                    cap = StrokeCap.Round,
+                )
+                drawLine(
+                    color = color.copy(alpha = 0.80f),
+                    start = start,
+                    end = end,
+                    strokeWidth = 2.2f,
+                    cap = StrokeCap.Round,
+                )
             }
-            val amp = (abs(sample) * h * 0.36f).coerceAtLeast(2.5f)
-            val x = i * step + step / 2f
-            drawLine(
-                color = color.copy(alpha = 0.10f),
-                start = Offset(x, mid - amp * 1.18f),
-                end = Offset(x, mid + amp * 1.18f),
-                strokeWidth = barWidth * 2.2f,
-                cap = StrokeCap.Round,
-            )
-            drawLine(
-                color = color.copy(alpha = 0.82f),
-                start = Offset(x, mid - amp),
-                end = Offset(x, mid + amp),
-                strokeWidth = barWidth,
-                cap = StrokeCap.Round,
+            drawCircle(
+                color = color.copy(alpha = 0.14f),
+                radius = inner,
+                style = Stroke(width = 1.2f),
             )
         }
-        drawLine(
-            color = color.copy(alpha = 0.16f),
-            start = Offset(0f, mid),
-            end = Offset(w, mid),
-            strokeWidth = 1f,
-        )
     }
 }

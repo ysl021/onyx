@@ -1,6 +1,6 @@
 package app.onyx.ui.theme
 
-import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
@@ -9,10 +9,13 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -190,35 +193,26 @@ fun OnyxTheme(
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
     }
     val target = if (dark) DarkOnyx else LightOnyx
-    val spec = tween<Color>(durationMillis = 420)
-    val black by animateColorAsState(target.black, spec, label = "themeBlack")
-    val deep by animateColorAsState(target.deep, spec, label = "themeDeep")
-    val surface by animateColorAsState(target.surface, spec, label = "themeSurface")
-    val elevated by animateColorAsState(target.elevated, spec, label = "themeElevated")
-    val white by animateColorAsState(target.white, spec, label = "themeWhite")
-    val dim by animateColorAsState(target.dim, spec, label = "themeDim")
-    val faint by animateColorAsState(target.faint, spec, label = "themeFaint")
-    val line by animateColorAsState(target.line, spec, label = "themeLine")
-    val lineStrong by animateColorAsState(target.lineStrong, spec, label = "themeLineStrong")
-    val accent by animateColorAsState(target.accent, spec, label = "themeAccent")
-    val glassTop by animateColorAsState(target.glassTop, spec, label = "themeGlassTop")
-    val glassBottom by animateColorAsState(target.glassBottom, spec, label = "themeGlassBottom")
-    val glassBorder by animateColorAsState(target.glassBorder, spec, label = "themeGlassBorder")
-
+    val progress = remember { Animatable(if (dark) 0f else 1f) }
+    LaunchedEffect(dark) {
+        progress.animateTo(if (dark) 0f else 1f, tween(380))
+    }
+    val t = progress.value
+    fun mix(a: Color, b: Color): Color = lerp(a, b, t)
     val palette = OnyxColors(
-        black = black,
-        deep = deep,
-        surface = surface,
-        elevated = elevated,
-        white = white,
-        dim = dim,
-        faint = faint,
-        line = line,
-        lineStrong = lineStrong,
-        accent = accent,
-        glassTop = glassTop,
-        glassBottom = glassBottom,
-        glassBorder = glassBorder,
+        black = mix(DarkOnyx.black, LightOnyx.black),
+        deep = mix(DarkOnyx.deep, LightOnyx.deep),
+        surface = mix(DarkOnyx.surface, LightOnyx.surface),
+        elevated = mix(DarkOnyx.elevated, LightOnyx.elevated),
+        white = mix(DarkOnyx.white, LightOnyx.white),
+        dim = mix(DarkOnyx.dim, LightOnyx.dim),
+        faint = mix(DarkOnyx.faint, LightOnyx.faint),
+        line = mix(DarkOnyx.line, LightOnyx.line),
+        lineStrong = mix(DarkOnyx.lineStrong, LightOnyx.lineStrong),
+        accent = mix(DarkOnyx.accent, LightOnyx.accent),
+        glassTop = mix(DarkOnyx.glassTop, LightOnyx.glassTop),
+        glassBottom = mix(DarkOnyx.glassBottom, LightOnyx.glassBottom),
+        glassBorder = mix(DarkOnyx.glassBorder, LightOnyx.glassBorder),
         isLight = target.isLight,
     )
 

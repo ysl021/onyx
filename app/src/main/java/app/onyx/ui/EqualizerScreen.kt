@@ -132,7 +132,7 @@ fun EqualizerScreen(
                     )
                     Text(
                         tr(
-                            "Авто-коррекция низа, середины и верха в пределах ±3 дБ",
+                            tr("Авто-коррекция низа, середины и верха в пределах ±3 дБ", "Auto-corrects low, mid and high within ±3 dB"),
                             "Auto-corrects low, mid and high within ±3 dB",
                         ),
                         color = OnyxFaint,
@@ -160,7 +160,7 @@ fun EqualizerScreen(
             Spacer(Modifier.height(6.dp))
             Text(
                 tr(
-                    "Работает через захват аудиопотока; на части Bluetooth-устройств может быть недоступен.",
+                    tr("Работает через захват аудиопотока; на части Bluetooth-устройств может быть недоступен.", "Uses audio capture; may be unavailable on some Bluetooth devices."),
                     "Uses audio capture; may be unavailable on some Bluetooth devices.",
                 ),
                 color = OnyxFaint,

@@ -382,6 +382,47 @@ fun AsyncArt(model: Any?, modifier: Modifier = Modifier) {
 }
 
 @Composable
+fun CustomBackdrop(
+    art: Any?,
+    blurPercent: Int,
+    modifier: Modifier = Modifier,
+) {
+    val palette = LocalOnyx.current
+    val base = palette.black
+    val radius = (blurPercent.coerceIn(0, 100) / 100f * 48f).dp
+    Box(modifier.fillMaxSize().background(base)) {
+        if (art != null) {
+            AsyncImage(
+                model = art,
+                contentDescription = null,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        scaleX = 1.04f
+                        scaleY = 1.04f
+                    }
+                    .blur(radius),
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                alpha = if (palette.isLight) 0.88f else 0.92f,
+            )
+        }
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            base.copy(alpha = 0.12f),
+                            base.copy(alpha = 0.28f),
+                            base.copy(alpha = 0.55f),
+                        ),
+                    ),
+                ),
+        )
+    }
+}
+
+@Composable
 fun BlurredBackdrop(
     art: Any?,
     modifier: Modifier = Modifier,

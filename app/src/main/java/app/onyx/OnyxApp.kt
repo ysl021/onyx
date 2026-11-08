@@ -32,6 +32,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.LibraryMusic
@@ -70,10 +71,12 @@ import app.onyx.ui.LocalAppLanguage
 import app.onyx.ui.tr
 import app.onyx.ui.LyricsScreen
 import app.onyx.ui.MusicScreen
+import app.onyx.ui.PlaylistsScreen
 import app.onyx.ui.QueueScreen
 import app.onyx.ui.SettingsScreen
 import app.onyx.ui.VisualizerScreen
 import app.onyx.ui.components.BlurredBackdrop
+import app.onyx.ui.components.CustomBackdrop
 import app.onyx.ui.components.GlassSurface
 import app.onyx.ui.theme.OnyxBlack
 import app.onyx.ui.theme.OnyxDim
@@ -82,7 +85,7 @@ import app.onyx.ui.theme.OnyxTheme
 import app.onyx.ui.theme.OnyxWhite
 import kotlinx.coroutines.delay
 
-private enum class Tab { Player, Lyrics, Queue, Music, Visualizer, Settings }
+private enum class Tab { Player, Lyrics, Queue, Playlists, Music, Visualizer, Settings }
 
 @Composable
 fun OnyxApp() {
@@ -106,6 +109,10 @@ fun OnyxApp() {
     var showIntro by rememberSaveable { mutableStateOf(true) }
     var lyricsFullscreen by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+    val spotifyConnected = prefs.spotifyRefresh.isNotBlank() || prefs.spotifyAccess.isNotBlank()
+    LaunchedEffect(spotifyConnected) {
+        if (!spotifyConnected && tab == Tab.Playlists) tab = Tab.Player
+    }
 
     LaunchedEffect(controller) {
         controller.messages.collect { msg ->
@@ -125,20 +132,24 @@ fun OnyxApp() {
 
     AppLanguageState.current = prefs.language
     val uiFontFamily = FontCatalog.family(context, prefs.uiFont)
+    val languageFade = remember { androidx.compose.animation.core.Animatable(1f) }
+    LaunchedEffect(prefs.language) {
+        languageFade.snapTo(0.86f)
+        languageFade.animateTo(1f, tween(180))
+    }
     OnyxTheme(prefs.themeMode, uiFontFamily) {
-        AnimatedContent(
-            targetState = prefs.language,
-            transitionSpec = {
-                fadeIn(tween(320)) togetherWith fadeOut(tween(220))
-            },
-            label = "language",
-        ) { lang ->
-            CompositionLocalProvider(LocalAppLanguage provides lang) {
-                Box(modifier = Modifier.fillMaxSize().background(OnyxBlack)) {
+        CompositionLocalProvider(LocalAppLanguage provides prefs.language) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(OnyxBlack)
+                    .graphicsLayer { alpha = languageFade.value },
+            ) {
                     val pageKey = when (tab) {
             Tab.Player -> "player"
             Tab.Lyrics -> "lyrics"
             Tab.Queue -> "queue"
+            Tab.Playlists -> "playlists"
             Tab.Music -> "music"
             Tab.Visualizer -> "visualizer"
             Tab.Settings -> "settings"
@@ -154,15 +165,17 @@ fun OnyxApp() {
             }.toMap()
         }
         val customBg = pageBackgrounds[pageKey]?.takeIf { it.exists() }
+        val blurMap = remember(prefs.pageBackgroundBlur) {
+            prefs.pageBackgroundBlur.split('\u001E').mapNotNull { record ->
+                if (record.isBlank()) return@mapNotNull null
+                val parts = record.split('\u001F', limit = 2)
+                val key = parts.getOrNull(0).orEmpty()
+                val value = parts.getOrNull(1)?.toIntOrNull() ?: 0
+                if (key.isBlank()) null else key to value
+            }.toMap()
+        }
         if (customBg != null) {
-            val f = (prefs.coverIntensity / 100f).coerceIn(0f, 1f)
-            BlurredBackdrop(
-                art = customBg,
-                artAlpha = 0.30f + 0.60f * f,
-                scrimTop = 0.86f - 0.34f * f,
-                scrimMid = 0.92f - 0.28f * f,
-                scrimBottom = 1f - 0.08f * f,
-            )
+            CustomBackdrop(art = customBg, blurPercent = blurMap[pageKey] ?: 0)
         } else if (prefs.coverBackdrop && pageCover) {
             val f = (prefs.coverIntensity / 100f).coerceIn(0f, 1f)
             BlurredBackdrop(
@@ -208,6 +221,11 @@ fun OnyxApp() {
                             controller = controller,
                             onOpenSettings = { tab = Tab.Settings },
                         )
+                        Tab.Playlists -> PlaylistsScreen(
+                            controller = controller,
+                            onBack = { tab = Tab.Queue },
+                            onOpenSettings = { tab = Tab.Settings },
+                        )
                         Tab.Music -> MusicScreen(controller = controller)
                         Tab.Visualizer -> VisualizerScreen(controller = controller)
                         Tab.Settings -> SettingsScreen(
@@ -232,6 +250,7 @@ fun OnyxApp() {
                             tab = it
                         },
                         art = media.now.art ?: media.now.artUri,
+                        spotifyConnected = spotifyConnected,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
@@ -265,7 +284,6 @@ fun OnyxApp() {
         if (showIntro) {
             IntroScreen(onFinish = { showIntro = false })
         }
-                }
             }
         }
     }
@@ -276,6 +294,7 @@ private fun BottomNav(
     tab: Tab,
     onSelect: (Tab) -> Unit,
     art: Any? = null,
+    spotifyConnected: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     GlassSurface(
@@ -313,6 +332,15 @@ private fun BottomNav(
                 modifier = Modifier.weight(1f),
                 onClick = { onSelect(Tab.Queue) },
             )
+            if (spotifyConnected) {
+                NavItem(
+                    icon = Icons.AutoMirrored.Rounded.PlaylistPlay,
+                    label = tr("Плейлист", "Playlist"),
+                    selected = tab == Tab.Playlists,
+                    modifier = Modifier.weight(1f),
+                    onClick = { onSelect(Tab.Playlists) },
+                )
+            }
             NavItem(
                 icon = Icons.Rounded.LibraryMusic,
                 label = tr("Музыка", "Music"),
@@ -387,12 +415,12 @@ private fun NavItem(
             icon,
             contentDescription = label,
             tint = fg,
-            modifier = Modifier.size(19.dp),
+            modifier = Modifier.size(18.dp),
         )
         Text(
             text = label,
             color = fg,
-            fontSize = 8.sp,
+            fontSize = 7.5.sp,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
             letterSpacing = 0.1.sp,
             maxLines = 1,

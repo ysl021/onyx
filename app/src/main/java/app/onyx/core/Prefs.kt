@@ -1,4 +1,4 @@
-package app.onyx.core
+﻿package app.onyx.core
 
 import android.content.Context
 import androidx.datastore.preferences.core.Preferences
@@ -43,8 +43,9 @@ data class PrefsData(
     val language: AppLanguage = AppLanguage.RU,
     val coverBackdrop: Boolean = true,
     val coverIntensity: Int = 60,
-    val coverPages: String = "player,lyrics,queue,music,visualizer,settings",
+    val coverPages: String = "player,lyrics,queue,playlists,music,visualizer,settings",
     val pageBackgrounds: String = "",
+    val pageBackgroundBlur: String = "",
     val eqEnabled: Boolean = false,
     val eqPreset: Int = 0,
     val eqLevels: String = "",
@@ -76,6 +77,7 @@ class Prefs(private val context: Context) {
         val coverIntensity = intPreferencesKey("cover_intensity")
         val coverPages = stringPreferencesKey("cover_pages")
         val pageBackgrounds = stringPreferencesKey("page_backgrounds")
+        val pageBackgroundBlur = stringPreferencesKey("page_background_blur")
         val eqEnabled = booleanPreferencesKey("eq_enabled")
         val eqPreset = intPreferencesKey("eq_preset")
         val eqLevels = stringPreferencesKey("eq_levels")
@@ -112,8 +114,9 @@ class Prefs(private val context: Context) {
         }.getOrDefault(AppLanguage.RU),
         coverBackdrop = this[K.coverBackdrop] ?: true,
         coverIntensity = this[K.coverIntensity] ?: 60,
-        coverPages = this[K.coverPages] ?: "player,lyrics,queue,music,visualizer,settings",
+        coverPages = this[K.coverPages] ?: "player,lyrics,queue,playlists,music,visualizer,settings",
         pageBackgrounds = this[K.pageBackgrounds] ?: "",
+        pageBackgroundBlur = this[K.pageBackgroundBlur] ?: "",
         eqEnabled = this[K.eqEnabled] ?: false,
         eqPreset = this[K.eqPreset] ?: 0,
         eqLevels = this[K.eqLevels] ?: "",
@@ -151,6 +154,7 @@ class Prefs(private val context: Context) {
     suspend fun setCoverIntensity(v: Int) = edit { it[K.coverIntensity] = v.coerceIn(0, 100) }
     suspend fun setCoverPages(v: String) = edit { it[K.coverPages] = v }
     suspend fun setPageBackgrounds(v: String) = edit { it[K.pageBackgrounds] = v }
+    suspend fun setPageBackgroundBlur(v: String) = edit { it[K.pageBackgroundBlur] = v }
     suspend fun setEq(enabled: Boolean, preset: Int, levels: String) = edit {
         it[K.eqEnabled] = enabled
         it[K.eqPreset] = preset
