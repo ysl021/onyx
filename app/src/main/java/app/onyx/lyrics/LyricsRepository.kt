@@ -4,6 +4,7 @@ import android.content.Context
 import app.onyx.core.Http
 import app.onyx.core.Prefs
 import app.onyx.media.NowPlaying
+import app.onyx.ui.tr
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -162,21 +163,21 @@ class LyricsRepository(
         )
         for ((name, provider) in providers) {
             val doc = runCatching { provider() }.getOrElse {
-                attempts += "$name: ошибка"
+                attempts += "$name: " + tr("ошибка", "error")
                 null
             }
             if (doc != null) {
                 found = doc
-                attempts += "$name: найдено"
+                attempts += "$name: " + tr("найдено", "found")
                 break
             }
-            if (attempts.none { it.startsWith("$name:") }) attempts += "$name: нет"
+            if (attempts.none { it.startsWith("$name:") }) attempts += "$name: " + tr("нет", "none")
         }
 
         if (found == null) {
             _state.value = LyricsState.Error(
-                "Текст не найден.\n" + attempts.joinToString(" · ") +
-                    "\nМожно указать название и исполнителя вручную.",
+                tr("Текст не найден.", "Lyrics not found.") + "\n" + attempts.joinToString(" · ") +
+                    "\n" + tr("Можно указать название и исполнителя вручную.", "You can enter the title and artist manually."),
             )
             return
         }

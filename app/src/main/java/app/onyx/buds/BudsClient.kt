@@ -8,6 +8,7 @@ import android.bluetooth.BluetoothSocket
 import android.content.Context
 import android.util.Log
 import app.onyx.BuildConfig
+import app.onyx.ui.tr
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -99,7 +100,7 @@ class BudsClient(
                     it.copy(
                         connected = false,
                         connecting = false,
-                        error = "Buds не найдены. Проверь сопряжение.",
+                        error = tr("Buds не найдены. Проверь сопряжение.", "Buds not found. Check pairing."),
                     )
                 }
                 return
@@ -286,14 +287,14 @@ class BudsClient(
                 }
             }
         }
-        throw lastError ?: IOException("Не удалось открыть SPP-канал")
+        throw lastError ?: IOException(tr("Не удалось открыть SPP-канал", "Could not open the SPP channel"))
     }
 
     private fun friendly(e: Exception): String = when {
-        e is SecurityException -> "Нет разрешения Bluetooth"
-        e.message?.contains("read failed", true) == true -> "Соединение потеряно"
-        e.message?.contains("socket", true) == true -> "Нет SPP-канала (занят Galaxy Wearable?)"
-        else -> "Нет связи с Buds"
+        e is SecurityException -> tr("Нет разрешения Bluetooth", "Bluetooth permission is missing")
+        e.message?.contains("read failed", true) == true -> tr("Соединение потеряно", "Connection lost")
+        e.message?.contains("socket", true) == true -> tr("Нет SPP-канала (занят Galaxy Wearable?)", "No SPP channel (is Galaxy Wearable using it?)")
+        else -> tr("Нет связи с Buds", "No connection to Buds")
     }
 
     companion object {

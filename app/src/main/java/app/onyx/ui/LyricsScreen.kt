@@ -9,6 +9,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
@@ -84,6 +85,7 @@ import app.onyx.lyrics.LyricsState
 import app.onyx.ui.components.BlurredBackdrop
 import app.onyx.ui.components.CircleButton
 import app.onyx.ui.components.GlassPill
+import app.onyx.ui.components.GlassSurface
 import app.onyx.ui.theme.OnyxDim
 import app.onyx.ui.theme.OnyxFaint
 import app.onyx.ui.theme.OnyxLine
@@ -196,6 +198,7 @@ fun LyricsScreen(
 
             if (!fullscreen) {
                 BottomBar(
+                    art = media.now.art ?: media.now.artUri,
                     fontSize = prefs.lyricFontSize,
                     karaoke = prefs.karaoke,
                     onKaraoke = { scratch.launch { controller.prefs.setKaraoke(!prefs.karaoke) } },
@@ -734,6 +737,7 @@ private fun activeLineIndex(doc: LyricsDoc, position: Long): Int {
 
 @Composable
 private fun BottomBar(
+    art: Any?,
     fontSize: Float,
     karaoke: Boolean,
     onKaraoke: () -> Unit,
@@ -743,12 +747,21 @@ private fun BottomBar(
     onOffset: (Long) -> Unit,
     onRetry: () -> Unit,
 ) {
-    Column(
+    GlassSurface(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 18.dp)
             .padding(top = 4.dp, bottom = 14.dp),
+        shape = RoundedCornerShape(26.dp),
+        strong = true,
+        art = art,
+        artBlur = 34.dp,
     ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 11.dp),
+        ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -798,6 +811,7 @@ private fun BottomBar(
                 onClick = { onOffset(0) },
             )
             GlassPill(text = "+0.1", selected = false, onClick = { onOffset(offsetMs + 100) })
+        }
         }
     }
 }

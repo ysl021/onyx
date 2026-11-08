@@ -34,6 +34,15 @@ data class LocalTrack(
     val artPath: String? = null,
     val folderUri: String = "",
     val folderName: String = "",
+    val custom: Boolean = false,
+)
+
+@Serializable
+data class TrackOverride(
+    val title: String? = null,
+    val artist: String? = null,
+    val album: String? = null,
+    val artPath: String? = null,
 )
 
 data class LibraryState(
@@ -60,13 +69,18 @@ class LocalLibrary(
     val state: StateFlow<LibraryState> = _state.asStateFlow()
 
     private var job: Job? = null
+    private var rawTracks: List<LocalTrack> = emptyList()
+    private var overrides: Map<String, TrackOverride> = emptyMap()
     private val artDir = File(context.cacheDir, "local_art").apply { mkdirs() }
+    private val customArtDir = File(context.filesDir, "local_art").apply { mkdirs() }
     private val cacheFile = File(context.filesDir, "local_library.json")
+    private val overridesFile = File(context.filesDir, "local_overrides.json")
 
     private data class PendingFile(val file: DocumentFile, val folder: LocalFolder)
 
     init {
         scope.launch {
+            overrides = readOverrides()
             val p = prefs.snapshot()
             _state.value = LibraryState(folders = p.localFolders)
             readCache()
@@ -91,12 +105,16 @@ class LocalLibrary(
             val p = prefs.snapshot()
             val merged = p.localFolders.filterNot { it.uri == uri }
             prefs.setLocalFolders(merged)
+            rawTracks = rawTracks.filterNot { it.folderUri == uri }
             _state.value = _state.value.copy(
                 folders = merged,
-                tracks = _state.value.tracks.filterNot { it.folderUri == uri },
+                tracks = rawTracks.map(::applyOverride),
             )
-            writeCache(merged, _state.value.tracks)
-            if (merged.isEmpty()) _state.value = LibraryState()
+            writeCache(merged, rawTracks)
+            if (merged.isEmpty()) {
+                rawTracks = emptyList()
+                _state.value = LibraryState()
+            }
         }
     }
 
@@ -105,6 +123,7 @@ class LocalLibrary(
         scope.launch {
             prefs.clearLocalFolder()
             cacheFile.delete()
+            rawTracks = emptyList()
             _state.value = LibraryState()
         }
     }
@@ -148,10 +167,11 @@ class LocalLibrary(
             val sorted = tracks
                 .distinctBy { it.id }
                 .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
+            rawTracks = sorted
             _state.value = _state.value.copy(
                 scanning = false,
                 progress = 100,
-                tracks = sorted,
+                tracks = sorted.map(::applyOverride),
                 error = if (sorted.isEmpty()) "В выбранных папках не найдено аудиофайлов." else null,
             )
             writeCache(folders, sorted)
@@ -217,14 +237,91 @@ class LocalLibrary(
         }
     }
 
+    fun updateTrack(
+        id: String,
+        title: String,
+        artist: String,
+        album: String,
+        artUri: Uri? = null,
+    ) {
+        scope.launch {
+            val existing = overrides[id] ?: TrackOverride()
+            val artPath = if (artUri != null) copyArt(id, artUri) ?: existing.artPath else existing.artPath
+            val next = existing.copy(
+                title = title.trim().ifBlank { null },
+                artist = artist.trim(),
+                album = album.trim(),
+                artPath = artPath,
+            )
+            overrides = overrides + (id to next)
+            writeOverrides()
+            publishTracks()
+        }
+    }
+
+    fun resetTrack(id: String) {
+        scope.launch {
+            val art = overrides[id]?.artPath
+            if (art != null && art.startsWith(customArtDir.absolutePath)) {
+                runCatching { File(art).delete() }
+            }
+            overrides = overrides - id
+            writeOverrides()
+            publishTracks()
+        }
+    }
+
+    private fun copyArt(id: String, uri: Uri): String? = runCatching {
+        val f = File(customArtDir, "${id}_custom.jpg")
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            f.outputStream().use { out -> input.copyTo(out) }
+        } ?: return@runCatching null
+        if (f.length() <= 0L) return@runCatching null
+        f.absolutePath
+    }.getOrNull()
+
+    private fun publishTracks() {
+        val current = _state.value
+        val shown = rawTracks
+            .map(::applyOverride)
+            .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
+        _state.value = current.copy(tracks = shown)
+        writeCache(current.folders, rawTracks)
+    }
+
+    private fun applyOverride(track: LocalTrack): LocalTrack {
+        val o = overrides[track.id] ?: return track
+        return track.copy(
+            title = o.title ?: track.title,
+            artist = o.artist ?: track.artist,
+            album = o.album ?: track.album,
+            artPath = o.artPath ?: track.artPath,
+            custom = true,
+        )
+    }
+
+    private fun readOverrides(): Map<String, TrackOverride> {
+        if (!overridesFile.exists()) return emptyMap()
+        return runCatching {
+            json.decodeFromString<Map<String, TrackOverride>>(overridesFile.readText())
+        }.getOrDefault(emptyMap())
+    }
+
+    private fun writeOverrides() {
+        runCatching {
+            overridesFile.writeText(json.encodeToString(overrides))
+        }
+    }
+
     private fun readCache() {
         if (!cacheFile.exists()) return
         runCatching {
             val cache = json.decodeFromString<LibraryCache>(cacheFile.readText())
             if (cache.tracks.isNotEmpty()) {
+                rawTracks = cache.tracks
                 _state.value = _state.value.copy(
                     folders = _state.value.folders.ifEmpty { cache.folders },
-                    tracks = cache.tracks,
+                    tracks = cache.tracks.map(::applyOverride),
                 )
             }
         }

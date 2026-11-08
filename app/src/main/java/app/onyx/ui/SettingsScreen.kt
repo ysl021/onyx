@@ -204,7 +204,7 @@ fun SettingsScreen(
                     letterSpacing = (-0.5).sp,
                 )
                 Text(
-                    text = "ONYX · v0.5",
+                    text = "ONYX · v0.5.1",
                     color = OnyxFaint,
                     fontSize = 10.sp,
                     letterSpacing = 1.4.sp,

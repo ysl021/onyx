@@ -5,6 +5,7 @@ import android.media.audiofx.Equalizer
 import android.media.audiofx.Visualizer
 import androidx.core.content.ContextCompat
 import app.onyx.core.Prefs
+import app.onyx.ui.tr
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -91,7 +92,7 @@ class SoundEffects(
             equalizer = null
             _state.value = EqState(
                 available = false,
-                error = "Эквалайзер недоступен на этом устройстве: ${t.message ?: t.javaClass.simpleName}",
+                error = tr("Эквалайзер недоступен на этом устройстве", "Equalizer is unavailable on this device") + ": ${t.message ?: t.javaClass.simpleName}",
             )
         }
     }
@@ -163,7 +164,7 @@ class SoundEffects(
         ) {
             _state.value = _state.value.copy(
                 auto = false,
-                error = "Для Auto-EQ нужен доступ к микрофону.",
+                error = tr("Для Auto-EQ нужен доступ к микрофону.", "Auto-EQ needs microphone access."),
             )
             return
         }
@@ -199,7 +200,7 @@ class SoundEffects(
         } catch (t: Throwable) {
             _state.value = _state.value.copy(
                 auto = false,
-                error = "Auto-EQ недоступен: ${t.message ?: t.javaClass.simpleName}",
+                error = tr("Auto-EQ недоступен", "Auto-EQ is unavailable") + ": ${t.message ?: t.javaClass.simpleName}",
             )
         }
     }

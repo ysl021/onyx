@@ -27,16 +27,20 @@ android {
         applicationId = "app.onyx"
         minSdk = 31
         targetSdk = 35
-        versionCode = 5
-        versionName = "0.5.0"
+        versionCode = 6
+        versionName = "0.5.1"
 
         buildConfigField("String", "SPICY_KEY", "\"${secret("SPICY_KEY")}\"")
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            // Personal sideload build: keep the debug key so updates install over the
+            // existing APK without uninstalling. Keys are never stored in this repo.
+            signingConfig = signingConfigs.getByName("debug")
         }
     }
 

@@ -1,4 +1,4 @@
-package app.onyx.ui
+﻿package app.onyx.ui
 
 import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -29,10 +29,14 @@ import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SkipNext
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -60,6 +64,7 @@ import app.onyx.ui.components.SectionLabel
 import app.onyx.ui.theme.OnyxDim
 import app.onyx.ui.theme.OnyxFaint
 import app.onyx.ui.theme.OnyxLine
+import app.onyx.ui.theme.OnyxSurface
 import app.onyx.ui.theme.OnyxWhite
 import java.io.File
 
@@ -73,6 +78,7 @@ fun MusicScreen(
     val playback by controller.localPlayer.state.collectAsStateWithLifecycle()
     var query by remember { mutableStateOf("") }
     var selectedFolder by remember { mutableStateOf<String?>(null) }
+    var editingTrack by remember { mutableStateOf<LocalTrack?>(null) }
 
     val folders = library.folders
     val filtered = remember(library.tracks, query, selectedFolder) {
@@ -103,7 +109,7 @@ fun MusicScreen(
             val name = runCatching { DocumentFile.fromTreeUri(context, uri)?.name }
                 .getOrNull()
                 ?: uri.lastPathSegment
-                ?: "Папка"
+                ?: tr("Папка", "Folder")
             controller.localLibrary.addFolder(uri, name)
         }
     }
@@ -131,7 +137,7 @@ fun MusicScreen(
                             else -> "${folders.size} ${tr("папки", "folders")}"
                         }
                     } else {
-                        folders.firstOrNull { it.uri == selectedFolder }?.name ?: "Папка"
+                        folders.firstOrNull { it.uri == selectedFolder }?.name ?: tr("Папка", "Folder")
                     },
                     color = OnyxFaint,
                     fontSize = 10.sp,
@@ -189,7 +195,7 @@ fun MusicScreen(
             )
             folders.forEach { folder ->
                 GlassPill(
-                    text = folder.name.ifBlank { "Папка" },
+                    text = folder.name.ifBlank { tr("Папка", "Folder") },
                     selected = selectedFolder == folder.uri,
                     onClick = { selectedFolder = folder.uri },
                 )
@@ -250,13 +256,14 @@ fun MusicScreen(
                     active = playback.current?.id == track.id,
                     playing = playback.current?.id == track.id && playback.isPlaying,
                     onClick = { controller.localPlayer.play(track, filtered) },
+                    onEdit = { editingTrack = track },
                 )
             }
             if (!library.scanning && filtered.isEmpty()) {
                 item {
                     Text(
                         if (query.isBlank()) tr("В папке пока нет треков.", "No tracks in this folder.")
-                        else tr(tr("Ничего не найдено.", "Nothing found."), "Nothing found."),
+                        else tr("Ничего не найдено.", "Nothing found."),
                         color = OnyxFaint,
                         fontSize = 11.sp,
                         modifier = Modifier.padding(vertical = 12.dp),
@@ -282,6 +289,21 @@ fun MusicScreen(
             )
         }
     }
+
+    editingTrack?.let { track ->
+        TrackEditDialog(
+            track = track,
+            onDismiss = { editingTrack = null },
+            onSave = { title, artist, album, artUri ->
+                controller.localLibrary.updateTrack(track.id, title, artist, album, artUri)
+                editingTrack = null
+            },
+            onReset = {
+                controller.localLibrary.resetTrack(track.id)
+                editingTrack = null
+            },
+        )
+    }
 }
 
 @Composable
@@ -290,6 +312,7 @@ private fun TrackRow(
     active: Boolean,
     playing: Boolean,
     onClick: () -> Unit,
+    onEdit: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -336,6 +359,17 @@ private fun TrackRow(
                 contentDescription = null,
                 tint = OnyxWhite,
                 modifier = Modifier.size(16.dp),
+            )
+        }
+        IconButton(
+            onClick = onEdit,
+            modifier = Modifier.size(32.dp),
+        ) {
+            Icon(
+                Icons.Rounded.Edit,
+                contentDescription = tr("Изменить трек", "Edit track"),
+                tint = if (track.custom) OnyxWhite.copy(alpha = 0.85f) else OnyxFaint,
+                modifier = Modifier.size(15.dp),
             )
         }
     }
@@ -397,6 +431,107 @@ private fun MiniPlayer(
             )
         }
     }
+}
+
+@Composable
+private fun TrackEditDialog(
+    track: LocalTrack,
+    onDismiss: () -> Unit,
+    onSave: (String, String, String, android.net.Uri?) -> Unit,
+    onReset: () -> Unit,
+) {
+    var title by remember(track.id) { mutableStateOf(track.title) }
+    var artist by remember(track.id) { mutableStateOf(track.artist) }
+    var album by remember(track.id) { mutableStateOf(track.album) }
+    var pickedArt by remember(track.id) { mutableStateOf<android.net.Uri?>(null) }
+    val artPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri -> if (uri != null) pickedArt = uri }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = OnyxSurface,
+        title = {
+            Text(
+                tr("Изменить трек", "Edit track"),
+                color = OnyxWhite,
+                fontWeight = FontWeight.Bold,
+            )
+        },
+        text = {
+            Column {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(64.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(OnyxWhite.copy(alpha = 0.06f)),
+                    ) {
+                        AsyncArt(
+                            model = pickedArt ?: track.artPath?.let { File(it) },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    GlassPill(
+                        text = tr("Обложка", "Cover"),
+                        selected = pickedArt != null,
+                        onClick = { artPicker.launch(arrayOf("image/*")) },
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                EditField(tr("Название", "Title"), title) { title = it }
+                EditField(tr("Исполнитель", "Artist"), artist) { artist = it }
+                EditField(tr("Альбом", "Album"), album) { album = it }
+                if (track.custom) {
+                    TextButton(onClick = onReset) {
+                        Text(tr("Сбросить изменения", "Reset changes"), color = OnyxDim, fontSize = 12.sp)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSave(title, artist, album, pickedArt) },
+                enabled = title.isNotBlank(),
+            ) {
+                Text(tr("Сохранить", "Save"), color = OnyxWhite, fontWeight = FontWeight.SemiBold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(tr("Отмена", "Cancel"), color = OnyxDim)
+            }
+        },
+    )
+}
+
+@Composable
+private fun EditField(
+    label: String,
+    value: String,
+    onChange: (String) -> Unit,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onChange,
+        label = { Text(label, color = OnyxFaint, fontSize = 11.sp) },
+        singleLine = true,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 6.dp),
+        textStyle = androidx.compose.ui.text.TextStyle(color = OnyxWhite, fontSize = 13.sp),
+        shape = RoundedCornerShape(12.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = OnyxLine,
+            unfocusedBorderColor = OnyxLine,
+            focusedContainerColor = Color.Transparent,
+            unfocusedContainerColor = Color.Transparent,
+            cursorColor = OnyxWhite,
+            focusedLabelColor = OnyxFaint,
+            unfocusedLabelColor = OnyxFaint,
+        ),
+    )
 }
 
 private fun fmtLocal(ms: Long): String {

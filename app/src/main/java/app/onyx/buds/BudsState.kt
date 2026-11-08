@@ -1,5 +1,7 @@
 package app.onyx.buds
 
+import app.onyx.ui.tr
+
 data class BudsState(
     val connected: Boolean = false,
     val connecting: Boolean = false,
@@ -21,7 +23,7 @@ data class BudsState(
             MODE_ANC -> "ANC"
             MODE_AMBIENT -> "Ambient"
             MODE_ADAPTIVE -> "Adaptive"
-            else -> "Выкл"
+            else -> tr("Выкл", "Off")
         }
 
     companion object {

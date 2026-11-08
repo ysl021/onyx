@@ -2,6 +2,7 @@ package app.onyx.audio
 
 import android.content.Context
 import android.media.audiofx.Visualizer
+import app.onyx.ui.tr
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -88,8 +89,8 @@ class VisualizerController(context: Context) {
             _error.value = null
         } catch (t: Throwable) {
             _error.value = when (t) {
-                is SecurityException -> "Нужно разрешение на микрофон (Audio Visualizer)."
-                else -> "Визуализатор недоступен: ${t.message ?: t.javaClass.simpleName}"
+                is SecurityException -> tr("Нужно разрешение на микрофон (Audio Visualizer).", "Microphone permission is required (Audio Visualizer).")
+                else -> tr("Визуализатор недоступен", "Visualizer is unavailable") + ": ${t.message ?: t.javaClass.simpleName}"
             }
             visualizer = null
         }

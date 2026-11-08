@@ -12,6 +12,7 @@ import android.os.IBinder
 import android.os.Looper
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
+import app.onyx.ui.tr
 import app.onyx.MainActivity
 import app.onyx.R
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -93,8 +94,8 @@ class BudsService : Service() {
         val nm = getSystemService(NotificationManager::class.java) ?: return
         if (nm.getNotificationChannel(CHANNEL) == null) {
             nm.createNotificationChannel(
-                NotificationChannel(CHANNEL, "ONYX · наушники", NotificationManager.IMPORTANCE_LOW).apply {
-                    description = "Состояние наушников и шумоподавления"
+                NotificationChannel(CHANNEL, tr("ONYX · наушники", "ONYX · headphones"), NotificationManager.IMPORTANCE_LOW).apply {
+                    description = tr("Состояние наушников и шумоподавления", "Headphone and noise control state")
                     setShowBadge(false)
                 },
             )
@@ -105,13 +106,13 @@ class BudsService : Service() {
         val text = when {
             st.connected -> buildString {
                 append(st.modeName)
-                if (st.oneEar) append(" · одно ухо")
+                if (st.oneEar) append(tr(" · одно ухо", " · one ear"))
                 if (st.batteryL >= 0) append(" · L ${st.batteryL}%")
                 if (st.batteryR >= 0) append(" · R ${st.batteryR}%")
-                if (st.batteryCase >= 0) append(" · кейс ${st.batteryCase}%")
+                if (st.batteryCase >= 0) append(tr(" · кейс ", " · case ") + "${st.batteryCase}%")
             }
-            st.connecting -> "Подключение к наушникам…"
-            else -> st.error ?: "Ожидание наушников"
+            st.connecting -> tr("Подключение к наушникам…", "Connecting to headphones…")
+            else -> st.error ?: tr("Ожидание наушников", "Waiting for headphones")
         }
         val pi = PendingIntent.getActivity(
             this,

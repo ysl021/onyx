@@ -14,7 +14,9 @@ Galaxy Buds 3 Pro (шумодав, ANC на одно ухо, батареи), д
 - **Медиа**: play/pause, следующий/предыдущий, перемотка, прогресс, обложка, трек/артист/альбом.
   Работает с любым плеером через `MediaSessionManager` (Spotify, YouTube Music, локальные плееры).
 - **Локальная музыка**: несколько папок через SAF, чипы «Все / Папка 1 / …», сканирование,
-  обложки, поиск, очередь, фоновое воспроизведение через Media3/ExoPlayer.
+  обложки, поиск, очередь, фоновое воспроизведение через Media3/ExoPlayer. Название,
+  исполнитель, альбом и обложку любого трека можно переопределить (карандаш у строки);
+  правки хранятся в `local_overrides.json` и не меняют исходный файл.
 - **Вывод звука**: переключение активного маршрута через `MediaRouter2.transferTo`.
 - **Наушники**: Galaxy Buds (ANC/Ambient/Adaptive, одно ухо, батареи) и любые другие
   Bluetooth-наушники с именем/статусом/зарядом. Автоподключения к SPP нет.
@@ -59,6 +61,14 @@ $env:JAVA_HOME="C:\Program Files\Eclipse Adoptium\jdk-17.0.21.9-hotspot"
 ```
 
 APK: `app\build\outputs\apk\debug\app-debug.apk`
+
+Релизная сборка (R8 + shrinkResources, подпись локальным debug-ключом для установки поверх):
+
+```powershell
+.\gradlew.bat assembleRelease
+```
+
+APK: `app\build\outputs\apk\release\app-release.apk`. Ключи в репозиторий не попадают.
 
 Установка:
 
