@@ -107,7 +107,7 @@ fun GlassSurface(
         Modifier
     }
     Box(modifier = modifier.clip(shape).then(haze)) {
-        if (art != null && hazeState == null) {
+        if (art != null) {
             AsyncImage(
                 model = art,
                 contentDescription = null,
@@ -457,7 +457,7 @@ fun AmbientBackdrop(modifier: Modifier = Modifier) {
                         listOf(
                             base,
                             base,
-                            Color.White.copy(alpha = if (palette.isLight) 0.10f else 0.035f),
+                            Color.White.copy(alpha = if (palette.isLight) 0.16f else 0.08f),
                         ),
                     ),
                 )

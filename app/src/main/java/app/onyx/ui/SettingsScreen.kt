@@ -84,6 +84,7 @@ import app.onyx.ui.components.OnyxSwitch
 import app.onyx.ui.components.SectionLabel
 import app.onyx.ui.theme.OnyxDim
 import app.onyx.ui.theme.OnyxFaint
+import app.onyx.ui.theme.LocalOnyx
 import app.onyx.ui.theme.OnyxLine
 import app.onyx.ui.theme.OnyxSurface
 import app.onyx.ui.theme.OnyxWhite
@@ -189,7 +190,7 @@ fun SettingsScreen(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 18.dp)
-            .padding(bottom = 20.dp),
+            .padding(bottom = 132.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         Row(
@@ -215,7 +216,7 @@ fun SettingsScreen(
                     letterSpacing = (-0.5).sp,
                 )
                 Text(
-                    text = "ONYX · v0.6.3",
+                    text = "ONYX · v0.6.5",
                     color = OnyxFaint,
                     fontSize = 10.sp,
                     letterSpacing = 1.4.sp,
@@ -999,13 +1000,45 @@ private fun AppearanceSection(
             lineHeight = 15.sp,
         )
         Spacer(Modifier.height(10.dp))
-        GlassPill(
-            text = tr("Стандартная тема", "Original theme"),
-            selected = prefs.customThemeId.isBlank(),
-            onClick = {
-                scope.launch { controller.prefs.setCustomThemeId("") }
-            },
-        )
+        val builtIn = LocalOnyx.current
+        val builtInActive = prefs.customThemeId.isBlank()
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .clickable {
+                    scope.launch { controller.prefs.setCustomThemeId("") }
+                }
+                .padding(vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                listOf(builtIn.black, builtIn.surface, builtIn.accent).forEach { c ->
+                    Box(
+                        Modifier
+                            .size(18.dp)
+                            .clip(CircleShape)
+                            .background(c),
+                    )
+                }
+            }
+            Spacer(Modifier.width(10.dp))
+            Text(
+                tr("Стандартная тема", "Original theme"),
+                color = if (builtInActive) OnyxWhite else OnyxDim,
+                fontSize = 13.sp,
+                fontWeight = if (builtInActive) FontWeight.SemiBold else FontWeight.Normal,
+                modifier = Modifier.weight(1f),
+            )
+            if (builtInActive) {
+                Icon(
+                    Icons.Rounded.Check,
+                    contentDescription = null,
+                    tint = OnyxWhite,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+        }
         customThemes.forEach { theme ->
             val colors = remember(theme) { theme.toOnyxColors() }
             val active = prefs.customThemeId == theme.id

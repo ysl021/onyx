@@ -1,4 +1,4 @@
-package app.onyx.ui
+﻿package app.onyx.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -126,7 +126,7 @@ fun PlaylistsScreen(
         if (selected == null) {
             LazyColumn(
                 modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(18.dp),
+                contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 132.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 items(playlists, key = { it.id }) { playlist ->
@@ -194,7 +194,7 @@ fun PlaylistsScreen(
             val current = media.now.spotifyTrackId
             LazyColumn(
                 modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(18.dp),
+                contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 18.dp, bottom = 132.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 item {

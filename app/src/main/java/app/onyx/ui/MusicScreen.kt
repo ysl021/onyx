@@ -252,7 +252,7 @@ fun MusicScreen(
 
         LazyColumn(
             modifier = Modifier.weight(1f),
-            contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 4.dp, bottom = 12.dp),
+            contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 4.dp, bottom = 132.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             items(filtered, key = { it.id }) { track ->
@@ -286,12 +286,14 @@ fun MusicScreen(
         }
 
         playback.current?.let { current ->
-            MiniPlayer(
-                track = current,
-                playing = playback.isPlaying,
-                onToggle = { controller.localPlayer.toggle() },
-                onNext = { controller.localPlayer.next() },
-            )
+            Box(Modifier.padding(bottom = 104.dp)) {
+                MiniPlayer(
+                    track = current,
+                    playing = playback.isPlaying,
+                    onToggle = { controller.localPlayer.toggle() },
+                    onNext = { controller.localPlayer.next() },
+                )
+            }
         }
     }
 

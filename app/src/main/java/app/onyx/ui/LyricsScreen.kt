@@ -165,7 +165,7 @@ fun LyricsScreen(
             Column(
                 Modifier
                     .fillMaxSize()
-                    .padding(bottom = if (fullscreen) 0.dp else 84.dp),
+                    .padding(bottom = if (fullscreen) 0.dp else 150.dp),
             ) {
                 if (!fullscreen) {
                     TopBar(
@@ -881,7 +881,7 @@ private fun BottomBar(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 18.dp)
-            .padding(top = 4.dp, bottom = 4.dp),
+            .padding(top = 4.dp, bottom = 104.dp),
         shape = RoundedCornerShape(26.dp),
         strong = true,
         art = art,

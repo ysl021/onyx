@@ -117,7 +117,7 @@ fun VisualizerScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(horizontal = 20.dp)
-                .padding(top = 16.dp, bottom = 16.dp),
+                .padding(top = 16.dp, bottom = 112.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(

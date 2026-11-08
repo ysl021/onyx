@@ -136,7 +136,7 @@ fun HomeScreen(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 18.dp)
-                .padding(top = 16.dp, bottom = 20.dp),
+                .padding(top = 16.dp, bottom = 132.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Header()
