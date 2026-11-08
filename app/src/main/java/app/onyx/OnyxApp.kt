@@ -209,7 +209,7 @@ fun OnyxApp() {
                         modifier = Modifier
                             .fillMaxSize()
                             .statusBarsPadding()
-                            .padding(bottom = 92.dp),
+                            .padding(bottom = 124.dp),
                     ) {
                         AnimatedContent(
                             targetState = tab,

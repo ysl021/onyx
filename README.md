@@ -6,8 +6,11 @@ Galaxy Buds 3 Pro (шумодав, ANC на одно ухо, батареи), д
 
 Чёрно-белый интерфейс, стекло, крупная типографика, OLED-фон, тёмная и светлая темы.
 
-Репозиторий: [ysl021/onyx](https://github.com/ysl021/onyx) (private).
+Репозиторий: [ysl021/onyx](https://github.com/ysl021/onyx) (public, GPLv3).
 Релизы: [ysl021/onyx/releases](https://github.com/ysl021/onyx/releases).
+
+Промо-видео: [promo/onyx-teaser.mp4](promo/onyx-teaser.mp4) — вертикальный тизер 1080×1920
+для Telegram и GitHub Releases.
 
 ## Что уже умеет
 

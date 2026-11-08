@@ -72,18 +72,19 @@ fun GlassSurface(
 ) {
     val palette = LocalOnyx.current
     val base = if (palette.isLight) Color.Black else Color.White
+    val hazeFactor = if (hazeState != null) 0.55f else 1f
     val top = when {
         palette.isLight && strong -> 0.07f
         palette.isLight -> 0.045f
         strong -> 0.16f
         else -> 0.085f
-    }
+    } * hazeFactor
     val bottom = when {
         palette.isLight && strong -> 0.035f
         palette.isLight -> 0.02f
         strong -> 0.06f
         else -> 0.03f
-    }
+    } * hazeFactor
     val border = when {
         palette.isLight && strong -> 0.10f
         palette.isLight -> 0.07f
@@ -95,8 +96,8 @@ fun GlassSurface(
             state = hazeState,
             shape = shape,
             style = HazeStyle(
-                tint = base.copy(alpha = if (palette.isLight) 0.14f else 0.10f),
-                blurRadius = 26.dp,
+                tint = base.copy(alpha = if (palette.isLight) 0.05f else 0.035f),
+                blurRadius = 34.dp,
                 noiseFactor = 0.03f,
             ),
         )
