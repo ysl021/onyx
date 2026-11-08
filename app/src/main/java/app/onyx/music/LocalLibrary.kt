@@ -7,6 +7,7 @@ import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import app.onyx.core.LocalFolder
 import app.onyx.core.Prefs
+import app.onyx.ui.tr
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -148,7 +149,7 @@ class LocalLibrary(
                 }
                 if (root == null || !root.exists()) {
                     _state.value = _state.value.copy(
-                        error = "Нет доступа к папке «${folder.name}». Добавь её заново.",
+                        error = tr("Нет доступа к папке", "No access to folder") + " «${folder.name}». " + tr("Добавь её заново.", "Add it again."),
                     )
                     continue
                 }
@@ -172,7 +173,7 @@ class LocalLibrary(
                 scanning = false,
                 progress = 100,
                 tracks = sorted.map(::applyOverride),
-                error = if (sorted.isEmpty()) "В выбранных папках не найдено аудиофайлов." else null,
+                error = if (sorted.isEmpty()) tr("В выбранных папках не найдено аудиофайлов.", "No audio files found in the selected folders.") else null,
             )
             writeCache(folders, sorted)
         }

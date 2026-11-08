@@ -41,6 +41,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -56,16 +57,19 @@ import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.onyx.AppController
 import app.onyx.music.LocalTrack
+import app.onyx.music.TagWriter
 import app.onyx.ui.components.AsyncArt
 import app.onyx.ui.components.CircleButton
 import app.onyx.ui.components.GlassCard
 import app.onyx.ui.components.GlassPill
+import app.onyx.ui.components.OnyxSwitch
 import app.onyx.ui.components.SectionLabel
 import app.onyx.ui.theme.OnyxDim
 import app.onyx.ui.theme.OnyxFaint
 import app.onyx.ui.theme.OnyxLine
 import app.onyx.ui.theme.OnyxSurface
 import app.onyx.ui.theme.OnyxWhite
+import kotlinx.coroutines.launch
 import java.io.File
 
 @Composable
@@ -79,6 +83,7 @@ fun MusicScreen(
     var query by remember { mutableStateOf("") }
     var selectedFolder by remember { mutableStateOf<String?>(null) }
     var editingTrack by remember { mutableStateOf<LocalTrack?>(null) }
+    val scope = rememberCoroutineScope()
 
     val folders = library.folders
     val filtered = remember(library.tracks, query, selectedFolder) {
@@ -294,9 +299,35 @@ fun MusicScreen(
         TrackEditDialog(
             track = track,
             onDismiss = { editingTrack = null },
-            onSave = { title, artist, album, artUri ->
+            onSave = { title, artist, album, artUri, writeTags ->
                 controller.localLibrary.updateTrack(track.id, title, artist, album, artUri)
                 editingTrack = null
+                if (writeTags) {
+                    scope.launch {
+                        val name = runCatching {
+                            DocumentFile.fromSingleUri(context, android.net.Uri.parse(track.uri))?.name
+                        }.getOrNull() ?: track.uri.substringAfterLast('/')
+                        val result = TagWriter.write(
+                            context = context,
+                            uri = android.net.Uri.parse(track.uri),
+                            displayName = name,
+                            title = title,
+                            artist = artist,
+                            album = album,
+                            artUri = artUri,
+                        )
+                        controller.toast(
+                            if (result.ok) {
+                                tr("Теги записаны в файл", "Tags written to the file")
+                            } else {
+                                tr(
+                                    "Сохранено в ONYX, файл не изменён",
+                                    "Saved in ONYX, file unchanged",
+                                )
+                            },
+                        )
+                    }
+                }
             },
             onReset = {
                 controller.localLibrary.resetTrack(track.id)
@@ -437,13 +468,14 @@ private fun MiniPlayer(
 private fun TrackEditDialog(
     track: LocalTrack,
     onDismiss: () -> Unit,
-    onSave: (String, String, String, android.net.Uri?) -> Unit,
+    onSave: (String, String, String, android.net.Uri?, Boolean) -> Unit,
     onReset: () -> Unit,
 ) {
     var title by remember(track.id) { mutableStateOf(track.title) }
     var artist by remember(track.id) { mutableStateOf(track.artist) }
     var album by remember(track.id) { mutableStateOf(track.album) }
     var pickedArt by remember(track.id) { mutableStateOf<android.net.Uri?>(null) }
+    var writeTags by remember(track.id) { mutableStateOf(true) }
     val artPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument(),
     ) { uri -> if (uri != null) pickedArt = uri }
@@ -483,6 +515,30 @@ private fun TrackEditDialog(
                 EditField(tr("Название", "Title"), title) { title = it }
                 EditField(tr("Исполнитель", "Artist"), artist) { artist = it }
                 EditField(tr("Альбом", "Album"), album) { album = it }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            tr("Записать в файл", "Write to the file"),
+                            color = OnyxWhite,
+                            fontSize = 13.sp,
+                        )
+                        Text(
+                            tr(
+                                "Изменит теги и обложку самого аудиофайла",
+                                "Changes tags and cover inside the audio file",
+                            ),
+                            color = OnyxFaint,
+                            fontSize = 10.sp,
+                            lineHeight = 14.sp,
+                        )
+                    }
+                    OnyxSwitch(checked = writeTags, onCheckedChange = { writeTags = it })
+                }
                 if (track.custom) {
                     TextButton(onClick = onReset) {
                         Text(tr("Сбросить изменения", "Reset changes"), color = OnyxDim, fontSize = 12.sp)
@@ -492,7 +548,7 @@ private fun TrackEditDialog(
         },
         confirmButton = {
             TextButton(
-                onClick = { onSave(title, artist, album, pickedArt) },
+                onClick = { onSave(title, artist, album, pickedArt, writeTags) },
                 enabled = title.isNotBlank(),
             ) {
                 Text(tr("Сохранить", "Save"), color = OnyxWhite, fontWeight = FontWeight.SemiBold)

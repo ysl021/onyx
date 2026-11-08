@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "id": "midnight",
+  "name": "Midnight",
+  "light": false,
+  "background": "#050A18",
+  "surface": "#0B1326",
+  "text": "#EAF0FF",
+  "accent": "#6FA8FF"
+}

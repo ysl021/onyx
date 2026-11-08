@@ -53,7 +53,10 @@ class LyricsRepository(
     private val _state = MutableStateFlow<LyricsState>(LyricsState.Idle)
     val state: StateFlow<LyricsState> = _state.asStateFlow()
 
-    private val cacheDir = File(context.cacheDir, "lyrics").apply { mkdirs() }
+    private val _manualActive = MutableStateFlow(false)
+    val manualActive: StateFlow<Boolean> = _manualActive.asStateFlow()
+
+    private val cacheDir = File(context.filesDir, "lyrics").apply { mkdirs() }
     private val memory = object : LinkedHashMap<String, LyricsDoc>(24, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, LyricsDoc>?): Boolean =
             size > 24
@@ -79,14 +82,29 @@ class LyricsRepository(
         val key = keyOf(now)
         current = now
         if (!force && key == currentKey && _state.value !is LyricsState.Error) return
+        if (key != currentKey) _manualActive.value = false
         currentKey = key
         job?.cancel()
         job = scope.launch { load(now, key) }
     }
 
     fun retry() {
+        _manualActive.value = false
         val now = current
         if (now.hasTrack) sync(now, force = true)
+    }
+
+    /** Return from a manual match to the automatic provider for the playing track. */
+    fun resetToAuto(now: NowPlaying) {
+        _manualActive.value = false
+        if (now.hasTrack) {
+            current = now
+            currentKey = keyOf(now)
+            job?.cancel()
+            job = scope.launch { load(now, currentKey!!) }
+        } else {
+            clear()
+        }
     }
 
     /** Manual title/artist lookup, including downloaded tracks with poor metadata. */
@@ -104,6 +122,7 @@ class LyricsRepository(
         val key = keyOf(now)
         current = now
         currentKey = key
+        _manualActive.value = true
         job?.cancel()
         job = scope.launch { load(now, key) }
     }
@@ -125,6 +144,7 @@ class LyricsRepository(
     fun clear() {
         job?.cancel()
         currentKey = null
+        _manualActive.value = false
         _state.value = LyricsState.Idle
     }
 
@@ -134,7 +154,6 @@ class LyricsRepository(
     }
 
     private suspend fun load(now: NowPlaying, key: String) {
-        _state.value = LyricsState.Loading
         val prefsNow = prefs.snapshot()
 
         val cached = memory[key] ?: readDisk(key)?.also { memory[key] = it }
@@ -151,6 +170,7 @@ class LyricsRepository(
             _state.value = LyricsState.Ready(cached)
             return
         }
+        _state.value = LyricsState.Loading
 
         val attempts = ArrayList<String>(5)
         var found: LyricsDoc? = null
@@ -899,7 +919,7 @@ class LyricsRepository(
         val dur = (now.durationMs / 2000).toLong()
         // Bump when the provider order changes so stale Musixmatch-only entries
         // don't hide the new Spicy Lyrics source.
-        return sha1("v2|" + normalize(now.title) + "|" + normalize(now.artist) + "|" + dur)
+        return sha1("v3|" + normalize(now.title) + "|" + normalize(now.artist) + "|" + dur)
     }
 
     private fun readDisk(key: String): LyricsDoc? {
@@ -912,7 +932,7 @@ class LyricsRepository(
         runCatching {
             File(cacheDir, "$key.json").writeText(json.encodeToString(LyricsDoc.serializer(), doc))
             val files = cacheDir.listFiles()?.sortedByDescending { it.lastModified() } ?: return
-            files.drop(120).forEach { it.delete() }
+            files.drop(400).forEach { it.delete() }
         }
     }
 

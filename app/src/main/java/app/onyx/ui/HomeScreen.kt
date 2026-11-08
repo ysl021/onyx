@@ -70,6 +70,7 @@ import app.onyx.buds.BudsState
 import app.onyx.core.PrefsData
 import app.onyx.media.AudioRoute
 import app.onyx.media.MediaState
+import app.onyx.media.NowPlaying
 import app.onyx.spotify.QueueData
 import app.onyx.ui.components.BatteryMeter
 import app.onyx.ui.components.BlurredBackdrop
@@ -90,12 +91,12 @@ import kotlinx.coroutines.launch
 fun HomeScreen(
     controller: AppController,
     onOpenLyrics: () -> Unit,
-    onOpenQueue: () -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
     val media by controller.media.state.collectAsStateWithLifecycle()
+    val nowPlaying by controller.nowPlaying.collectAsStateWithLifecycle()
     val buds by BudsService.state.collectAsStateWithLifecycle()
     val routes by controller.router.routes.collectAsStateWithLifecycle()
     val headphoneBattery by controller.headphones.batteryByName.collectAsStateWithLifecycle()
@@ -125,7 +126,7 @@ fun HomeScreen(
             !name.equals(Build.MODEL, ignoreCase = true)
     }
 
-    LaunchedEffect(media.now.mediaId, media.now.title, media.now.artist, connected, queueVersion) {
+    LaunchedEffect(nowPlaying.mediaId, nowPlaying.title, nowPlaying.artist, connected, queueVersion) {
         queue = if (connected) runCatching { controller.spotify.queue() }.getOrNull() else null
     }
 
@@ -138,11 +139,11 @@ fun HomeScreen(
                 .padding(top = 16.dp, bottom = 20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Header(onOpenSettings)
+            Header()
             if (!media.hasAccess) {
                 AccessBanner()
             }
-            Hero(media, onOpenLyrics)
+            Hero(nowPlaying, onOpenLyrics)
             Controls(controller, media)
             if (remoteDevice != null) {
                 RemotePlaybackBanner(remoteDevice)
@@ -162,7 +163,6 @@ fun HomeScreen(
                 connected = connected,
                 queue = queue,
                 onOpenSettings = onOpenSettings,
-                onOpenQueue = onOpenQueue,
                 onRepeat = { state ->
                     scope.launch {
                         val ok = controller.spotify.setRepeat(state)
@@ -179,7 +179,7 @@ fun HomeScreen(
 }
 
 @Composable
-private fun Header(onOpenSettings: () -> Unit) {
+private fun Header() {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -199,13 +199,6 @@ private fun Header(onOpenSettings: () -> Unit) {
                 letterSpacing = 2.4.sp,
             )
         }
-        CircleButton(
-            icon = Icons.Rounded.Settings,
-            contentDescription = "Настройки",
-            size = 42.dp,
-            iconSize = 19.dp,
-            onClick = onOpenSettings,
-        )
     }
 }
 
@@ -228,7 +221,7 @@ private fun AccessBanner() {
         )
         Spacer(Modifier.height(12.dp))
         GlassPill(
-            text = "Открыть доступ",
+            text = tr("Открыть доступ", "Open access"),
             selected = true,
             onClick = {
                 runCatching {
@@ -243,8 +236,7 @@ private fun AccessBanner() {
 }
 
 @Composable
-private fun Hero(media: MediaState, onOpenLyrics: () -> Unit) {
-    val now = media.now
+private fun Hero(now: NowPlaying, onOpenLyrics: () -> Unit) {
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -426,7 +418,7 @@ private fun OutputCard(
             SectionLabel(tr("Вывод звука", "Audio output"), Modifier.weight(1f))
             if (routes.isEmpty()) {
                 Text(
-                    text = "открыть Bluetooth",
+                    text = tr("открыть Bluetooth", "open Bluetooth"),
                     color = OnyxDim,
                     fontSize = 11.sp,
                     modifier = Modifier.clickable { onOpenBluetooth() },
@@ -436,7 +428,7 @@ private fun OutputCard(
         Spacer(Modifier.height(12.dp))
         if (routes.isEmpty()) {
             Text(
-                text = "Устройства не найдены. Проверь, что наушники подключены.",
+                text = tr("Устройства не найдены. Проверь, что наушники подключены.", "No devices found. Check that your headphones are connected."),
                 color = OnyxDim,
                 fontSize = 13.sp,
             )
@@ -473,7 +465,7 @@ private fun RemotePlaybackBanner(device: String) {
             Spacer(Modifier.width(10.dp))
             Column {
                 Text(
-                    text = "Играет на другом устройстве",
+                    text = tr("Играет на другом устройстве", "Playing on another device"),
                     color = OnyxWhite,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -496,15 +488,21 @@ private fun BudsCard(
     activeBattery: Int = -1,
 ) {
     val context = LocalContext.current
+    val oneEarAllowed = buds.wearingL != buds.wearingR
+    LaunchedEffect(buds.connected, oneEarAllowed, buds.oneEar) {
+        if (buds.connected && !oneEarAllowed && buds.oneEar) {
+            BudsService.setOneEar(context, false)
+        }
+    }
     val otherHeadphone = activeHeadphone?.takeIf { name ->
         name.isNotBlank() && !name.contains("buds", ignoreCase = true)
     }
     GlassCard(modifier = Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            SectionLabel("Наушники", Modifier.weight(1f))
+            SectionLabel(tr("Наушники", "Headphones"), Modifier.weight(1f))
             Icon(
                 Icons.Rounded.Refresh,
-                contentDescription = "Переподключить",
+                contentDescription = tr("Переподключить", "Reconnect"),
                 tint = OnyxDim,
                 modifier = Modifier
                     .size(20.dp)
@@ -622,7 +620,7 @@ private fun BudsCard(
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 BatteryMeter("L", buds.batteryL, buds.wearingL, Modifier.weight(1f))
                 BatteryMeter("R", buds.batteryR, buds.wearingR, Modifier.weight(1f))
-                BatteryMeter("КЕЙС", buds.batteryCase, false, Modifier.weight(1f))
+                BatteryMeter(tr("КЕЙС", "CASE"), buds.batteryCase, false, Modifier.weight(1f))
             }
         }
 
@@ -662,12 +660,20 @@ private fun BudsCard(
             GlassPill(
                 text = tr("ANC на одно ухо", "ANC one ear"),
                 selected = buds.oneEar,
+                enabled = oneEarAllowed,
                 onClick = { BudsService.setOneEar(context, !buds.oneEar) },
             )
-            GlassPill(
-                text = tr("ANC максимум", "ANC maximum"),
-                selected = buds.ancHigh,
-                onClick = { BudsService.setAncHigh(context, !buds.ancHigh) },
+        }
+        if (!oneEarAllowed) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = tr(
+                    "Режим одного уха доступен, когда в ухе ровно один наушник.",
+                    "One-ear mode is available when exactly one earbud is worn.",
+                ),
+                color = OnyxFaint,
+                fontSize = 10.sp,
+                lineHeight = 14.sp,
             )
         }
     }
@@ -678,7 +684,6 @@ private fun QueueCard(
     connected: Boolean,
     queue: QueueData?,
     onOpenSettings: () -> Unit,
-    onOpenQueue: () -> Unit,
     onRepeat: (String) -> Unit,
 ) {
     if (!connected) {
@@ -700,7 +705,7 @@ private fun QueueCard(
                 lineHeight = 18.sp,
             )
             Spacer(Modifier.height(12.dp))
-            GlassPill(text = "Подключить Spotify", selected = true, onClick = onOpenSettings)
+            GlassPill(text = tr("Подключить Spotify", "Connect Spotify"), selected = true, onClick = onOpenSettings)
         }
         return
     }
@@ -741,12 +746,6 @@ private fun QueueCard(
                 onClick = { onRepeat("track") },
             )
         }
-        Spacer(Modifier.height(10.dp))
-        GlassPill(
-            text = tr("Вся очередь", "Full queue"),
-            selected = false,
-            onClick = onOpenQueue,
-        )
         Spacer(Modifier.height(12.dp))
         if (data.next.isEmpty()) {
             Text(tr("Очередь пуста", "Queue is empty"), color = OnyxFaint, fontSize = 12.sp)

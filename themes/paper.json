@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "id": "paper",
+  "name": "Paper",
+  "light": true,
+  "background": "#F7F5F0",
+  "surface": "#FFFFFF",
+  "text": "#141416",
+  "accent": "#2F6BFF"
+}

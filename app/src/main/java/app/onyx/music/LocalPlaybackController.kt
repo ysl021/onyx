@@ -8,6 +8,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import app.onyx.ui.tr
 import com.google.common.util.concurrent.MoreExecutors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -74,7 +75,7 @@ class LocalPlaybackController(
             connecting = false
             _state.value = _state.value.copy(
                 connected = false,
-                error = "Локальный плеер недоступен: ${t.message ?: t.javaClass.simpleName}",
+                error = tr("Локальный плеер недоступен", "Local player is unavailable") + ": ${t.message ?: t.javaClass.simpleName}",
             )
             return
         }
@@ -91,7 +92,7 @@ class LocalPlaybackController(
                 connecting = false
                 _state.value = _state.value.copy(
                     connected = false,
-                    error = "Не удалось подключить локальный плеер: ${t.message ?: t.javaClass.simpleName}",
+                    error = tr("Не удалось подключить локальный плеер", "Could not connect the local player") + ": ${t.message ?: t.javaClass.simpleName}",
                 )
             }
         }, MoreExecutors.directExecutor())

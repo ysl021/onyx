@@ -13,3 +13,10 @@
 # Media3 session services are referenced from the manifest.
 -keep class app.onyx.music.LocalPlaybackService { *; }
 -keep class app.onyx.buds.BudsService { *; }
+
+# jaudiotagger performs format dispatch and tag reflection.
+-keep class org.jaudiotagger.** { *; }
+-dontwarn org.jaudiotagger.**
+-dontwarn javax.imageio.**
+-dontwarn java.awt.**
+-dontwarn org.jaudiotagger.tag.images.**

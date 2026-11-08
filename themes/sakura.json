@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "id": "sakura",
+  "name": "Sakura",
+  "light": true,
+  "background": "#FFF6F8",
+  "surface": "#FFFFFF",
+  "text": "#231A1E",
+  "accent": "#D65B85"
+}

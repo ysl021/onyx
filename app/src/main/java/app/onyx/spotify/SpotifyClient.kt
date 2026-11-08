@@ -7,6 +7,7 @@ import android.util.Log
 import androidx.browser.customtabs.CustomTabsIntent
 import app.onyx.core.Http
 import app.onyx.core.Prefs
+import app.onyx.ui.tr
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -165,7 +166,7 @@ class SpotifyClient(private val context: Context, private val prefs: Prefs) {
                 onSuccess = { SpotifyLoginState.Connected(it) },
                 onFailure = {
                     Log.w(TAG, "Spotify login failed", it)
-                    SpotifyLoginState.Failed(it.message ?: "Ошибка входа")
+                    SpotifyLoginState.Failed(it.message ?: tr("Ошибка входа", "Sign-in error"))
                 },
             )
             loginRunning = false
@@ -175,7 +176,7 @@ class SpotifyClient(private val context: Context, private val prefs: Prefs) {
     private suspend fun loginInternal(activityContext: Context): String = runCatching {
         val p = prefs.snapshot()
         if (p.spotifyClientId.isBlank()) {
-            error("Сначала укажи Spotify client_id в настройках")
+            error(tr("Сначала укажи Spotify client_id в настройках", "Set the Spotify client_id in settings first"))
         }
         val verifier = randomString(64)
         val challenge = base64Url(sha256(verifier.toByteArray()))
@@ -197,7 +198,7 @@ class SpotifyClient(private val context: Context, private val prefs: Prefs) {
             val server = try {
                 ServerSocket(8899, 1, InetAddress.getByName("127.0.0.1"))
             } catch (e: BindException) {
-                error("Порт 8899 занят. Закрой приложение, которое его использует, и повтори.")
+                error(tr("Порт 8899 занят. Закрой приложение, которое его использует, и повтори.", "Port 8899 is busy. Close the app using it and try again."))
             }
             server.soTimeout = 180_000
             try {
@@ -225,7 +226,7 @@ class SpotifyClient(private val context: Context, private val prefs: Prefs) {
                         }
                     }
                 }
-                if (!opened) error("Не удалось открыть браузер для входа в Spotify")
+                if (!opened) error(tr("Не удалось открыть браузер для входа в Spotify", "Could not open a browser for Spotify sign-in"))
 
                 server.accept().use { client ->
                     val reader = BufferedReader(InputStreamReader(client.getInputStream()))
@@ -237,9 +238,9 @@ class SpotifyClient(private val context: Context, private val prefs: Prefs) {
                     val c = parsed.getQueryParameter("code")
                     val ok = c != null && returnedState == state
                     val html = if (ok) {
-                        "<html><body style='background:#050505;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh'><h2>ONYX подключён. Вернись в приложение.</h2></body></html>"
+                        "<html><body style='background:#050505;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh'><h2>${tr("ONYX подключён. Вернись в приложение.", "ONYX is connected. Return to the app.")}</h2></body></html>"
                     } else {
-                        "<html><body style='background:#050505;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh'><h2>Не получилось: ${err ?: "нет кода"}</h2></body></html>"
+                        "<html><body style='background:#050505;color:#fff;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh'><h2>${tr("Не получилось", "Failed")}: ${err ?: tr("нет кода", "no code")}</h2></body></html>"
                     }
                     val body = html.toByteArray(Charsets.UTF_8)
                     val header = "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: ${body.size}\r\nConnection: close\r\n\r\n"
@@ -247,10 +248,10 @@ class SpotifyClient(private val context: Context, private val prefs: Prefs) {
                     client.getOutputStream().write(body)
                     client.getOutputStream().flush()
                     if (returnedState != state) error("OAuth state mismatch")
-                    c ?: error("Spotify не вернул код (${err ?: "unknown"})")
+                    c ?: error(tr("Spotify не вернул код", "Spotify returned no code") + " (${err ?: "unknown"})")
                 }
             } catch (e: java.net.SocketTimeoutException) {
-                error("Браузер не вернул ответ за 3 минуты. Попробуй ещё раз.")
+                error(tr("Браузер не вернул ответ за 3 минуты. Попробуй ещё раз.", "The browser did not respond within 3 minutes. Try again."))
             } finally {
                 try {
                     server.close()

@@ -185,8 +185,50 @@ private fun typographyWith(family: FontFamily?): Typography {
 fun OnyxTheme(
     mode: ThemeMode = ThemeMode.DARK,
     uiFontFamily: FontFamily? = null,
+    custom: OnyxColors? = null,
     content: @Composable () -> Unit,
 ) {
+    if (custom != null) {
+        val material = if (custom.isLight) {
+            lightColorScheme(
+                primary = custom.accent,
+                onPrimary = custom.surface,
+                secondary = custom.dim,
+                onSecondary = custom.surface,
+                background = custom.black,
+                onBackground = custom.white,
+                surface = custom.surface,
+                onSurface = custom.white,
+                surfaceVariant = custom.elevated,
+                onSurfaceVariant = custom.dim,
+                outline = custom.line,
+                error = Color(0xFFC83A3A),
+            )
+        } else {
+            darkColorScheme(
+                primary = custom.accent,
+                onPrimary = custom.black,
+                secondary = custom.dim,
+                onSecondary = custom.black,
+                background = custom.black,
+                onBackground = custom.white,
+                surface = custom.surface,
+                onSurface = custom.white,
+                surfaceVariant = custom.elevated,
+                onSurfaceVariant = custom.dim,
+                outline = custom.line,
+                error = Color(0xFFFF6B6B),
+            )
+        }
+        CompositionLocalProvider(LocalOnyx provides custom) {
+            MaterialTheme(
+                colorScheme = material,
+                typography = typographyWith(uiFontFamily),
+                content = content,
+            )
+        }
+        return
+    }
     val dark = when (mode) {
         ThemeMode.DARK -> true
         ThemeMode.LIGHT -> false
@@ -195,7 +237,7 @@ fun OnyxTheme(
     val target = if (dark) DarkOnyx else LightOnyx
     val progress = remember { Animatable(if (dark) 0f else 1f) }
     LaunchedEffect(dark) {
-        progress.animateTo(if (dark) 0f else 1f, tween(380))
+        progress.animateTo(if (dark) 0f else 1f, tween(200))
     }
     val t = progress.value
     fun mix(a: Color, b: Color): Color = lerp(a, b, t)

@@ -191,7 +191,7 @@ fun QueueScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     SectionLabel(tr("Дальше", "Next"), Modifier.weight(1f))
                     Text(
-                        text = if (loading) "обновляем…" else "${queue?.next?.size ?: 0} треков",
+                        text = if (loading) tr("обновляем…", "refreshing…") else "${queue?.next?.size ?: 0} ${tr("треков", "tracks")}",
                         color = OnyxFaint,
                         fontSize = 10.sp,
                     )
@@ -262,7 +262,7 @@ private fun NowCard(title: String, artist: String, art: Any?) {
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
-                    title.ifBlank { "Ничего не играет" },
+                    title.ifBlank { tr("Ничего не играет", "Nothing playing") },
                     color = OnyxWhite,
                     fontSize = 16.sp,
                     fontWeight = FontWeight.Bold,
@@ -277,7 +277,7 @@ private fun NowCard(title: String, artist: String, art: Any?) {
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Text("СЕЙЧАС", color = OnyxFaint, fontSize = 9.sp, letterSpacing = 1.sp)
+            Text(tr("СЕЙЧАС", "NOW"), color = OnyxFaint, fontSize = 9.sp, letterSpacing = 1.sp)
         }
     }
 }

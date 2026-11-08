@@ -80,7 +80,7 @@ class VisualizerController(context: Context) {
                         _fft.value = smoothed.copyOf()
                     }
                 },
-                Visualizer.getMaxCaptureRate() / 2,
+                Visualizer.getMaxCaptureRate(),
                 true,
                 true,
             )

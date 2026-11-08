@@ -1,4 +1,4 @@
-package app.onyx.ui
+﻿package app.onyx.ui
 
 import android.Manifest
 import android.content.pm.PackageManager
@@ -73,7 +73,9 @@ fun VisualizerScreen(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    val media by controller.media.state.collectAsStateWithLifecycle()
+    val nowPlaying by controller.nowPlaying.collectAsStateWithLifecycle()
+    val local by controller.localPlayer.state.collectAsStateWithLifecycle()
+    val localActive = local.current != null && local.isPlaying
     val visualizer = remember { VisualizerController(context.applicationContext) }
     var granted by remember {
         mutableStateOf(
@@ -95,14 +97,6 @@ fun VisualizerScreen(
     DisposableEffect(Unit) {
         onDispose { visualizer.stop() }
     }
-
-    val fallback = rememberInfiniteTransition(label = "viz")
-    val phase by fallback.animateFloat(
-        initialValue = 0f,
-        targetValue = (Math.PI * 2).toFloat(),
-        animationSpec = infiniteRepeatable(tween(4200), RepeatMode.Restart),
-        label = "phase",
-    )
 
     Box(modifier.fillMaxSize()) {
         // Soft radial glow under the visualizer.
@@ -134,7 +128,7 @@ fun VisualizerScreen(
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                text = media.now.title.ifBlank { tr("Тишина", "Silence") },
+                text = nowPlaying.title.ifBlank { tr("Тишина", "Silence") },
                 color = OnyxWhite,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
@@ -143,7 +137,7 @@ fun VisualizerScreen(
                 textAlign = TextAlign.Center,
             )
             Text(
-                text = media.now.artist,
+                text = nowPlaying.artist,
                 color = OnyxDim,
                 fontSize = 12.sp,
                 maxLines = 1,
@@ -171,8 +165,7 @@ fun VisualizerScreen(
                 Spectrum(
                     wave = wave,
                     fft = fft,
-                    fallbackPhase = phase,
-                    art = media.now.art ?: media.now.artUri,
+                    art = nowPlaying.art ?: nowPlaying.artUri,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(320.dp),
@@ -194,21 +187,27 @@ fun VisualizerScreen(
                     icon = Icons.Rounded.SkipPrevious,
                     contentDescription = tr("Предыдущий", "Previous"),
                     size = 48.dp,
-                    onClick = { controller.media.previous() },
+                    onClick = {
+                        if (localActive) controller.localPlayer.previous() else controller.media.previous()
+                    },
                 )
                 CircleButton(
-                    icon = if (media.now.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                    icon = if (nowPlaying.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                     contentDescription = tr("Играть/пауза", "Play/pause"),
                     size = 64.dp,
                     filled = true,
                     iconSize = 26.dp,
-                    onClick = { controller.media.playPause() },
+                    onClick = {
+                        if (localActive) controller.localPlayer.toggle() else controller.media.playPause()
+                    },
                 )
                 CircleButton(
                     icon = Icons.Rounded.SkipNext,
                     contentDescription = tr("Следующий", "Next"),
                     size = 48.dp,
-                    onClick = { controller.media.next() },
+                    onClick = {
+                        if (localActive) controller.localPlayer.next() else controller.media.next()
+                    },
                 )
             }
         }
@@ -219,13 +218,56 @@ fun VisualizerScreen(
 private fun Spectrum(
     wave: FloatArray,
     fft: FloatArray,
-    fallbackPhase: Float,
     art: Any?,
     modifier: Modifier = Modifier,
 ) {
     val color = OnyxWhite
-    val hasFft = fft.isNotEmpty() && fft.any { it > 0.02f }
-    val hasWave = wave.isNotEmpty() && wave.any { abs(it) > 0.012f }
+    val bars = 108
+    val target = remember { FloatArray(bars) }
+    val display = remember { FloatArray(bars) }
+    var frame by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    var idle by remember { mutableStateOf(true) }
+
+    LaunchedEffect(fft, wave) {
+        val hasFft = fft.isNotEmpty() && fft.any { it > 0.02f }
+        val hasWave = wave.isNotEmpty() && wave.any { abs(it) > 0.012f }
+        if (!hasFft && !hasWave) {
+            idle = true
+            return@LaunchedEffect
+        }
+        idle = false
+        for (i in 0 until bars) {
+            val sample = when {
+                hasFft -> fft[(i * fft.size / bars).coerceIn(0, fft.size - 1)]
+                else -> wave[(i * wave.size / bars).coerceIn(0, wave.size - 1)]
+            }
+            target[i] = abs(sample).coerceIn(0f, 1f)
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        var last = 0L
+        while (true) {
+            androidx.compose.runtime.withFrameNanos { now ->
+                val dt = if (last == 0L) 0.016f
+                else ((now - last) / 1_000_000_000f).coerceIn(0.001f, 0.05f)
+                last = now
+                val t = now / 1_000_000_000f
+                for (i in 0 until bars) {
+                    val goal = if (idle) {
+                        (0.05f + 0.05f * sin(t * 1.4f + i * 0.33f) +
+                            0.02f * sin(t * 2.1f - i * 0.2f)).coerceIn(0f, 0.16f)
+                    } else {
+                        target[i]
+                    }
+                    val speed = if (goal > display[i]) 22f else 6f
+                    display[i] += (goal - display[i]) * (1f - kotlin.math.exp(-speed * dt))
+                }
+                frame++
+            }
+        }
+    }
+
     Box(modifier, contentAlignment = Alignment.Center) {
         AsyncArt(
             model = art,
@@ -234,46 +276,46 @@ private fun Spectrum(
                 .clip(CircleShape),
         )
         Canvas(Modifier.fillMaxSize()) {
+            val _draw = frame
             val cx = size.width / 2f
             val cy = size.height / 2f
             val inner = size.minDimension * 0.235f
-            val maxLen = size.minDimension * 0.22f
-            val bars = 96
+            val maxLen = size.minDimension * 0.225f
             val twoPi = (Math.PI * 2).toFloat()
             for (i in 0 until bars) {
                 val angle = -Math.PI.toFloat() / 2f + i * twoPi / bars
-                val sample = when {
-                    hasFft -> fft[(i * fft.size / bars).coerceIn(0, fft.size - 1)]
-                    hasWave -> wave[(i * wave.size / bars).coerceIn(0, wave.size - 1)]
-                    else -> sin(fallbackPhase + i * 0.42f).toFloat() * 0.55f
-                }
-                val amp = (abs(sample) * maxLen).coerceAtLeast(2f)
                 val dx = cos(angle)
                 val dy = sin(angle)
+                val amp = (display[i] * maxLen).coerceAtLeast(1.5f)
                 val start = Offset(cx + dx * inner, cy + dy * inner)
                 val end = Offset(cx + dx * (inner + amp), cy + dy * (inner + amp))
                 drawLine(
-                    color = color.copy(alpha = 0.10f),
+                    color = color.copy(alpha = 0.08f),
                     start = start,
                     end = Offset(
-                        cx + dx * (inner + amp * 1.25f),
-                        cy + dy * (inner + amp * 1.25f),
+                        cx + dx * (inner + amp * 1.28f),
+                        cy + dy * (inner + amp * 1.28f),
                     ),
-                    strokeWidth = 5f,
+                    strokeWidth = 5.5f,
                     cap = StrokeCap.Round,
                 )
                 drawLine(
-                    color = color.copy(alpha = 0.80f),
+                    color = color.copy(alpha = 0.86f),
                     start = start,
                     end = end,
-                    strokeWidth = 2.2f,
+                    strokeWidth = 2.1f,
                     cap = StrokeCap.Round,
                 )
             }
             drawCircle(
-                color = color.copy(alpha = 0.14f),
+                color = color.copy(alpha = 0.16f),
                 radius = inner,
-                style = Stroke(width = 1.2f),
+                style = Stroke(width = 1.1f),
+            )
+            drawCircle(
+                color = color.copy(alpha = 0.06f),
+                radius = inner + maxLen + 2f,
+                style = Stroke(width = 0.8f),
             )
         }
     }

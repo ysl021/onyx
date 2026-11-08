@@ -10,10 +10,12 @@ import app.onyx.audio.SoundEffects
 import app.onyx.core.Prefs
 import app.onyx.lyrics.LyricsRepository
 import app.onyx.media.MediaRepository
+import app.onyx.media.NowPlaying
 import app.onyx.media.OutputRouter
 import app.onyx.media.HeadphonesRepository
 import app.onyx.music.LocalLibrary
 import app.onyx.music.LocalPlaybackController
+import app.onyx.music.LocalTrack
 import app.onyx.spotify.SpotifyClient
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
@@ -21,9 +23,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class AppController private constructor(context: Context) {
@@ -42,6 +47,12 @@ class AppController private constructor(context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var watcher: Job? = null
 
+    /** Local playback wins over notification sessions so artwork and lyrics never go stale. */
+    val nowPlaying = combine(media.state, localPlayer.state) { mediaState, localState ->
+        val track = localState.current
+        if (track != null && localState.isPlaying) track.toNowPlaying() else mediaState.now
+    }.stateIn(scope, SharingStarted.Eagerly, media.state.value.now)
+
     private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val messages = _messages.asSharedFlow()
 
@@ -53,8 +64,7 @@ class AppController private constructor(context: Context) {
         startBudsIfAllowed()
         if (watcher != null) return
         watcher = scope.launch {
-            media.state
-                .map { it.now }
+            nowPlaying
                 .distinctUntilChangedBy {
                     listOf(
                         it.packageName,
@@ -65,6 +75,12 @@ class AppController private constructor(context: Context) {
                     )
                 }
                 .collect { lyrics.sync(it) }
+        }
+        scope.launch {
+            localPlayer.state
+                .map { it.current?.id to it.isPlaying }
+                .distinctUntilChangedBy { it }
+                .collect { media.refresh() }
         }
     }
 
@@ -121,3 +137,16 @@ class AppController private constructor(context: Context) {
             }
     }
 }
+
+private fun LocalTrack.toNowPlaying(): NowPlaying = NowPlaying(
+    packageName = "app.onyx.local",
+    title = title,
+    artist = artist,
+    album = album,
+    artUri = artPath?.let { android.net.Uri.fromFile(java.io.File(it)).toString() },
+    mediaId = id,
+    durationMs = durationMs,
+    isPlaying = true,
+    canSeek = true,
+    canSkip = true,
+)

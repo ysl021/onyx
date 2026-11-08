@@ -9,12 +9,14 @@ import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -26,6 +28,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -33,6 +36,7 @@ import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -52,6 +56,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -64,7 +69,11 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.onyx.AppController
+import app.onyx.R
 import app.onyx.buds.BudsService
+import app.onyx.core.CustomTheme
+import app.onyx.core.CustomThemeCodec
+import app.onyx.core.IconSwitcher
 import app.onyx.ui.components.CircleButton
 import app.onyx.ui.components.CustomBackdrop
 import app.onyx.ui.components.GlassCard
@@ -77,6 +86,7 @@ import app.onyx.ui.theme.OnyxFaint
 import app.onyx.ui.theme.OnyxLine
 import app.onyx.ui.theme.OnyxSurface
 import app.onyx.ui.theme.OnyxWhite
+import app.onyx.ui.theme.toOnyxColors
 import kotlinx.coroutines.launch
 
 private const val REDIRECT = "http://127.0.0.1:8899/callback"
@@ -189,7 +199,7 @@ fun SettingsScreen(
         ) {
             CircleButton(
                 icon = Icons.AutoMirrored.Rounded.ArrowBack,
-                contentDescription = "Назад",
+                contentDescription = tr("Назад", "Back"),
                 size = 42.dp,
                 iconSize = 20.dp,
                 onClick = onBack,
@@ -204,7 +214,7 @@ fun SettingsScreen(
                     letterSpacing = (-0.5).sp,
                 )
                 Text(
-                    text = "ONYX · v0.5.1",
+                    text = "ONYX · v0.6.0",
                     color = OnyxFaint,
                     fontSize = 10.sp,
                     letterSpacing = 1.4.sp,
@@ -274,7 +284,7 @@ fun SettingsScreen(
                     }
                     Icon(
                         Icons.AutoMirrored.Rounded.Logout,
-                        contentDescription = "Отключить",
+                        contentDescription = tr("Отключить", "Disconnect"),
                         tint = OnyxDim,
                         modifier = Modifier
                             .size(20.dp)
@@ -362,7 +372,7 @@ fun SettingsScreen(
                     Spacer(Modifier.height(8.dp))
                 }
                 Text(
-                    text = "Redirect URI в Dashboard: $REDIRECT\n" +
+                    text = tr("Redirect URI в Dashboard", "Redirect URI in the Dashboard") + ": $REDIRECT\n" +
                         "Scopes: user-read-playback-state, user-modify-playback-state, " +
                         "user-read-currently-playing",
                     color = OnyxFaint,
@@ -416,7 +426,7 @@ fun SettingsScreen(
             Spacer(Modifier.height(10.dp))
             SliderRow(
                 title = tr("Смещение текста", "Lyrics offset"),
-                value = "${(offset / 100).toInt() * 100} мс",
+                value = "${(offset / 100).toInt() * 100} ${tr("мс", "ms")}",
                 sliderValue = (offset + 3000f) / 6000f,
                 onChange = { offset = -3000f + it * 6000f },
                 onFinish = {
@@ -530,7 +540,7 @@ fun SettingsScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            folder.name.ifBlank { "Папка" },
+                            folder.name.ifBlank { tr("Папка", "Folder") },
                             color = OnyxWhite,
                             fontSize = 13.sp,
                             maxLines = 1,
@@ -539,7 +549,7 @@ fun SettingsScreen(
                         )
                         Icon(
                             Icons.Rounded.Delete,
-                            contentDescription = "Удалить папку",
+                            contentDescription = tr("Удалить папку", "Remove folder"),
                             tint = OnyxFaint,
                             modifier = Modifier
                                 .size(18.dp)
@@ -551,7 +561,7 @@ fun SettingsScreen(
             Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 GlassPill(
-                    text = if (prefs.localFolders.isEmpty()) "Выбрать папку" else "Добавить папку",
+                    text = if (prefs.localFolders.isEmpty()) tr("Выбрать папку", "Choose folder") else tr("Добавить папку", "Add folder"),
                     selected = true,
                     onClick = { musicFolderLauncher.launch(null) },
                 )
@@ -674,6 +684,49 @@ private fun AppearanceSection(
     var intensity by remember(prefs.coverIntensity) {
         mutableFloatStateOf(prefs.coverIntensity.toFloat())
     }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val customThemes = remember(prefs.customThemes) {
+        CustomThemeCodec.decodeList(prefs.customThemes)
+    }
+    var showThemeEditor by remember { mutableStateOf(false) }
+    var editingTheme by remember { mutableStateOf<CustomTheme?>(null) }
+    var exportTheme by remember { mutableStateOf<CustomTheme?>(null) }
+    val themeImporter = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                val text = runCatching {
+                    context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                }.getOrNull()
+                val theme = text?.let { CustomThemeCodec.decodeOne(it) }
+                if (theme != null) {
+                    val next = customThemes.filterNot { it.id == theme.id } + theme
+                    controller.prefs.setCustomThemes(CustomThemeCodec.encodeList(next))
+                    controller.prefs.setCustomThemeId(theme.id)
+                    controller.toast(tr("Тема импортирована", "Theme imported"))
+                } else {
+                    controller.toast(tr("Не удалось прочитать тему", "Could not read the theme"))
+                }
+            }
+        }
+    }
+    val themeExporter = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri ->
+        val theme = exportTheme
+        exportTheme = null
+        if (uri != null && theme != null) {
+            scope.launch {
+                runCatching {
+                    context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use {
+                        it.write(CustomThemeCodec.encodeOne(theme))
+                    }
+                }
+                controller.toast(tr("Тема сохранена", "Theme exported"))
+            }
+        }
+    }
     var showUiFont by remember { mutableStateOf(false) }
     var showLyricFont by remember { mutableStateOf(false) }
     val pages = prefs.coverPages.split(',').filter { it.isNotBlank() }.toSet()
@@ -758,17 +811,17 @@ private fun AppearanceSection(
             GlassPill(
                 text = tr("Тёмная", "Dark"),
                 selected = prefs.themeMode == app.onyx.core.ThemeMode.DARK,
-                onClick = { scope.launch { controller.prefs.setThemeMode(app.onyx.core.ThemeMode.DARK) } },
+                onClick = { scope.launch { controller.prefs.setCustomThemeId(""); controller.prefs.setThemeMode(app.onyx.core.ThemeMode.DARK) } },
             )
             GlassPill(
                 text = tr("Светлая", "Light"),
                 selected = prefs.themeMode == app.onyx.core.ThemeMode.LIGHT,
-                onClick = { scope.launch { controller.prefs.setThemeMode(app.onyx.core.ThemeMode.LIGHT) } },
+                onClick = { scope.launch { controller.prefs.setCustomThemeId(""); controller.prefs.setThemeMode(app.onyx.core.ThemeMode.LIGHT) } },
             )
             GlassPill(
                 text = tr("Система", "System"),
                 selected = prefs.themeMode == app.onyx.core.ThemeMode.SYSTEM,
-                onClick = { scope.launch { controller.prefs.setThemeMode(app.onyx.core.ThemeMode.SYSTEM) } },
+                onClick = { scope.launch { controller.prefs.setCustomThemeId(""); controller.prefs.setThemeMode(app.onyx.core.ThemeMode.SYSTEM) } },
             )
         }
         Spacer(Modifier.height(10.dp))
@@ -778,6 +831,165 @@ private fun AppearanceSection(
             fontSize = 11.sp,
             lineHeight = 15.sp,
         )
+    }
+
+    GlassCard(modifier = Modifier.fillMaxWidth()) {
+        SectionLabel(tr("Кастомные темы", "Custom themes"))
+        Spacer(Modifier.height(8.dp))
+        Text(
+            tr(
+                "Импортируй JSON-тему или создай свою. Цвета применяются ко всему интерфейсу.",
+                "Import a JSON theme or create your own. Colors apply to the whole interface.",
+            ),
+            color = OnyxFaint,
+            fontSize = 11.sp,
+            lineHeight = 15.sp,
+        )
+        customThemes.forEach { theme ->
+            val colors = remember(theme) { theme.toOnyxColors() }
+            val active = prefs.customThemeId == theme.id
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .clickable {
+                        scope.launch { controller.prefs.setCustomThemeId(theme.id) }
+                    }
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    listOf(colors.black, colors.surface, colors.accent).forEach { c ->
+                        Box(
+                            Modifier
+                                .size(18.dp)
+                                .clip(CircleShape)
+                                .background(c),
+                        )
+                    }
+                }
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    theme.name,
+                    color = if (active) OnyxWhite else OnyxDim,
+                    fontSize = 13.sp,
+                    fontWeight = if (active) FontWeight.SemiBold else FontWeight.Normal,
+                    modifier = Modifier.weight(1f),
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                )
+                if (active) {
+                    Icon(
+                        Icons.Rounded.Check,
+                        contentDescription = null,
+                        tint = OnyxWhite,
+                        modifier = Modifier.size(16.dp),
+                    )
+                    Spacer(Modifier.width(6.dp))
+                }
+                CircleButton(
+                    icon = Icons.Rounded.Share,
+                    contentDescription = tr("Экспорт", "Export"),
+                    size = 30.dp,
+                    iconSize = 14.dp,
+                    onClick = {
+                        exportTheme = theme
+                        themeExporter.launch("${theme.id}.json")
+                    },
+                )
+                Spacer(Modifier.width(4.dp))
+                CircleButton(
+                    icon = Icons.Rounded.Delete,
+                    contentDescription = tr("Удалить", "Delete"),
+                    size = 30.dp,
+                    iconSize = 14.dp,
+                    onClick = {
+                        scope.launch {
+                            val next = customThemes.filterNot { it.id == theme.id }
+                            controller.prefs.setCustomThemes(CustomThemeCodec.encodeList(next))
+                            if (prefs.customThemeId == theme.id) {
+                                controller.prefs.setCustomThemeId("")
+                            }
+                        }
+                    },
+                )
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            GlassPill(
+                text = tr("Импорт JSON", "Import JSON"),
+                selected = false,
+                onClick = {
+                    themeImporter.launch(
+                        arrayOf("application/json", "text/plain", "application/octet-stream"),
+                    )
+                },
+            )
+            GlassPill(
+                text = tr("Создать тему", "Create theme"),
+                selected = false,
+                onClick = {
+                    editingTheme = null
+                    showThemeEditor = true
+                },
+            )
+        }
+    }
+
+    if (showThemeEditor) {
+        ThemeEditorDialog(
+            initial = editingTheme,
+            onDismiss = { showThemeEditor = false },
+            onSave = { theme ->
+                scope.launch {
+                    val next = customThemes.filterNot { it.id == theme.id } + theme
+                    controller.prefs.setCustomThemes(CustomThemeCodec.encodeList(next))
+                    controller.prefs.setCustomThemeId(theme.id)
+                    showThemeEditor = false
+                }
+            },
+        )
+    }
+
+    GlassCard(modifier = Modifier.fillMaxWidth()) {
+        SectionLabel(tr("Иконка приложения", "App icon"))
+        Spacer(Modifier.height(8.dp))
+        Text(
+            tr(
+                "Смена иконки может убрать значок с домашнего экрана — добавь ONYX заново из меню приложений.",
+                "Changing the icon may remove it from the home screen — add ONYX again from the app drawer.",
+            ),
+            color = OnyxFaint,
+            fontSize = 10.sp,
+            lineHeight = 14.sp,
+        )
+        Spacer(Modifier.height(10.dp))
+        listOf(1..5, 6..10).forEach { row ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                row.forEach { index ->
+                    IconChoice(
+                        index = index,
+                        selected = prefs.appIcon == index,
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            scope.launch { controller.prefs.setAppIcon(index) }
+                            IconSwitcher.apply(context, index)
+                            controller.toast(
+                                tr(
+                                    "Иконка изменена",
+                                    "App icon changed",
+                                ),
+                            )
+                        },
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+        }
     }
 
     GlassCard(modifier = Modifier.fillMaxWidth()) {
@@ -1043,7 +1255,7 @@ private fun StatusRow(
                     .padding(horizontal = 12.dp, vertical = 7.dp),
             )
         } else {
-            Text("готово", color = OnyxFaint, fontSize = 11.sp)
+            Text(tr("готово", "done"), color = OnyxFaint, fontSize = 11.sp)
         }
     }
 }
@@ -1152,6 +1364,154 @@ private fun BackgroundPreviewDialog(
                 Text(tr("Отмена", "Cancel"), color = OnyxDim)
             }
         },
+    )
+}
+
+@Composable
+private fun IconChoice(
+    index: Int,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = modifier
+            .aspectRatio(1f)
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color.Black)
+            .border(
+                if (selected) 2.dp else 1.dp,
+                if (selected) OnyxWhite else OnyxLine,
+                RoundedCornerShape(16.dp),
+            )
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Image(
+            painter = painterResource(iconRes(index)),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(0.82f),
+        )
+    }
+}
+
+private fun iconRes(index: Int): Int = when (index) {
+    1 -> R.drawable.ic_onyx_01
+    2 -> R.drawable.ic_onyx_02
+    3 -> R.drawable.ic_onyx_03
+    4 -> R.drawable.ic_onyx_04
+    5 -> R.drawable.ic_onyx_05
+    6 -> R.drawable.ic_onyx_06
+    7 -> R.drawable.ic_onyx_07
+    8 -> R.drawable.ic_onyx_08
+    9 -> R.drawable.ic_onyx_09
+    else -> R.drawable.ic_onyx_10
+}
+
+@Composable
+private fun ThemeEditorDialog(
+    initial: CustomTheme?,
+    onDismiss: () -> Unit,
+    onSave: (CustomTheme) -> Unit,
+) {
+    var name by remember(initial) { mutableStateOf(initial?.name.orEmpty()) }
+    var background by remember(initial) { mutableStateOf(initial?.background ?: "#050506") }
+    var surface by remember(initial) { mutableStateOf(initial?.surface ?: "#101013") }
+    var text by remember(initial) { mutableStateOf(initial?.text ?: "#F6F6F7") }
+    var accent by remember(initial) { mutableStateOf(initial?.accent ?: "#EDEDEF") }
+    var light by remember(initial) { mutableStateOf(initial?.light ?: false) }
+    val hexOk = listOf(background, surface, text, accent).all { CustomTheme.HEX.matches(it) }
+    val valid = name.isNotBlank() && hexOk
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = OnyxSurface,
+        title = {
+            Text(
+                tr("Своя тема", "Custom theme"),
+                color = OnyxWhite,
+                fontWeight = FontWeight.Bold,
+            )
+        },
+        text = {
+            Column {
+                ThemeField(tr("Название", "Name"), name) { name = it }
+                ThemeField(tr("Фон", "Background"), background) { background = it }
+                ThemeField(tr("Поверхность", "Surface"), surface) { surface = it }
+                ThemeField(tr("Текст", "Text"), text) { text = it }
+                ThemeField(tr("Акцент", "Accent"), accent) { accent = it }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        tr("Светлая тема", "Light theme"),
+                        color = OnyxDim,
+                        fontSize = 12.sp,
+                        modifier = Modifier.weight(1f),
+                    )
+                    OnyxSwitch(checked = light, onCheckedChange = { light = it })
+                }
+                if (!hexOk) {
+                    Text(
+                        tr("Цвета в формате #RRGGBB", "Colors must use #RRGGBB"),
+                        color = OnyxFaint,
+                        fontSize = 10.sp,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = valid,
+                onClick = {
+                    onSave(
+                        CustomTheme(
+                            id = name.lowercase().filter { it.isLetterOrDigit() }.ifBlank { "custom" },
+                            name = name.trim(),
+                            light = light,
+                            background = background,
+                            surface = surface,
+                            text = text,
+                            accent = accent,
+                        ),
+                    )
+                },
+            ) {
+                Text(tr("Сохранить", "Save"), color = OnyxWhite, fontWeight = FontWeight.SemiBold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(tr("Отмена", "Cancel"), color = OnyxDim)
+            }
+        },
+    )
+}
+
+@Composable
+private fun ThemeField(label: String, value: String, onChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onChange,
+        label = { Text(label, color = OnyxFaint, fontSize = 11.sp) },
+        singleLine = true,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 6.dp),
+        textStyle = androidx.compose.ui.text.TextStyle(color = OnyxWhite, fontSize = 13.sp),
+        shape = RoundedCornerShape(12.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = OnyxLine,
+            unfocusedBorderColor = OnyxLine,
+            focusedContainerColor = Color.Transparent,
+            unfocusedContainerColor = Color.Transparent,
+            cursorColor = OnyxWhite,
+            focusedLabelColor = OnyxFaint,
+            unfocusedLabelColor = OnyxFaint,
+        ),
     )
 }
 

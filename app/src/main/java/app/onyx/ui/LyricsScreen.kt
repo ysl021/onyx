@@ -1,4 +1,4 @@
-package app.onyx.ui
+﻿package app.onyx.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -35,7 +35,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Fullscreen
+import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.RestartAlt
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material3.CircularProgressIndicator
@@ -61,6 +64,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.AnnotatedString
@@ -91,6 +95,8 @@ import app.onyx.ui.theme.OnyxFaint
 import app.onyx.ui.theme.OnyxLine
 import app.onyx.ui.theme.OnyxSurface
 import app.onyx.ui.theme.OnyxWhite
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.haze
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -103,6 +109,8 @@ fun LyricsScreen(
     modifier: Modifier = Modifier,
 ) {
     val media by controller.media.state.collectAsStateWithLifecycle()
+    val nowPlaying by controller.nowPlaying.collectAsStateWithLifecycle()
+    val manualActive by controller.lyrics.manualActive.collectAsStateWithLifecycle()
     val prefs by controller.prefs.data.collectAsStateWithLifecycle(initialValue = PrefsData())
     val lyrics by controller.lyrics.state.collectAsStateWithLifecycle()
     val scratch = rememberCoroutineScope()
@@ -112,9 +120,11 @@ fun LyricsScreen(
 
     var fullscreen by rememberSaveable { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
+    var showActions by remember { mutableStateOf(false) }
     var showFontPicker by remember { mutableStateOf(false) }
     var manualTitle by remember { mutableStateOf("") }
     var manualArtist by remember { mutableStateOf("") }
+    val hazeState = remember { HazeState() }
 
     val position = media.positionMs + prefs.lyricOffsetMs
     val doc = (lyrics as? LyricsState.Ready)?.doc
@@ -144,61 +154,78 @@ fun LyricsScreen(
     }
 
     Box(modifier.fillMaxSize()) {
-        Column(Modifier.fillMaxSize()) {
-            if (!fullscreen) {
-                TopBar(
-                    title = media.now.title,
-                    artist = media.now.artist,
-                    provider = doc?.provider,
-                    karaoke = doc?.karaoke == true,
-                    translating = prefs.translate,
-                    art = media.now.art ?: media.now.artUri,
-                    onToggleTranslate = {
-                        val next = !prefs.translate
-                        scratch.launch {
-                            controller.prefs.setTranslate(next)
-                            if (next) controller.lyrics.translateCurrent()
-                        }
-                    },
-                    onFullscreen = { fullscreen = true },
-                    onBack = onBack,
-                )
-            }
-
-            Box(modifier = Modifier.weight(1f)) {
-                when (val s = lyrics) {
-                    LyricsState.Idle -> CenterMessage(
-                        title = tr("Тишина", "Silence"),
-                        text = tr("Запусти трек — текст подтянется сам.", "Play a track and lyrics will load."),
-                    )
-                    LyricsState.Loading -> Loading()
-                    is LyricsState.Error -> CenterMessage(
-                        title = tr("Текст не найден", "Lyrics not found"),
-                        text = s.message,
-                        action = tr("Указать название и исполнителя", "Enter title and artist"),
-                        onAction = {
-                            manualTitle = media.now.title
-                            manualArtist = media.now.artist
-                            showSearch = true
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .haze(hazeState),
+        ) {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .padding(bottom = if (fullscreen) 0.dp else 96.dp),
+            ) {
+                if (!fullscreen) {
+                    TopBar(
+                        title = nowPlaying.title,
+                        artist = nowPlaying.artist,
+                        provider = doc?.provider,
+                        karaoke = doc?.karaoke == true,
+                        translating = prefs.translate,
+                        art = nowPlaying.art ?: nowPlaying.artUri,
+                        onToggleTranslate = {
+                            val next = !prefs.translate
+                            scratch.launch {
+                                controller.prefs.setTranslate(next)
+                                if (next) controller.lyrics.translateCurrent()
+                            }
                         },
-                    )
-                    is LyricsState.Ready -> LyricsBody(
-                        doc = s.doc,
-                        position = position,
-                        playing = media.now.isPlaying,
-                        fontSize = prefs.lyricFontSize,
-                        karaoke = prefs.karaoke,
-                        fullscreen = fullscreen,
-                        showTranslation = prefs.translate,
-                        activeColor = Color(prefs.lyricActiveColor),
-                        fontFamily = lyricFamily,
+                        onFullscreen = { fullscreen = true },
+                        onMenu = { showActions = true },
+                        onBack = onBack,
                     )
                 }
-            }
 
-            if (!fullscreen) {
+                Box(modifier = Modifier.weight(1f)) {
+                    when (val s = lyrics) {
+                        LyricsState.Idle -> CenterMessage(
+                            title = tr("Тишина", "Silence"),
+                            text = tr("Запусти трек — текст подтянется сам.", "Play a track and lyrics will load."),
+                        )
+                        LyricsState.Loading -> Loading()
+                        is LyricsState.Error -> CenterMessage(
+                            title = tr("Текст не найден", "Lyrics not found"),
+                            text = s.message,
+                            action = tr("Указать название и исполнителя", "Enter title and artist"),
+                            onAction = {
+                                manualTitle = nowPlaying.title
+                                manualArtist = nowPlaying.artist
+                                showSearch = true
+                            },
+                        )
+                        is LyricsState.Ready -> LyricsBody(
+                            doc = s.doc,
+                            position = position,
+                            playing = nowPlaying.isPlaying,
+                            fontSize = prefs.lyricFontSize,
+                            karaoke = prefs.karaoke,
+                            fullscreen = fullscreen,
+                            showTranslation = prefs.translate,
+                            activeColor = Color(prefs.lyricActiveColor),
+                            fontFamily = lyricFamily,
+                        )
+                    }
+                }
+            }
+        }
+
+        if (!fullscreen) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth(),
+            ) {
                 BottomBar(
-                    art = media.now.art ?: media.now.artUri,
+                    art = nowPlaying.art ?: nowPlaying.artUri,
                     fontSize = prefs.lyricFontSize,
                     karaoke = prefs.karaoke,
                     onKaraoke = { scratch.launch { controller.prefs.setKaraoke(!prefs.karaoke) } },
@@ -211,6 +238,7 @@ fun LyricsScreen(
                         scratch.launch { controller.prefs.setOffset((ms / 100).toLong() * 100) }
                     },
                     onRetry = { controller.lyrics.retry() },
+                    hazeState = hazeState,
                 )
             }
         }
@@ -240,6 +268,57 @@ fun LyricsScreen(
             onSearch = {
                 controller.lyrics.searchManual(manualTitle, manualArtist)
                 showSearch = false
+            },
+        )
+    }
+
+    if (showActions) {
+        AlertDialog(
+            onDismissRequest = { showActions = false },
+            containerColor = OnyxSurface,
+            title = {
+                Text(
+                    tr("Текст песни", "Lyrics"),
+                    color = OnyxWhite,
+                    fontWeight = FontWeight.Bold,
+                )
+            },
+            text = {
+                Column {
+                    LyricsActionRow(
+                        icon = Icons.Rounded.Search,
+                        text = tr("Найти вручную", "Search manually"),
+                        onClick = {
+                            manualTitle = nowPlaying.title
+                            manualArtist = nowPlaying.artist
+                            showActions = false
+                            showSearch = true
+                        },
+                    )
+                    LyricsActionRow(
+                        icon = Icons.Rounded.Refresh,
+                        text = tr("Искать заново", "Search again"),
+                        onClick = {
+                            showActions = false
+                            controller.lyrics.retry()
+                        },
+                    )
+                    if (manualActive) {
+                        LyricsActionRow(
+                            icon = Icons.Rounded.RestartAlt,
+                            text = tr("Сбросить к авто", "Reset to automatic"),
+                            onClick = {
+                                showActions = false
+                                controller.lyrics.resetToAuto(nowPlaying)
+                            },
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showActions = false }) {
+                    Text(tr("Закрыть", "Close"), color = OnyxWhite)
+                }
             },
         )
     }
@@ -333,6 +412,7 @@ private fun TopBar(
     art: Any?,
     onToggleTranslate: () -> Unit,
     onFullscreen: () -> Unit,
+    onMenu: () -> Unit,
     onBack: () -> Unit,
 ) {
     Row(
@@ -407,6 +487,34 @@ private fun TopBar(
             iconSize = 18.dp,
             onClick = onFullscreen,
         )
+        Spacer(Modifier.width(6.dp))
+        CircleButton(
+            icon = Icons.Rounded.MoreVert,
+            contentDescription = tr("Действия с текстом", "Lyrics actions"),
+            size = 38.dp,
+            iconSize = 18.dp,
+            onClick = onMenu,
+        )
+    }
+}
+
+@Composable
+private fun LyricsActionRow(
+    icon: ImageVector,
+    text: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 12.dp, horizontal = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = OnyxDim, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(10.dp))
+        Text(text, color = OnyxWhite, fontSize = 14.sp)
     }
 }
 
@@ -746,6 +854,7 @@ private fun BottomBar(
     offsetMs: Long,
     onOffset: (Long) -> Unit,
     onRetry: () -> Unit,
+    hazeState: HazeState? = null,
 ) {
     GlassSurface(
         modifier = Modifier
@@ -756,6 +865,7 @@ private fun BottomBar(
         strong = true,
         art = art,
         artBlur = 34.dp,
+        hazeState = hazeState,
     ) {
         Column(
             modifier = Modifier

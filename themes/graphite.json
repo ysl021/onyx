@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "id": "graphite",
+  "name": "Graphite",
+  "light": false,
+  "background": "#0A0A0B",
+  "surface": "#141416",
+  "text": "#F2F2F4",
+  "accent": "#9AA4B2"
+}

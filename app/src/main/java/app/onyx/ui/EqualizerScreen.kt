@@ -228,14 +228,14 @@ private fun BandSlider(
     Column {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
-                text = if (band.freqHz >= 1000) "${band.freqHz / 1000}.${(band.freqHz % 1000) / 100} кГц"
-                else "${band.freqHz} Гц",
+                text = if (band.freqHz >= 1000) "${band.freqHz / 1000}.${(band.freqHz % 1000) / 100} ${tr("кГц", "kHz")}"
+                else "${band.freqHz} ${tr("Гц", "Hz")}",
                 color = OnyxDim,
                 fontSize = 11.sp,
                 modifier = Modifier.weight(1f),
             )
             Text(
-                text = "%+.1f дБ".format(band.level / 100f),
+                text = "%+.1f %s".format(band.level / 100f, tr("дБ", "dB")),
                 color = OnyxWhite,
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Medium,

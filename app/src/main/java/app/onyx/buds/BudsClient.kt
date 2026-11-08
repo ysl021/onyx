@@ -77,6 +77,8 @@ class BudsClient(
     }
 
     fun setOneEar(enabled: Boolean) {
+        // One-ear ANC only makes sense when exactly one bud is actually worn.
+        if (enabled && last.wearingL == last.wearingR) return
         pendingOneEar = enabled
         if (last.connected) {
             send(BudsProtocol.ID_SET_ANC_ONE_EAR, byteArrayOf(if (enabled) 1 else 0))
@@ -211,6 +213,14 @@ class BudsClient(
                 ancHigh = ancHigh,
                 oneEar = oneEar,
             )
+        }
+        val wearingL = (placement shr 4) == 1
+        val wearingR = (placement and 0x0F) == 1
+        if (oneEar && wearingL == wearingR) {
+            // A second bud was inserted (or both removed): leave one-ear ANC.
+            pendingOneEar = false
+            send(BudsProtocol.ID_SET_ANC_ONE_EAR, byteArrayOf(0))
+            mutate { it.copy(oneEar = false) }
         }
     }
 

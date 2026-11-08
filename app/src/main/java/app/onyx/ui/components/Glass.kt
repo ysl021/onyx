@@ -53,7 +53,11 @@ import app.onyx.ui.theme.OnyxFaint
 import app.onyx.ui.theme.OnyxLine
 import app.onyx.ui.theme.OnyxWhite
 import app.onyx.ui.theme.LocalOnyx
+import app.onyx.ui.tr
 import coil.compose.AsyncImage
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.hazeChild
 import kotlin.math.roundToInt
 
 @Composable
@@ -63,6 +67,7 @@ fun GlassSurface(
     strong: Boolean = false,
     art: Any? = null,
     artBlur: Dp = 40.dp,
+    hazeState: HazeState? = null,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val palette = LocalOnyx.current
@@ -85,7 +90,20 @@ fun GlassSurface(
         strong -> 0.16f
         else -> 0.09f
     }
-    Box(modifier = modifier.clip(shape)) {
+    val haze = if (hazeState != null) {
+        Modifier.hazeChild(
+            state = hazeState,
+            shape = shape,
+            style = HazeStyle(
+                tint = base.copy(alpha = if (palette.isLight) 0.14f else 0.10f),
+                blurRadius = 26.dp,
+                noiseFactor = 0.03f,
+            ),
+        )
+    } else {
+        Modifier
+    }
+    Box(modifier = modifier.clip(shape).then(haze)) {
         if (art != null) {
             AsyncImage(
                 model = art,
@@ -331,7 +349,7 @@ fun BatteryMeter(
                         .background(OnyxWhite),
                 )
                 Spacer(Modifier.width(4.dp))
-                Text("в ухе", color = OnyxFaint, fontSize = 9.sp)
+                Text(tr("в ухе", "worn"), color = OnyxFaint, fontSize = 9.sp)
             }
         }
         Spacer(Modifier.height(7.dp))

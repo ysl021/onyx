@@ -50,6 +50,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.haze
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -79,6 +81,7 @@ import app.onyx.ui.components.BlurredBackdrop
 import app.onyx.ui.components.CustomBackdrop
 import app.onyx.ui.components.GlassSurface
 import app.onyx.ui.theme.OnyxBlack
+import app.onyx.ui.theme.toOnyxColors
 import app.onyx.ui.theme.OnyxDim
 import app.onyx.ui.theme.OnyxFaint
 import app.onyx.ui.theme.OnyxTheme
@@ -93,17 +96,26 @@ fun OnyxApp() {
     val controller = remember { AppController.get(context).also { it.start() } }
     val prefs by controller.prefs.data.collectAsStateWithLifecycle(initialValue = PrefsData())
     val media by controller.media.state.collectAsStateWithLifecycle()
+    val nowPlaying by controller.nowPlaying.collectAsStateWithLifecycle()
     val view = LocalView.current
+    val customThemes = remember(prefs.customThemes) {
+        app.onyx.core.CustomThemeCodec.decodeList(prefs.customThemes)
+    }
+    val customPalette = remember(customThemes, prefs.customThemeId) {
+        customThemes.firstOrNull { it.id == prefs.customThemeId }
+            ?.toOnyxColors()
+    }
     val dark = when (prefs.themeMode) {
         ThemeMode.DARK -> true
         ThemeMode.LIGHT -> false
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
     }
-    LaunchedEffect(dark) {
+    LaunchedEffect(dark, customPalette) {
         val window = (context as? android.app.Activity)?.window ?: return@LaunchedEffect
+        val effectiveLight = customPalette?.isLight ?: !dark
         val controller = WindowCompat.getInsetsController(window, view)
-        controller.isAppearanceLightStatusBars = !dark
-        controller.isAppearanceLightNavigationBars = false
+        controller.isAppearanceLightStatusBars = effectiveLight
+        controller.isAppearanceLightNavigationBars = effectiveLight
     }
     var tab by rememberSaveable { mutableStateOf(Tab.Player) }
     var showIntro by rememberSaveable { mutableStateOf(true) }
@@ -137,7 +149,8 @@ fun OnyxApp() {
         languageFade.snapTo(0.86f)
         languageFade.animateTo(1f, tween(180))
     }
-    OnyxTheme(prefs.themeMode, uiFontFamily) {
+    val hazeState = remember { HazeState() }
+    OnyxTheme(prefs.themeMode, uiFontFamily, custom = customPalette) {
         CompositionLocalProvider(LocalAppLanguage provides prefs.language) {
             Box(
                 modifier = Modifier
@@ -145,145 +158,151 @@ fun OnyxApp() {
                     .background(OnyxBlack)
                     .graphicsLayer { alpha = languageFade.value },
             ) {
-                    val pageKey = when (tab) {
-            Tab.Player -> "player"
-            Tab.Lyrics -> "lyrics"
-            Tab.Queue -> "queue"
-            Tab.Playlists -> "playlists"
-            Tab.Music -> "music"
-            Tab.Visualizer -> "visualizer"
-            Tab.Settings -> "settings"
-        }
-        val pageCover = prefs.coverPages.split(',').contains(pageKey)
-        val pageBackgrounds = remember(prefs.pageBackgrounds) {
-            prefs.pageBackgrounds.split('\u001E').mapNotNull { record ->
-                if (record.isBlank()) return@mapNotNull null
-                val parts = record.split('\u001F', limit = 2)
-                val key = parts.getOrNull(0).orEmpty()
-                val path = parts.getOrNull(1).orEmpty()
-                if (key.isBlank() || path.isBlank()) null else key to java.io.File(path)
-            }.toMap()
-        }
-        val customBg = pageBackgrounds[pageKey]?.takeIf { it.exists() }
-        val blurMap = remember(prefs.pageBackgroundBlur) {
-            prefs.pageBackgroundBlur.split('\u001E').mapNotNull { record ->
-                if (record.isBlank()) return@mapNotNull null
-                val parts = record.split('\u001F', limit = 2)
-                val key = parts.getOrNull(0).orEmpty()
-                val value = parts.getOrNull(1)?.toIntOrNull() ?: 0
-                if (key.isBlank()) null else key to value
-            }.toMap()
-        }
-        if (customBg != null) {
-            CustomBackdrop(art = customBg, blurPercent = blurMap[pageKey] ?: 0)
-        } else if (prefs.coverBackdrop && pageCover) {
-            val f = (prefs.coverIntensity / 100f).coerceIn(0f, 1f)
-            BlurredBackdrop(
-                art = media.now.art ?: media.now.artUri,
-                artAlpha = 0.22f + 0.68f * f,
-                scrimTop = 0.92f - 0.40f * f,
-                scrimMid = 0.96f - 0.34f * f,
-                scrimBottom = 1f - 0.10f * f,
-            )
-        }
-        Column(Modifier.fillMaxSize()) {
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .statusBarsPadding(),
-            ) {
-                AnimatedContent(
-                    targetState = tab,
-                    transitionSpec = {
-                        val forward = targetState.ordinal > initialState.ordinal
-                        val dir = if (forward) 1 else -1
-                        (fadeIn(tween(220)) + slideInHorizontally(tween(260)) { it / 12 * dir })
-                            .togetherWith(
-                                fadeOut(tween(160)) + slideOutHorizontally(tween(200)) { -it / 16 * dir },
-                            )
-                    },
-                    label = "tab",
-                ) { current ->
-                    when (current) {
-                        Tab.Player -> HomeScreen(
-                            controller = controller,
-                            onOpenLyrics = { tab = Tab.Lyrics },
-                            onOpenQueue = { tab = Tab.Queue },
-                            onOpenSettings = { tab = Tab.Settings },
+                val pageKey = when (tab) {
+                    Tab.Player -> "player"
+                    Tab.Lyrics -> "lyrics"
+                    Tab.Queue -> "queue"
+                    Tab.Playlists -> "playlists"
+                    Tab.Music -> "music"
+                    Tab.Visualizer -> "visualizer"
+                    Tab.Settings -> "settings"
+                }
+                val pageCover = prefs.coverPages.split(',').contains(pageKey)
+                val pageBackgrounds = remember(prefs.pageBackgrounds) {
+                    prefs.pageBackgrounds.split('\u001E').mapNotNull { record ->
+                        if (record.isBlank()) return@mapNotNull null
+                        val parts = record.split('\u001F', limit = 2)
+                        val key = parts.getOrNull(0).orEmpty()
+                        val path = parts.getOrNull(1).orEmpty()
+                        if (key.isBlank() || path.isBlank()) null else key to java.io.File(path)
+                    }.toMap()
+                }
+                val customBg = pageBackgrounds[pageKey]?.takeIf { it.exists() }
+                val blurMap = remember(prefs.pageBackgroundBlur) {
+                    prefs.pageBackgroundBlur.split('\u001E').mapNotNull { record ->
+                        if (record.isBlank()) return@mapNotNull null
+                        val parts = record.split('\u001F', limit = 2)
+                        val key = parts.getOrNull(0).orEmpty()
+                        val value = parts.getOrNull(1)?.toIntOrNull() ?: 0
+                        if (key.isBlank()) null else key to value
+                    }.toMap()
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .haze(hazeState),
+                ) {
+                    Box(Modifier.fillMaxSize().background(OnyxBlack))
+                    if (customBg != null) {
+                        CustomBackdrop(art = customBg, blurPercent = blurMap[pageKey] ?: 0)
+                    } else if (prefs.coverBackdrop && pageCover) {
+                        val f = (prefs.coverIntensity / 100f).coerceIn(0f, 1f)
+                        BlurredBackdrop(
+                            art = nowPlaying.art ?: nowPlaying.artUri,
+                            artAlpha = 0.22f + 0.68f * f,
+                            scrimTop = 0.92f - 0.40f * f,
+                            scrimMid = 0.96f - 0.34f * f,
+                            scrimBottom = 1f - 0.10f * f,
                         )
-                        Tab.Lyrics -> LyricsScreen(
-                            controller = controller,
-                            onBack = { tab = Tab.Player },
-                            onFullscreenChanged = { lyricsFullscreen = it },
-                        )
-                        Tab.Queue -> QueueScreen(
-                            controller = controller,
-                            onOpenSettings = { tab = Tab.Settings },
-                        )
-                        Tab.Playlists -> PlaylistsScreen(
-                            controller = controller,
-                            onBack = { tab = Tab.Queue },
-                            onOpenSettings = { tab = Tab.Settings },
-                        )
-                        Tab.Music -> MusicScreen(controller = controller)
-                        Tab.Visualizer -> VisualizerScreen(controller = controller)
-                        Tab.Settings -> SettingsScreen(
-                            controller = controller,
-                            onBack = { tab = Tab.Player },
+                    }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .statusBarsPadding()
+                            .padding(bottom = 92.dp),
+                    ) {
+                        AnimatedContent(
+                            targetState = tab,
+                            transitionSpec = {
+                                val forward = targetState.ordinal > initialState.ordinal
+                                val dir = if (forward) 1 else -1
+                                (fadeIn(tween(220)) + slideInHorizontally(tween(260)) { it / 12 * dir })
+                                    .togetherWith(
+                                        fadeOut(tween(160)) + slideOutHorizontally(tween(200)) { -it / 16 * dir },
+                                    )
+                            },
+                            label = "tab",
+                        ) { current ->
+                            when (current) {
+                                Tab.Player -> HomeScreen(
+                                    controller = controller,
+                                    onOpenLyrics = { tab = Tab.Lyrics },
+                                    onOpenSettings = { tab = Tab.Settings },
+                                )
+                                Tab.Lyrics -> LyricsScreen(
+                                    controller = controller,
+                                    onBack = { tab = Tab.Player },
+                                    onFullscreenChanged = { lyricsFullscreen = it },
+                                )
+                                Tab.Queue -> QueueScreen(
+                                    controller = controller,
+                                    onOpenSettings = { tab = Tab.Settings },
+                                )
+                                Tab.Playlists -> PlaylistsScreen(
+                                    controller = controller,
+                                    onBack = { tab = Tab.Queue },
+                                    onOpenSettings = { tab = Tab.Settings },
+                                )
+                                Tab.Music -> MusicScreen(controller = controller)
+                                Tab.Visualizer -> VisualizerScreen(controller = controller)
+                                Tab.Settings -> SettingsScreen(
+                                    controller = controller,
+                                    onBack = { tab = Tab.Player },
+                                )
+                            }
+                        }
+                    }
+                }
+
+                if (tab != Tab.Lyrics || !lyricsFullscreen) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(horizontal = 18.dp, vertical = 10.dp),
+                    ) {
+                        BottomNav(
+                            tab = tab,
+                            onSelect = {
+                                lyricsFullscreen = false
+                                tab = it
+                            },
+                            art = nowPlaying.art ?: nowPlaying.artUri,
+                            spotifyConnected = spotifyConnected,
+                            hazeState = hazeState,
+                            modifier = Modifier.fillMaxWidth(),
                         )
                     }
                 }
-            }
 
-            if (tab != Tab.Lyrics || !lyricsFullscreen) {
-                Box(
+                AnimatedVisibility(
+                    visible = message != null,
+                    enter = fadeIn() + slideInVertically(initialOffsetY = { it / 2 }),
+                    exit = fadeOut() + slideOutVertically(targetOffsetY = { it / 2 }),
                     modifier = Modifier
-                        .fillMaxWidth()
+                        .align(Alignment.BottomCenter)
                         .navigationBarsPadding()
-                        .padding(horizontal = 18.dp, vertical = 10.dp),
+                        .padding(bottom = if (tab == Tab.Lyrics) 84.dp else 104.dp)
+                        .padding(horizontal = 22.dp),
                 ) {
-                    BottomNav(
-                        tab = tab,
-                        onSelect = {
-                            lyricsFullscreen = false
-                            tab = it
-                        },
-                        art = media.now.art ?: media.now.artUri,
-                        spotifyConnected = spotifyConnected,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    GlassSurface(
+                        shape = RoundedCornerShape(16.dp),
+                        strong = true,
+                    ) {
+                        Text(
+                            text = message.orEmpty(),
+                            color = OnyxWhite,
+                            fontSize = 12.sp,
+                            lineHeight = 16.sp,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 11.dp),
+                        )
+                    }
                 }
-            }
-        }
 
-        AnimatedVisibility(
-            visible = message != null,
-            enter = fadeIn() + slideInVertically(initialOffsetY = { it / 2 }),
-            exit = fadeOut() + slideOutVertically(targetOffsetY = { it / 2 }),
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(bottom = if (tab == Tab.Lyrics) 84.dp else 104.dp)
-                .padding(horizontal = 22.dp),
-        ) {
-            GlassSurface(
-                shape = RoundedCornerShape(16.dp),
-                strong = true,
-            ) {
-                Text(
-                    text = message.orEmpty(),
-                    color = OnyxWhite,
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 11.dp),
-                )
-            }
-        }
-
-        if (showIntro) {
-            IntroScreen(onFinish = { showIntro = false })
-        }
+                if (showIntro) {
+                    IntroScreen(onFinish = { showIntro = false })
+                }
             }
         }
     }
@@ -295,6 +314,7 @@ private fun BottomNav(
     onSelect: (Tab) -> Unit,
     art: Any? = null,
     spotifyConnected: Boolean = false,
+    hazeState: HazeState? = null,
     modifier: Modifier = Modifier,
 ) {
     GlassSurface(
@@ -303,6 +323,7 @@ private fun BottomNav(
         strong = true,
         art = art,
         artBlur = 36.dp,
+        hazeState = hazeState,
     ) {
         Row(
             modifier = Modifier
