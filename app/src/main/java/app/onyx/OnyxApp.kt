@@ -157,7 +157,7 @@ fun OnyxApp() {
         languageFade.animateTo(1f, tween(180))
     }
     val hazeState = remember { HazeState() }
-    OnyxTheme(prefs.themeMode, uiFontFamily, custom = customPalette) {
+    OnyxTheme(prefs.themeMode, uiFontFamily, custom = customPalette, textBrightness = prefs.uiTextBrightness) {
         CompositionLocalProvider(LocalAppLanguage provides prefs.language) {
             Box(
                 modifier = Modifier
@@ -260,7 +260,10 @@ fun OnyxApp() {
                                     onBack = { tab = Tab.Player },
                                     onOpenSettings = { tab = Tab.Settings },
                                 )
-                                Tab.Music -> MusicScreen(controller = controller)
+                                Tab.Music -> MusicScreen(
+                                    controller = controller,
+                                    hazeState = hazeState,
+                                )
                                 Tab.Visualizer -> VisualizerScreen(controller = controller)
                                 Tab.Settings -> SettingsScreen(
                                     controller = controller,

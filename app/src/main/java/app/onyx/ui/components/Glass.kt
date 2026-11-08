@@ -74,19 +74,19 @@ fun GlassSurface(
 ) {
     val palette = LocalOnyx.current
     val base = if (palette.isLight) Color.Black else Color.White
-    val hazeFactor = if (hazeState != null) 0.18f else 1f
-    val top = when {
+    val hazeActive = hazeState != null
+    val top = if (hazeActive) 0.045f else when {
         palette.isLight && strong -> 0.07f
         palette.isLight -> 0.045f
         strong -> 0.16f
         else -> 0.085f
-    } * hazeFactor
-    val bottom = when {
+    }
+    val bottom = if (hazeActive) 0.015f else when {
         palette.isLight && strong -> 0.035f
         palette.isLight -> 0.02f
         strong -> 0.06f
         else -> 0.03f
-    } * hazeFactor
+    }
     val border = when {
         palette.isLight && strong -> 0.10f
         palette.isLight -> 0.07f
@@ -107,7 +107,7 @@ fun GlassSurface(
         Modifier
     }
     Box(modifier = modifier.clip(shape).then(haze)) {
-        if (art != null) {
+        if (art != null && !hazeActive) {
             AsyncImage(
                 model = art,
                 contentDescription = null,

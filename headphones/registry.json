@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "devices": [
+    {
+      "id": "galaxy-buds3-pro",
+      "brand": "Samsung",
+      "model": "Galaxy Buds3 Pro",
+      "transport": "spp",
+      "battery": true,
+      "anc": true,
+      "status": "supported"
+    },
+    {
+      "id": "generic-ble-battery",
+      "brand": "Any",
+      "model": "Bluetooth headset with Battery Service 0x180F",
+      "transport": "ble",
+      "battery": true,
+      "anc": false,
+      "status": "supported"
+    },
+    {
+      "id": "sony-wh-1000xm5",
+      "brand": "Sony",
+      "model": "WH-1000XM5",
+      "transport": "ble",
+      "battery": true,
+      "anc": false,
+      "status": "wanted"
+    },
+    {
+      "id": "airpods-pro-2",
+      "brand": "Apple",
+      "model": "AirPods Pro (2nd gen)",
+      "transport": "ble",
+      "battery": true,
+      "anc": false,
+      "status": "wanted"
+    }
+  ]
+}

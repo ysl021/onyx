@@ -65,6 +65,7 @@ import app.onyx.ui.components.GlassPill
 import app.onyx.ui.components.GlassSurface
 import app.onyx.ui.components.OnyxSwitch
 import app.onyx.ui.components.SectionLabel
+import dev.chrisbanes.haze.HazeState
 import app.onyx.ui.theme.OnyxDim
 import app.onyx.ui.theme.OnyxFaint
 import app.onyx.ui.theme.OnyxLine
@@ -76,6 +77,7 @@ import java.io.File
 @Composable
 fun MusicScreen(
     controller: AppController,
+    hazeState: HazeState? = null,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -293,6 +295,7 @@ fun MusicScreen(
                     playing = playback.isPlaying,
                     onToggle = { controller.localPlayer.toggle() },
                     onNext = { controller.localPlayer.next() },
+                    hazeState = hazeState,
                 )
             }
         }
@@ -418,6 +421,7 @@ private fun MiniPlayer(
     playing: Boolean,
     onToggle: () -> Unit,
     onNext: () -> Unit,
+    hazeState: HazeState? = null,
 ) {
     GlassSurface(
         modifier = Modifier
@@ -427,6 +431,7 @@ private fun MiniPlayer(
         strong = true,
         art = track.artPath?.let { File(it) },
         artBlur = 28.dp,
+        hazeState = hazeState,
     ) {
         Row(
             modifier = Modifier.padding(10.dp),

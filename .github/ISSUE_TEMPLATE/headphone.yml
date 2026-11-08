@@ -1,0 +1,60 @@
+name: Headphone support
+description: Request battery / ANC support for a Bluetooth headset
+title: "[Headphones] Brand Model"
+labels: ["headphones"]
+body:
+  - type: input
+    id: brand
+    attributes:
+      label: Brand
+      placeholder: Sony / Sennheiser / Apple / Huawei / Realme / Logitech / other
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Exact model
+      placeholder: WH-1000XM5, Momentum 4, FreeBuds Pro 3, AirPods Pro 2
+    validations:
+      required: true
+  - type: dropdown
+    id: transport
+    attributes:
+      label: Connection type
+      options:
+        - Bluetooth LE / BLE
+        - Bluetooth Classic / A2DP
+        - Samsung SPP
+        - USB dongle / HID
+        - Unknown
+    validations:
+      required: true
+  - type: input
+    id: vendor_app
+    attributes:
+      label: Vendor app that controls it
+      placeholder: Sony Headphones Connect, Sennheiser Smart Control, etc.
+  - type: checkboxes
+    id: features
+    attributes:
+      label: What should ONYX control?
+      options:
+        - label: Battery level
+        - label: ANC / Ambient / Adaptive
+        - label: One-ear ANC
+        - label: Equalizer
+        - label: Wearing detection
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes / logs
+      description: What works, what fails, HCI snoop or GATT dump. Do not include MAC or serial numbers.
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Confirmation
+      options:
+        - label: I have access to this device for testing
+          required: true
+        - label: I did not include personal data
+          required: true

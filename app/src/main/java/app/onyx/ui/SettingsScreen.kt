@@ -106,6 +106,10 @@ fun SettingsScreen(
     var clientId by remember { mutableStateOf(prefs.spotifyClientId) }
     var fontSize by remember { mutableFloatStateOf(prefs.lyricFontSize) }
     var section by rememberSaveable { mutableStateOf(0) }
+    var bridgeHost by remember(prefs.discordBridgeHost) { mutableStateOf(prefs.discordBridgeHost) }
+    var bridgePort by remember(prefs.discordBridgePort) {
+        mutableStateOf(prefs.discordBridgePort.toString())
+    }
     var showEq by rememberSaveable { mutableStateOf(false) }
     var pendingBgPage by remember { mutableStateOf<String?>(null) }
     var previewBgPage by remember { mutableStateOf<String?>(null) }
@@ -216,7 +220,7 @@ fun SettingsScreen(
                     letterSpacing = (-0.5).sp,
                 )
                 Text(
-                    text = "ONYX · v0.6.6",
+                    text = "ONYX · v0.6.7",
                     color = OnyxFaint,
                     fontSize = 10.sp,
                     letterSpacing = 1.4.sp,
@@ -494,6 +498,36 @@ fun SettingsScreen(
             Text(
                 text = "Assets: ${DiscordConfig.LARGE_IMAGE} · ${DiscordConfig.SMALL_IMAGE} · " +
                     "${DiscordConfig.PLAYING_IMAGE} · ${DiscordConfig.PLAY_IMAGE} · ${DiscordConfig.PAUSE_IMAGE}",
+                color = OnyxFaint,
+                fontSize = 10.sp,
+                lineHeight = 14.sp,
+            )
+            Spacer(Modifier.height(14.dp))
+            ToggleRow(
+                title = tr("ПК-мост ONYX", "ONYX PC bridge"),
+                subtitle = tr(
+                    "Отправлять текущий трек на компьютер, а он поставит Rich Presence в Discord.",
+                    "Send the current track to your PC; it sets Discord Rich Presence.",
+                ),
+                checked = prefs.discordBridgeEnabled,
+                onChange = { scope.launch { controller.prefs.setDiscordBridgeEnabled(it) } },
+            )
+            Spacer(Modifier.height(10.dp))
+            ThemeField(tr("IP компьютера", "PC IP"), bridgeHost) {
+                bridgeHost = it
+                scope.launch { controller.prefs.setDiscordBridgeHost(it.trim()) }
+            }
+            ThemeField(tr("Порт", "Port"), bridgePort) {
+                bridgePort = it.filter { ch -> ch.isDigit() }.take(5)
+                scope.launch {
+                    controller.prefs.setDiscordBridgePort(bridgePort.toIntOrNull() ?: 8787)
+                }
+            }
+            Text(
+                tr(
+                    "На ПК запусти bridge/onyx_bridge.py. Телефон и ПК должны быть в одной Wi-Fi сети.",
+                    "Run bridge/onyx_bridge.py on the PC. Phone and PC must be on the same Wi-Fi.",
+                ),
                 color = OnyxFaint,
                 fontSize = 10.sp,
                 lineHeight = 14.sp,
@@ -837,6 +871,9 @@ private fun AppearanceSection(
     }
     var lyricBrightness by remember(prefs.lyricBrightness) {
         mutableFloatStateOf(prefs.lyricBrightness.toFloat())
+    }
+    var uiBrightness by remember(prefs.uiTextBrightness) {
+        mutableFloatStateOf(prefs.uiTextBrightness.toFloat())
     }
     val context = androidx.compose.ui.platform.LocalContext.current
     val savedThemes = remember(prefs.customThemes) {
@@ -1248,6 +1285,30 @@ private fun AppearanceSection(
             onValueChangeFinished = {
                 scope.launch {
                     controller.prefs.setLyricBrightness(lyricBrightness.toInt().coerceIn(35, 100))
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(12.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                tr("Яркость текста приложения", "App text brightness"),
+                color = OnyxWhite,
+                fontSize = 13.sp,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                "${uiBrightness.toInt()}%",
+                color = OnyxFaint,
+                fontSize = 10.sp,
+            )
+        }
+        OnyxSlider(
+            value = (uiBrightness / 100f).coerceIn(0.35f, 1f),
+            onValueChange = { uiBrightness = it * 100f },
+            onValueChangeFinished = {
+                scope.launch {
+                    controller.prefs.setUiTextBrightness(uiBrightness.toInt().coerceIn(35, 100))
                 }
             },
             modifier = Modifier.fillMaxWidth(),

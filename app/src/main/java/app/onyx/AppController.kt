@@ -20,6 +20,7 @@ import app.onyx.music.LocalPlaybackController
 import app.onyx.music.LocalTrack
 import app.onyx.spotify.SpotifyClient
 import app.onyx.spotify.QueueData
+import app.onyx.spotify.DiscordBridge
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -60,6 +61,7 @@ class AppController private constructor(context: Context) {
 
     val queue = MutableStateFlow<QueueData?>(null)
     private var queueFetchedAt = 0L
+    val discordBridge = DiscordBridge(prefs, nowPlaying)
 
     @Volatile
     var lastTab: String = "Player"
@@ -148,6 +150,7 @@ class AppController private constructor(context: Context) {
         lyrics.close()
         sound.close()
         volume.close()
+        discordBridge.close()
         localPlayer.close()
         localLibrary.close()
         media.close()

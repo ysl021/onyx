@@ -37,6 +37,7 @@ data class PrefsData(
     val lyricOffsetMs: Long = 0L,
     val lyricActiveColor: Long = 0xFFF6F6F7,
     val lyricBrightness: Int = 100,
+    val uiTextBrightness: Int = 100,
     val lyricFont: String = "system",
     val uiFont: String = "system",
     val spicyKey: String = Prefs.SPICY_DEFAULT_KEY,
@@ -45,6 +46,9 @@ data class PrefsData(
     val customThemeId: String = "",
     val appIcon: Int = 1,
     val volumeStep: Int = 5,
+    val discordBridgeEnabled: Boolean = false,
+    val discordBridgeHost: String = "",
+    val discordBridgePort: Int = 8787,
     val language: AppLanguage = AppLanguage.RU,
     val coverBackdrop: Boolean = true,
     val coverIntensity: Int = 60,
@@ -74,6 +78,7 @@ class Prefs(private val context: Context) {
         val offset = longPreferencesKey("offset")
         val lyricActiveColor = longPreferencesKey("lyric_active_color")
         val lyricBrightness = intPreferencesKey("lyric_brightness")
+        val uiTextBrightness = intPreferencesKey("ui_text_brightness")
         val lyricFont = stringPreferencesKey("lyric_font")
         val uiFont = stringPreferencesKey("ui_font")
         val spicyKey = stringPreferencesKey("spicy_key")
@@ -82,6 +87,9 @@ class Prefs(private val context: Context) {
         val customThemeId = stringPreferencesKey("custom_theme_id")
         val appIcon = intPreferencesKey("app_icon")
         val volumeStep = intPreferencesKey("volume_step")
+        val discordBridgeEnabled = booleanPreferencesKey("discord_bridge_enabled")
+        val discordBridgeHost = stringPreferencesKey("discord_bridge_host")
+        val discordBridgePort = intPreferencesKey("discord_bridge_port")
         val language = stringPreferencesKey("language")
         val coverBackdrop = booleanPreferencesKey("cover_backdrop")
         val coverIntensity = intPreferencesKey("cover_intensity")
@@ -114,6 +122,7 @@ class Prefs(private val context: Context) {
         lyricOffsetMs = this[K.offset] ?: 0L,
         lyricActiveColor = this[K.lyricActiveColor] ?: 0xFFF6F6F7,
         lyricBrightness = this[K.lyricBrightness] ?: 100,
+        uiTextBrightness = this[K.uiTextBrightness] ?: 100,
         lyricFont = this[K.lyricFont] ?: "system",
         uiFont = this[K.uiFont] ?: "system",
         spicyKey = this[K.spicyKey] ?: SPICY_DEFAULT_KEY,
@@ -124,6 +133,9 @@ class Prefs(private val context: Context) {
         customThemeId = this[K.customThemeId] ?: "",
         appIcon = this[K.appIcon] ?: 1,
         volumeStep = this[K.volumeStep] ?: 5,
+        discordBridgeEnabled = this[K.discordBridgeEnabled] ?: false,
+        discordBridgeHost = this[K.discordBridgeHost] ?: "",
+        discordBridgePort = this[K.discordBridgePort] ?: 8787,
         language = runCatching {
             AppLanguage.valueOf(this[K.language] ?: AppLanguage.RU.name)
         }.getOrDefault(AppLanguage.RU),
@@ -161,6 +173,7 @@ class Prefs(private val context: Context) {
     suspend fun setOffset(v: Long) = edit { it[K.offset] = v }
     suspend fun setLyricActiveColor(v: Long) = edit { it[K.lyricActiveColor] = v }
     suspend fun setLyricBrightness(v: Int) = edit { it[K.lyricBrightness] = v }
+    suspend fun setUiTextBrightness(v: Int) = edit { it[K.uiTextBrightness] = v }
     suspend fun setLyricFont(v: String) = edit { it[K.lyricFont] = v }
     suspend fun setUiFont(v: String) = edit { it[K.uiFont] = v }
     suspend fun setSpicyKey(v: String) = edit { it[K.spicyKey] = v.trim() }
@@ -169,6 +182,9 @@ class Prefs(private val context: Context) {
     suspend fun setCustomThemeId(v: String) = edit { it[K.customThemeId] = v }
     suspend fun setAppIcon(v: Int) = edit { it[K.appIcon] = v }
     suspend fun setVolumeStep(v: Int) = edit { it[K.volumeStep] = v }
+    suspend fun setDiscordBridgeEnabled(v: Boolean) = edit { it[K.discordBridgeEnabled] = v }
+    suspend fun setDiscordBridgeHost(v: String) = edit { it[K.discordBridgeHost] = v }
+    suspend fun setDiscordBridgePort(v: Int) = edit { it[K.discordBridgePort] = v }
     suspend fun setLanguage(v: AppLanguage) = edit { it[K.language] = v.name }
     suspend fun setCoverBackdrop(v: Boolean) = edit { it[K.coverBackdrop] = v }
     suspend fun setCoverIntensity(v: Int) = edit { it[K.coverIntensity] = v.coerceIn(0, 100) }
