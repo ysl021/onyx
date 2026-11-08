@@ -108,7 +108,7 @@ fun MusicScreen(
             runCatching {
                 context.contentResolver.takePersistableUriPermission(
                     uri,
-                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
                 )
             }
             val name = runCatching { DocumentFile.fromTreeUri(context, uri)?.name }
@@ -303,6 +303,9 @@ fun MusicScreen(
                 controller.localLibrary.updateTrack(track.id, title, artist, album, artUri)
                 editingTrack = null
                 if (writeTags) {
+                    if (playback.current?.id == track.id) {
+                        controller.localPlayer.stop()
+                    }
                     scope.launch {
                         val name = runCatching {
                             DocumentFile.fromSingleUri(context, android.net.Uri.parse(track.uri))?.name

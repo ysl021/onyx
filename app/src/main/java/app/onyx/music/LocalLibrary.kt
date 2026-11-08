@@ -83,6 +83,15 @@ class LocalLibrary(
         scope.launch {
             overrides = readOverrides()
             val p = prefs.snapshot()
+            p.localFolders.forEach { folder ->
+                runCatching {
+                    context.contentResolver.takePersistableUriPermission(
+                        Uri.parse(folder.uri),
+                        android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                            android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                    )
+                }
+            }
             _state.value = LibraryState(folders = p.localFolders)
             readCache()
             if (p.localFolders.isNotEmpty()) scan()
