@@ -48,10 +48,16 @@ class OneEarTileService : TileService() {
 
     private fun updateTile() {
         val st = BudsService.state.value
+        val allowed = st.wearingL != st.wearingR
         qsTile?.apply {
             label = tr("ANC на одно ухо", "ANC one ear")
-            state = if (st.connected && st.oneEar) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
-            subtitle = if (st.oneEar) tr("включено", "on") else tr("выключено", "off")
+            state = if (st.connected && st.oneEar && allowed) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
+            subtitle = when {
+                !st.connected -> tr("не подключено", "not connected")
+                !allowed -> tr("вставь один наушник", "wear one bud")
+                st.oneEar -> tr("включено", "on")
+                else -> tr("выключено", "off")
+            }
             updateTile()
         }
     }

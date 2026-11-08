@@ -664,7 +664,7 @@ private fun BudsCard(
                 onClick = { BudsService.setOneEar(context, !buds.oneEar) },
             )
         }
-        if (!oneEarAllowed) {
+        if (buds.connected && !oneEarAllowed) {
             Spacer(Modifier.height(6.dp))
             Text(
                 text = tr(

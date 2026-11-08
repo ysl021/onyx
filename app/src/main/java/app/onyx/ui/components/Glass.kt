@@ -105,7 +105,7 @@ fun GlassSurface(
         Modifier
     }
     Box(modifier = modifier.clip(shape).then(haze)) {
-        if (art != null) {
+        if (art != null && hazeState == null) {
             AsyncImage(
                 model = art,
                 contentDescription = null,
