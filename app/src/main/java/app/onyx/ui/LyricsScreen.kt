@@ -64,6 +64,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
@@ -96,7 +97,9 @@ import app.onyx.ui.theme.OnyxLine
 import app.onyx.ui.theme.OnyxSurface
 import app.onyx.ui.theme.OnyxWhite
 import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.haze
+import dev.chrisbanes.haze.hazeChild
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -162,7 +165,7 @@ fun LyricsScreen(
             Column(
                 Modifier
                     .fillMaxSize()
-                    .padding(bottom = if (fullscreen) 0.dp else 96.dp),
+                    .padding(bottom = if (fullscreen) 0.dp else 84.dp),
             ) {
                 if (!fullscreen) {
                     TopBar(
@@ -241,6 +244,24 @@ fun LyricsScreen(
                     hazeState = hazeState,
                 )
             }
+        }
+
+        if (fullscreen) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .height(190.dp)
+                    .hazeChild(
+                        state = hazeState,
+                        shape = RectangleShape,
+                        style = HazeStyle(
+                            tint = OnyxSurface.copy(alpha = 0.24f),
+                            blurRadius = 34.dp,
+                            noiseFactor = 0.03f,
+                        ),
+                    ),
+            )
         }
 
         if (fullscreen) {
@@ -860,7 +881,7 @@ private fun BottomBar(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 18.dp)
-            .padding(top = 4.dp, bottom = 14.dp),
+            .padding(top = 4.dp, bottom = 4.dp),
         shape = RoundedCornerShape(26.dp),
         strong = true,
         art = art,

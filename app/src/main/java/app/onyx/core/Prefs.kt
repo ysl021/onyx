@@ -43,6 +43,7 @@ data class PrefsData(
     val customThemes: String = "",
     val customThemeId: String = "",
     val appIcon: Int = 1,
+    val volumeStep: Int = 5,
     val language: AppLanguage = AppLanguage.RU,
     val coverBackdrop: Boolean = true,
     val coverIntensity: Int = 60,
@@ -78,6 +79,7 @@ class Prefs(private val context: Context) {
         val customThemes = stringPreferencesKey("custom_themes")
         val customThemeId = stringPreferencesKey("custom_theme_id")
         val appIcon = intPreferencesKey("app_icon")
+        val volumeStep = intPreferencesKey("volume_step")
         val language = stringPreferencesKey("language")
         val coverBackdrop = booleanPreferencesKey("cover_backdrop")
         val coverIntensity = intPreferencesKey("cover_intensity")
@@ -118,6 +120,7 @@ class Prefs(private val context: Context) {
         customThemes = this[K.customThemes] ?: "",
         customThemeId = this[K.customThemeId] ?: "",
         appIcon = this[K.appIcon] ?: 1,
+        volumeStep = this[K.volumeStep] ?: 5,
         language = runCatching {
             AppLanguage.valueOf(this[K.language] ?: AppLanguage.RU.name)
         }.getOrDefault(AppLanguage.RU),
@@ -161,6 +164,7 @@ class Prefs(private val context: Context) {
     suspend fun setCustomThemes(v: String) = edit { it[K.customThemes] = v }
     suspend fun setCustomThemeId(v: String) = edit { it[K.customThemeId] = v }
     suspend fun setAppIcon(v: Int) = edit { it[K.appIcon] = v }
+    suspend fun setVolumeStep(v: Int) = edit { it[K.volumeStep] = v }
     suspend fun setLanguage(v: AppLanguage) = edit { it[K.language] = v.name }
     suspend fun setCoverBackdrop(v: Boolean) = edit { it[K.coverBackdrop] = v }
     suspend fun setCoverIntensity(v: Int) = edit { it[K.coverIntensity] = v.coerceIn(0, 100) }

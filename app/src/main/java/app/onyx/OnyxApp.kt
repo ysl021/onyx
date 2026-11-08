@@ -74,7 +74,6 @@ import app.onyx.ui.tr
 import app.onyx.ui.LyricsScreen
 import app.onyx.ui.MusicScreen
 import app.onyx.ui.PlaylistsScreen
-import app.onyx.ui.QueueScreen
 import app.onyx.ui.SettingsScreen
 import app.onyx.ui.VisualizerScreen
 import app.onyx.ui.components.BlurredBackdrop
@@ -88,7 +87,7 @@ import app.onyx.ui.theme.OnyxTheme
 import app.onyx.ui.theme.OnyxWhite
 import kotlinx.coroutines.delay
 
-private enum class Tab { Player, Lyrics, Queue, Playlists, Music, Visualizer, Settings }
+private enum class Tab { Player, Lyrics, Playlists, Music, Visualizer, Settings }
 
 @Composable
 fun OnyxApp() {
@@ -161,7 +160,6 @@ fun OnyxApp() {
                 val pageKey = when (tab) {
                     Tab.Player -> "player"
                     Tab.Lyrics -> "lyrics"
-                    Tab.Queue -> "queue"
                     Tab.Playlists -> "playlists"
                     Tab.Music -> "music"
                     Tab.Visualizer -> "visualizer"
@@ -234,13 +232,9 @@ fun OnyxApp() {
                                     onBack = { tab = Tab.Player },
                                     onFullscreenChanged = { lyricsFullscreen = it },
                                 )
-                                Tab.Queue -> QueueScreen(
-                                    controller = controller,
-                                    onOpenSettings = { tab = Tab.Settings },
-                                )
                                 Tab.Playlists -> PlaylistsScreen(
                                     controller = controller,
-                                    onBack = { tab = Tab.Queue },
+                                    onBack = { tab = Tab.Player },
                                     onOpenSettings = { tab = Tab.Settings },
                                 )
                                 Tab.Music -> MusicScreen(controller = controller)
@@ -345,13 +339,6 @@ private fun BottomNav(
                 selected = tab == Tab.Lyrics,
                 modifier = Modifier.weight(1f),
                 onClick = { onSelect(Tab.Lyrics) },
-            )
-            NavItem(
-                icon = Icons.AutoMirrored.Rounded.QueueMusic,
-                label = tr("Очередь", "Queue"),
-                selected = tab == Tab.Queue,
-                modifier = Modifier.weight(1f),
-                onClick = { onSelect(Tab.Queue) },
             )
             if (spotifyConnected) {
                 NavItem(

@@ -98,14 +98,14 @@ fun HomeScreen(
     val media by controller.media.state.collectAsStateWithLifecycle()
     val nowPlaying by controller.nowPlaying.collectAsStateWithLifecycle()
     val buds by BudsService.state.collectAsStateWithLifecycle()
+    val volume by controller.volume.state.collectAsStateWithLifecycle()
     val routes by controller.router.routes.collectAsStateWithLifecycle()
     val headphoneBattery by controller.headphones.batteryByName.collectAsStateWithLifecycle()
     val prefs by controller.prefs.data.collectAsStateWithLifecycle(initialValue = PrefsData())
     val scope = rememberCoroutineScope()
 
     val connected = prefs.spotifyRefresh.isNotBlank() || prefs.spotifyAccess.isNotBlank()
-    var queue by remember { mutableStateOf<QueueData?>(null) }
-    var queueVersion by remember { mutableStateOf(0) }
+    val queue by controller.queue.collectAsStateWithLifecycle()
     val localName = remember {
         if (androidx.core.content.ContextCompat.checkSelfPermission(
                 context,
@@ -126,8 +126,8 @@ fun HomeScreen(
             !name.equals(Build.MODEL, ignoreCase = true)
     }
 
-    LaunchedEffect(nowPlaying.mediaId, nowPlaying.title, nowPlaying.artist, connected, queueVersion) {
-        queue = if (connected) runCatching { controller.spotify.queue() }.getOrNull() else null
+    LaunchedEffect(nowPlaying.mediaId, nowPlaying.title, nowPlaying.artist, connected) {
+        if (connected) controller.refreshQueue() else controller.clearQueue()
     }
 
     Box(modifier.fillMaxSize()) {
@@ -150,6 +150,8 @@ fun HomeScreen(
             }
             OutputCard(
                 routes = routes,
+                volume = volume,
+                onVolume = { controller.volume.set(it, prefs.volumeStep) },
                 onSelect = { controller.router.select(it) },
                 onOpenBluetooth = { controller.router.openBluetoothSettings() },
             )
@@ -163,11 +165,25 @@ fun HomeScreen(
                 connected = connected,
                 queue = queue,
                 onOpenSettings = onOpenSettings,
+                onPlay = { uri ->
+                    scope.launch {
+                        val ok = controller.spotify.playTrack(uri)
+                        if (ok) controller.refreshQueue(force = true)
+                        if (!ok) {
+                            controller.toast(
+                                tr(
+                                    "Spotify не разрешил запуск — проверь Premium и активное устройство",
+                                    "Spotify refused playback — check Premium and the active device",
+                                ),
+                            )
+                        }
+                    }
+                },
                 onRepeat = { state ->
                     scope.launch {
                         val ok = controller.spotify.setRepeat(state)
                         if (ok) {
-                            queueVersion++
+                            controller.refreshQueue(force = true)
                         } else {
                             controller.toast(tr("Spotify не разрешил повтор — проверь Premium", "Spotify refused repeat — check Premium"))
                         }
@@ -410,6 +426,8 @@ private fun Controls(controller: AppController, media: MediaState) {
 @Composable
 private fun OutputCard(
     routes: List<AudioRoute>,
+    volume: app.onyx.audio.VolumeState,
+    onVolume: (Float) -> Unit,
     onSelect: (String) -> Unit,
     onOpenBluetooth: () -> Unit,
 ) {
@@ -441,7 +459,7 @@ private fun OutputCard(
             ) {
                 routes.forEach { route ->
                     GlassPill(
-                        text = route.name,
+                        text = if (route.phone) tr("Телефон", "Phone") else route.name,
                         selected = route.selected,
                         icon = if (route.phone) Icons.Rounded.Smartphone else Icons.Rounded.Bluetooth,
                         onClick = { onSelect(route.id) },
@@ -449,6 +467,27 @@ private fun OutputCard(
                 }
             }
         }
+        Spacer(Modifier.height(14.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                tr("Громкость", "Volume"),
+                color = OnyxDim,
+                fontSize = 12.sp,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                "${volume.percent}%",
+                color = OnyxWhite,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
+        Spacer(Modifier.height(6.dp))
+        OnyxSlider(
+            value = volume.fraction,
+            onValueChange = onVolume,
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }
 
@@ -684,6 +723,7 @@ private fun QueueCard(
     connected: Boolean,
     queue: QueueData?,
     onOpenSettings: () -> Unit,
+    onPlay: (String) -> Unit,
     onRepeat: (String) -> Unit,
 ) {
     if (!connected) {
@@ -751,10 +791,12 @@ private fun QueueCard(
             Text(tr("Очередь пуста", "Queue is empty"), color = OnyxFaint, fontSize = 12.sp)
             return@GlassCard
         }
-        data.next.take(3).forEachIndexed { index, track ->
+        data.next.forEachIndexed { index, track ->
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable { onPlay(track.uri) }
                     .padding(vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -799,6 +841,13 @@ private fun QueueCard(
                 }
                 Spacer(Modifier.width(8.dp))
                 Text(text = fmt(track.durationMs), color = OnyxFaint, fontSize = 10.sp)
+                Spacer(Modifier.width(6.dp))
+                Icon(
+                    Icons.Rounded.PlayArrow,
+                    contentDescription = null,
+                    tint = OnyxFaint,
+                    modifier = Modifier.size(16.dp),
+                )
             }
         }
     }

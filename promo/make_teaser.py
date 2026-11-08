@@ -25,6 +25,9 @@ INTRO = 2.6
 SCENE = 2.9
 OUTRO = 3.2
 FADE = 0.38
+# Hide the phone's own status bar (clock, battery, notifications) and gesture bar.
+CROP_TOP = 100
+CROP_BOTTOM = 56
 
 FONT_BOLD = r"C:\Windows\Fonts\segoeuib.ttf"
 FONT_REG = r"C:\Windows\Fonts\segoeui.ttf"
@@ -90,6 +93,14 @@ def rounded_phone(shot: Image.Image, height: int) -> Image.Image:
         (0, 0, width - 1, height - 1), radius, outline=(255, 255, 255, 34), width=3
     )
     return Image.alpha_composite(out, border)
+
+
+def load_shot(path: Path) -> Image.Image:
+    shot = Image.open(path).convert("RGB")
+    width, height = shot.size
+    top = min(CROP_TOP, max(0, height // 6))
+    bottom = min(CROP_BOTTOM, max(0, height // 10))
+    return shot.crop((0, top, width, height - bottom))
 
 
 def phone_card(shot: Image.Image, height: int, zoom: float) -> Image.Image:
@@ -228,7 +239,7 @@ def render_scene(src: Path, index: int, local_t: float, total_local: float):
 
     if path.exists():
         zoom = 1.0 + 0.045 * ease(local_t / max(total_local, 0.01))
-        card = phone_card(Image.open(path), 1280, zoom)
+        card = phone_card(load_shot(path), 1300, zoom)
         x = (W - card.width) // 2
         y = int(560 - 10 * ease(local_t / max(total_local, 0.01)))
         draw_shadow(canvas, (x, y, x + card.width, y + card.height))

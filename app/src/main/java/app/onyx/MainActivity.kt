@@ -28,6 +28,10 @@ class MainActivity : ComponentActivity() {
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT),
         )
+        window.isStatusBarContrastEnforced = false
+        window.isNavigationBarContrastEnforced = false
+        window.statusBarColor = android.graphics.Color.TRANSPARENT
+        window.navigationBarColor = android.graphics.Color.TRANSPARENT
         AppController.get(this).start()
         lifecycleScope.launch {
             val saved = runCatching { AppController.get(this@MainActivity).prefs.snapshot() }

@@ -214,7 +214,7 @@ fun SettingsScreen(
                     letterSpacing = (-0.5).sp,
                 )
                 Text(
-                    text = "ONYX · v0.6.0",
+                    text = "ONYX · v0.6.1",
                     color = OnyxFaint,
                     fontSize = 10.sp,
                     letterSpacing = 1.4.sp,
@@ -236,9 +236,45 @@ fun SettingsScreen(
                 selected = section == 1,
                 onClick = { section = 1 },
             )
+            GlassPill(
+                text = tr("Интеграции", "Integrations"),
+                selected = section == 2,
+                onClick = { section = 2 },
+            )
         }
 
         if (section == 0) {
+        GlassCard(modifier = Modifier.fillMaxWidth()) {
+            SectionLabel(tr("Управление", "Controls"))
+            Spacer(Modifier.height(10.dp))
+            Text(
+                tr("Шаг ползунка громкости", "Volume slider step"),
+                color = OnyxWhite,
+                fontSize = 13.sp,
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(1, 5, 10).forEach { step ->
+                    GlassPill(
+                        text = "$step%",
+                        selected = prefs.volumeStep == step,
+                        onClick = { scope.launch { controller.prefs.setVolumeStep(step) } },
+                    )
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                tr(
+                    "Насколько сильно меняется громкость при перетаскивании.",
+                    "How much the volume changes while dragging.",
+                ),
+                color = OnyxFaint,
+                fontSize = 10.sp,
+            )
+        }
+        }
+
+        if (section == 2) {
         // ------------------------------------------------------------- Spotify
         GlassCard(modifier = Modifier.fillMaxWidth()) {
             SectionLabel("Spotify")
@@ -382,6 +418,106 @@ fun SettingsScreen(
             }
         }
 
+        GlassCard(modifier = Modifier.fillMaxWidth()) {
+            SectionLabel("Discord")
+            Spacer(Modifier.height(10.dp))
+            Text(
+                tr(
+                    "На ПК ONYX 1.0 подключит настоящий Rich Presence: название ONYX, трек и кнопку на GitHub. " +
+                        "На Android Discord не даёт локальный RPC, поэтому доступны Spotify presence и «Поделиться».",
+                    "ONYX 1.0 on desktop will use real Rich Presence: ONYX, track and a GitHub button. " +
+                        "Android Discord does not expose local RPC, so Spotify presence and Share are available.",
+                ),
+                color = OnyxDim,
+                fontSize = 12.sp,
+                lineHeight = 17.sp,
+            )
+            Spacer(Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                GlassPill(
+                    text = tr("Поделиться треком", "Share track"),
+                    selected = false,
+                    onClick = {
+                        val now = controller.nowPlaying.value
+                        val text = buildString {
+                            if (now.title.isNotBlank()) {
+                                append(now.title)
+                                if (now.artist.isNotBlank()) append(" — ").append(now.artist)
+                                append("\n")
+                            }
+                            append("ONYX · https://github.com/ysl021/onyx")
+                        }
+                        runCatching {
+                            val send = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, text)
+                            }
+                            context.startActivity(
+                                Intent.createChooser(send, tr("Поделиться", "Share")),
+                            )
+                        }
+                    },
+                )
+                GlassPill(
+                    text = tr("Developer Portal", "Developer Portal"),
+                    selected = false,
+                    onClick = {
+                        runCatching {
+                            context.startActivity(
+                                Intent(
+                                    Intent.ACTION_VIEW,
+                                    android.net.Uri.parse("https://discord.com/developers/applications"),
+                                ),
+                            )
+                        }
+                    },
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                tr(
+                    "Для кастомного presence создай Discord Application и пришли Application ID — добавлю его в сборку.",
+                    "For custom presence create a Discord Application and send its Application ID.",
+                ),
+                color = OnyxFaint,
+                fontSize = 10.sp,
+                lineHeight = 14.sp,
+            )
+        }
+
+        GlassCard(modifier = Modifier.fillMaxWidth()) {
+            SectionLabel("YouTube")
+            Spacer(Modifier.height(10.dp))
+            Text(
+                tr(
+                    "Импорт миксов по таймкодам из описания видео. Скачивание не поддерживается — " +
+                        "ONYX открывает видео на нужной секунде, а локальные файлы можно добавить в «Музыку».",
+                    "Import timestamped mixes from a video description. Downloading is not supported — " +
+                        "ONYX opens the video at the right second; local files can be added to Music.",
+                ),
+                color = OnyxDim,
+                fontSize = 12.sp,
+                lineHeight = 17.sp,
+            )
+            Spacer(Modifier.height(12.dp))
+            GlassPill(
+                text = tr("Открыть YouTube", "Open YouTube"),
+                selected = false,
+                onClick = {
+                    runCatching {
+                        context.startActivity(
+                            Intent(
+                                Intent.ACTION_VIEW,
+                                android.net.Uri.parse("https://www.youtube.com"),
+                            ),
+                        )
+                    }
+                },
+            )
+        }
+        }
+
+        if (section == 0) {
         // -------------------------------------------------------------- Lyrics
         GlassCard(modifier = Modifier.fillMaxWidth()) {
             SectionLabel(tr("Текст и караоке", "Lyrics & karaoke"))

@@ -5,8 +5,10 @@ import android.content.pm.PackageManager
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Build
+import android.os.SystemClock
 import app.onyx.buds.BudsService
 import app.onyx.audio.SoundEffects
+import app.onyx.audio.VolumeController
 import app.onyx.core.Prefs
 import app.onyx.lyrics.LyricsRepository
 import app.onyx.media.MediaRepository
@@ -17,12 +19,14 @@ import app.onyx.music.LocalLibrary
 import app.onyx.music.LocalPlaybackController
 import app.onyx.music.LocalTrack
 import app.onyx.spotify.SpotifyClient
+import app.onyx.spotify.QueueData
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
@@ -40,6 +44,7 @@ class AppController private constructor(context: Context) {
     val headphones = HeadphonesRepository(appContext)
     val spotify = SpotifyClient(appContext, prefs)
     val sound = SoundEffects(appContext, prefs)
+    val volume = VolumeController(appContext)
     val localLibrary = LocalLibrary(appContext, prefs)
     val localPlayer = LocalPlaybackController(appContext, localLibrary)
     val lyrics = LyricsRepository(appContext, prefs) { spotify.token() }
@@ -52,6 +57,23 @@ class AppController private constructor(context: Context) {
         val track = localState.current
         if (track != null && localState.isPlaying) track.toNowPlaying() else mediaState.now
     }.stateIn(scope, SharingStarted.Eagerly, media.state.value.now)
+
+    val queue = MutableStateFlow<QueueData?>(null)
+    private var queueFetchedAt = 0L
+
+    fun refreshQueue(force: Boolean = false) {
+        if (!force && SystemClock.elapsedRealtime() - queueFetchedAt < 8_000L) return
+        scope.launch {
+            val data = runCatching { spotify.queue() }.getOrNull() ?: return@launch
+            queue.value = data
+            queueFetchedAt = SystemClock.elapsedRealtime()
+        }
+    }
+
+    fun clearQueue() {
+        queue.value = null
+        queueFetchedAt = 0L
+    }
 
     private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 8)
     val messages = _messages.asSharedFlow()
@@ -122,6 +144,7 @@ class AppController private constructor(context: Context) {
         watcher = null
         lyrics.close()
         sound.close()
+        volume.close()
         localPlayer.close()
         localLibrary.close()
         media.close()
