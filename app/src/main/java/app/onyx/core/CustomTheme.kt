@@ -47,6 +47,45 @@ data class CustomTheme(
     }
 }
 
+val BuiltInThemes = listOf(
+    CustomTheme(
+        id = "graphite",
+        name = "Graphite",
+        light = false,
+        background = "#0A0A0B",
+        surface = "#141416",
+        text = "#F2F2F4",
+        accent = "#9AA4B2",
+    ),
+    CustomTheme(
+        id = "paper",
+        name = "Paper",
+        light = true,
+        background = "#F7F5F0",
+        surface = "#FFFFFF",
+        text = "#141416",
+        accent = "#2F6BFF",
+    ),
+    CustomTheme(
+        id = "midnight",
+        name = "Midnight",
+        light = false,
+        background = "#050A18",
+        surface = "#0B1326",
+        text = "#EAF0FF",
+        accent = "#6FA8FF",
+    ),
+    CustomTheme(
+        id = "sakura",
+        name = "Sakura",
+        light = true,
+        background = "#FFF6F8",
+        surface = "#FFFFFF",
+        text = "#231A1E",
+        accent = "#D65B85",
+    ),
+)
+
 object CustomThemeCodec {
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true; isLenient = true }
 

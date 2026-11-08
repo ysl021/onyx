@@ -73,6 +73,7 @@ import app.onyx.R
 import app.onyx.buds.BudsService
 import app.onyx.core.CustomTheme
 import app.onyx.core.CustomThemeCodec
+import app.onyx.core.DiscordConfig
 import app.onyx.core.IconSwitcher
 import app.onyx.ui.components.CircleButton
 import app.onyx.ui.components.CustomBackdrop
@@ -214,7 +215,7 @@ fun SettingsScreen(
                     letterSpacing = (-0.5).sp,
                 )
                 Text(
-                    text = "ONYX · v0.6.1",
+                    text = "ONYX · v0.6.3",
                     color = OnyxFaint,
                     fontSize = 10.sp,
                     letterSpacing = 1.4.sp,
@@ -265,8 +266,8 @@ fun SettingsScreen(
             Spacer(Modifier.height(8.dp))
             Text(
                 tr(
-                    "Насколько сильно меняется громкость при перетаскивании.",
-                    "How much the volume changes while dragging.",
+                    "Насколько сильно меняется громкость при перетаскивании. Система может округлять до аппаратного шага.",
+                    "How much the volume changes while dragging. The system may round to a hardware step.",
                 ),
                 color = OnyxFaint,
                 fontSize = 10.sp,
@@ -479,6 +480,19 @@ fun SettingsScreen(
                     "Для кастомного presence создай Discord Application и пришли Application ID — добавлю его в сборку.",
                     "For custom presence create a Discord Application and send its Application ID.",
                 ),
+                color = OnyxFaint,
+                fontSize = 10.sp,
+                lineHeight = 14.sp,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "Application ID: ${DiscordConfig.APPLICATION_ID}",
+                color = OnyxFaint,
+                fontSize = 10.sp,
+            )
+            Text(
+                text = "Assets: ${DiscordConfig.LARGE_IMAGE} · ${DiscordConfig.SMALL_IMAGE} · " +
+                    "${DiscordConfig.PLAYING_IMAGE} · ${DiscordConfig.PLAY_IMAGE} · ${DiscordConfig.PAUSE_IMAGE}",
                 color = OnyxFaint,
                 fontSize = 10.sp,
                 lineHeight = 14.sp,
@@ -750,7 +764,7 @@ fun SettingsScreen(
                 lineHeight = 17.sp,
             )
         }
-        } else {
+        } else if (section == 1) {
             AppearanceSection(
                 controller = controller,
                 prefs = prefs,
@@ -821,8 +835,11 @@ private fun AppearanceSection(
         mutableFloatStateOf(prefs.coverIntensity.toFloat())
     }
     val context = androidx.compose.ui.platform.LocalContext.current
-    val customThemes = remember(prefs.customThemes) {
+    val savedThemes = remember(prefs.customThemes) {
         CustomThemeCodec.decodeList(prefs.customThemes)
+    }
+    val customThemes = remember(savedThemes) {
+        (savedThemes + app.onyx.core.BuiltInThemes).distinctBy { it.id }
     }
     var showThemeEditor by remember { mutableStateOf(false) }
     var editingTheme by remember { mutableStateOf<CustomTheme?>(null) }
@@ -837,7 +854,7 @@ private fun AppearanceSection(
                 }.getOrNull()
                 val theme = text?.let { CustomThemeCodec.decodeOne(it) }
                 if (theme != null) {
-                    val next = customThemes.filterNot { it.id == theme.id } + theme
+                    val next = savedThemes.filterNot { it.id == theme.id } + theme
                     controller.prefs.setCustomThemes(CustomThemeCodec.encodeList(next))
                     controller.prefs.setCustomThemeId(theme.id)
                     controller.toast(tr("Тема импортирована", "Theme imported"))
@@ -981,6 +998,14 @@ private fun AppearanceSection(
             fontSize = 11.sp,
             lineHeight = 15.sp,
         )
+        Spacer(Modifier.height(10.dp))
+        GlassPill(
+            text = tr("Стандартная тема", "Original theme"),
+            selected = prefs.customThemeId.isBlank(),
+            onClick = {
+                scope.launch { controller.prefs.setCustomThemeId("") }
+            },
+        )
         customThemes.forEach { theme ->
             val colors = remember(theme) { theme.toOnyxColors() }
             val active = prefs.customThemeId == theme.id
@@ -1034,21 +1059,23 @@ private fun AppearanceSection(
                     },
                 )
                 Spacer(Modifier.width(4.dp))
-                CircleButton(
-                    icon = Icons.Rounded.Delete,
-                    contentDescription = tr("Удалить", "Delete"),
-                    size = 30.dp,
-                    iconSize = 14.dp,
-                    onClick = {
-                        scope.launch {
-                            val next = customThemes.filterNot { it.id == theme.id }
-                            controller.prefs.setCustomThemes(CustomThemeCodec.encodeList(next))
-                            if (prefs.customThemeId == theme.id) {
-                                controller.prefs.setCustomThemeId("")
+                if (savedThemes.any { it.id == theme.id }) {
+                    CircleButton(
+                        icon = Icons.Rounded.Delete,
+                        contentDescription = tr("Удалить", "Delete"),
+                        size = 30.dp,
+                        iconSize = 14.dp,
+                        onClick = {
+                            scope.launch {
+                                val next = savedThemes.filterNot { it.id == theme.id }
+                                controller.prefs.setCustomThemes(CustomThemeCodec.encodeList(next))
+                                if (prefs.customThemeId == theme.id) {
+                                    controller.prefs.setCustomThemeId("")
+                                }
                             }
-                        }
-                    },
-                )
+                        },
+                    )
+                }
             }
         }
         Spacer(Modifier.height(10.dp))
@@ -1079,7 +1106,7 @@ private fun AppearanceSection(
             onDismiss = { showThemeEditor = false },
             onSave = { theme ->
                 scope.launch {
-                    val next = customThemes.filterNot { it.id == theme.id } + theme
+                    val next = savedThemes.filterNot { it.id == theme.id } + theme
                     controller.prefs.setCustomThemes(CustomThemeCodec.encodeList(next))
                     controller.prefs.setCustomThemeId(theme.id)
                     showThemeEditor = false

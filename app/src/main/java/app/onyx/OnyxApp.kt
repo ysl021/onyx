@@ -53,6 +53,7 @@ import androidx.compose.ui.Modifier
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.haze
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -76,6 +77,7 @@ import app.onyx.ui.MusicScreen
 import app.onyx.ui.PlaylistsScreen
 import app.onyx.ui.SettingsScreen
 import app.onyx.ui.VisualizerScreen
+import app.onyx.ui.components.AmbientBackdrop
 import app.onyx.ui.components.BlurredBackdrop
 import app.onyx.ui.components.CustomBackdrop
 import app.onyx.ui.components.GlassSurface
@@ -98,7 +100,8 @@ fun OnyxApp() {
     val nowPlaying by controller.nowPlaying.collectAsStateWithLifecycle()
     val view = LocalView.current
     val customThemes = remember(prefs.customThemes) {
-        app.onyx.core.CustomThemeCodec.decodeList(prefs.customThemes)
+        val saved = app.onyx.core.CustomThemeCodec.decodeList(prefs.customThemes)
+        (saved + app.onyx.core.BuiltInThemes).distinctBy { it.id }
     }
     val customPalette = remember(customThemes, prefs.customThemeId) {
         customThemes.firstOrNull { it.id == prefs.customThemeId }
@@ -191,17 +194,33 @@ fun OnyxApp() {
                         .haze(hazeState),
                 ) {
                     Box(Modifier.fillMaxSize().background(OnyxBlack))
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .background(
+                                Brush.verticalGradient(
+                                    listOf(
+                                        Color.Transparent,
+                                        Color.Transparent,
+                                        OnyxWhite.copy(alpha = 0.025f),
+                                        OnyxWhite.copy(alpha = 0.05f),
+                                    ),
+                                ),
+                            ),
+                    )
                     if (customBg != null) {
                         CustomBackdrop(art = customBg, blurPercent = blurMap[pageKey] ?: 0)
-                    } else if (prefs.coverBackdrop && pageCover) {
+                    } else if (prefs.coverBackdrop && pageCover && (nowPlaying.art ?: nowPlaying.artUri) != null) {
                         val f = (prefs.coverIntensity / 100f).coerceIn(0f, 1f)
                         BlurredBackdrop(
                             art = nowPlaying.art ?: nowPlaying.artUri,
                             artAlpha = 0.22f + 0.68f * f,
-                            scrimTop = 0.92f - 0.40f * f,
-                            scrimMid = 0.96f - 0.34f * f,
-                            scrimBottom = 1f - 0.10f * f,
+                            scrimTop = 0.78f - 0.42f * f,
+                            scrimMid = 0.62f - 0.32f * f,
+                            scrimBottom = 0.42f - 0.28f * f,
                         )
+                    } else {
+                        AmbientBackdrop()
                     }
                     Box(
                         modifier = Modifier
@@ -253,8 +272,7 @@ fun OnyxApp() {
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
                             .fillMaxWidth()
-                            .navigationBarsPadding()
-                            .padding(horizontal = 18.dp, vertical = 10.dp),
+                            .padding(horizontal = 18.dp),
                     ) {
                         BottomNav(
                             tab = tab,
@@ -322,6 +340,7 @@ private fun BottomNav(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .navigationBarsPadding()
                 .padding(horizontal = 8.dp, vertical = 7.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically,

@@ -36,6 +36,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
@@ -72,7 +74,7 @@ fun GlassSurface(
 ) {
     val palette = LocalOnyx.current
     val base = if (palette.isLight) Color.Black else Color.White
-    val hazeFactor = if (hazeState != null) 0.55f else 1f
+    val hazeFactor = if (hazeState != null) 0.18f else 1f
     val top = when {
         palette.isLight && strong -> 0.07f
         palette.isLight -> 0.045f
@@ -96,8 +98,8 @@ fun GlassSurface(
             state = hazeState,
             shape = shape,
             style = HazeStyle(
-                tint = base.copy(alpha = if (palette.isLight) 0.05f else 0.035f),
-                blurRadius = 34.dp,
+                tint = base.copy(alpha = if (palette.isLight) 0.04f else 0.02f),
+                blurRadius = 42.dp,
                 noiseFactor = 0.03f,
             ),
         )
@@ -431,14 +433,48 @@ fun CustomBackdrop(
                 .background(
                     Brush.verticalGradient(
                         listOf(
-                            base.copy(alpha = 0.12f),
-                            base.copy(alpha = 0.28f),
-                            base.copy(alpha = 0.55f),
+                            base.copy(alpha = 0.08f),
+                            base.copy(alpha = 0.16f),
+                            base.copy(alpha = 0.30f),
                         ),
                     ),
                 ),
         )
     }
+}
+
+@Composable
+fun AmbientBackdrop(modifier: Modifier = Modifier) {
+    val palette = LocalOnyx.current
+    val base = palette.black
+    Box(
+        modifier
+            .fillMaxSize()
+            .background(base)
+            .drawBehind {
+                drawRect(
+                    Brush.verticalGradient(
+                        listOf(
+                            base,
+                            base,
+                            Color.White.copy(alpha = if (palette.isLight) 0.10f else 0.035f),
+                        ),
+                    ),
+                )
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        listOf(
+                            Color.White.copy(alpha = if (palette.isLight) 0.16f else 0.07f),
+                            Color.Transparent,
+                        ),
+                        center = Offset(size.width / 2f, size.height * 1.02f),
+                        radius = size.height * 0.62f,
+                    ),
+                    radius = size.height * 0.62f,
+                    center = Offset(size.width / 2f, size.height * 1.02f),
+                )
+            },
+    )
 }
 
 @Composable
