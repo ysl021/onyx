@@ -22,9 +22,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -36,7 +38,9 @@ import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.LibraryMusic
+import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -46,6 +50,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -69,17 +74,21 @@ import app.onyx.core.ThemeMode
 import app.onyx.ui.HomeScreen
 import app.onyx.ui.AppLanguageState
 import app.onyx.ui.FontCatalog
+import app.onyx.ui.FontPickerDialog
 import app.onyx.ui.IntroScreen
 import app.onyx.ui.LocalAppLanguage
 import app.onyx.ui.tr
 import app.onyx.ui.LyricsScreen
+import app.onyx.ui.MusicMiniPlayer
 import app.onyx.ui.MusicScreen
 import app.onyx.ui.PlaylistsScreen
 import app.onyx.ui.SettingsScreen
 import app.onyx.ui.VisualizerScreen
 import app.onyx.ui.components.AmbientBackdrop
 import app.onyx.ui.components.BlurredBackdrop
+import app.onyx.ui.components.CircleButton
 import app.onyx.ui.components.CustomBackdrop
+import app.onyx.ui.components.GlassPill
 import app.onyx.ui.components.GlassSurface
 import app.onyx.ui.theme.OnyxBlack
 import app.onyx.ui.theme.toOnyxColors
@@ -88,6 +97,7 @@ import app.onyx.ui.theme.OnyxFaint
 import app.onyx.ui.theme.OnyxTheme
 import app.onyx.ui.theme.OnyxWhite
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 private enum class Tab { Player, Lyrics, Playlists, Music, Visualizer, Settings }
 
@@ -98,7 +108,10 @@ fun OnyxApp() {
     val prefs by controller.prefs.data.collectAsStateWithLifecycle(initialValue = PrefsData())
     val media by controller.media.state.collectAsStateWithLifecycle()
     val nowPlaying by controller.nowPlaying.collectAsStateWithLifecycle()
+    val localPlayback by controller.localPlayer.state.collectAsStateWithLifecycle()
     val view = LocalView.current
+    val panelScope = rememberCoroutineScope()
+    var showLyricFontPicker by remember { mutableStateOf(false) }
     val customThemes = remember(prefs.customThemes) {
         val saved = app.onyx.core.CustomThemeCodec.decodeList(prefs.customThemes)
         (saved + app.onyx.core.BuiltInThemes).distinctBy { it.id }
@@ -260,10 +273,7 @@ fun OnyxApp() {
                                     onBack = { tab = Tab.Player },
                                     onOpenSettings = { tab = Tab.Settings },
                                 )
-                                Tab.Music -> MusicScreen(
-                                    controller = controller,
-                                    hazeState = hazeState,
-                                )
+                                Tab.Music -> MusicScreen(controller = controller)
                                 Tab.Visualizer -> VisualizerScreen(controller = controller)
                                 Tab.Settings -> SettingsScreen(
                                     controller = controller,
@@ -293,6 +303,70 @@ fun OnyxApp() {
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
+                }
+
+                // Mini-player for local music. Drawn outside the haze source (like
+                // BottomNav) so its own text stays sharp while the backdrop and the
+                // track list behind it are blurred.
+                if (tab == Tab.Music) {
+                    AnimatedVisibility(
+                        visible = localPlayback.current != null,
+                        enter = fadeIn() + slideInVertically(initialOffsetY = { it / 3 }),
+                        exit = fadeOut() + slideOutVertically(targetOffsetY = { it / 3 }),
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .padding(bottom = 104.dp),
+                    ) {
+                        localPlayback.current?.let { track ->
+                            MusicMiniPlayer(
+                                controller = controller,
+                                track = track,
+                                playing = localPlayback.isPlaying,
+                                hazeState = hazeState,
+                            )
+                        }
+                    }
+                }
+
+                // Lyrics toolbar. Rendered outside the haze source for the same
+                // reason: only the backdrop and the lyrics behind it are blurred.
+                if (tab == Tab.Lyrics) {
+                    AnimatedVisibility(
+                        visible = !lyricsFullscreen,
+                        enter = fadeIn() + slideInVertically(initialOffsetY = { it / 3 }),
+                        exit = fadeOut() + slideOutVertically(targetOffsetY = { it / 3 }),
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .fillMaxWidth()
+                            .padding(horizontal = 18.dp)
+                            .padding(top = 4.dp, bottom = 104.dp),
+                    ) {
+                        LyricsToolsBar(
+                            art = nowPlaying.art ?: nowPlaying.artUri,
+                            fontSize = prefs.lyricFontSize,
+                            karaoke = prefs.karaoke,
+                            onKaraoke = { panelScope.launch { controller.prefs.setKaraoke(!prefs.karaoke) } },
+                            onFont = { showLyricFontPicker = true },
+                            onFontSize = { size ->
+                                panelScope.launch { controller.prefs.setFontSize(size.coerceIn(20f, 48f)) }
+                            },
+                            offsetMs = prefs.lyricOffsetMs,
+                            onOffset = { ms ->
+                                panelScope.launch { controller.prefs.setOffset((ms / 100).toLong() * 100) }
+                            },
+                            onRetry = { controller.lyrics.retry() },
+                            hazeState = hazeState,
+                        )
+                    }
+                }
+
+                if (showLyricFontPicker) {
+                    FontPickerDialog(
+                        selected = prefs.lyricFont,
+                        onSelect = { id -> panelScope.launch { controller.prefs.setLyricFont(id) } },
+                        onDismiss = { showLyricFontPicker = false },
+                    )
                 }
 
                 AnimatedVisibility(
@@ -396,6 +470,91 @@ private fun BottomNav(
                 modifier = Modifier.weight(1f),
                 onClick = { onSelect(Tab.Settings) },
             )
+        }
+    }
+}
+
+/**
+ * Lyrics toolbar (font size, karaoke, offset, re-search). Drawn above the dock as a
+ * sibling of the haze source so its own labels stay sharp and the blur shows the
+ * backdrop and the lyrics behind it.
+ */
+@Composable
+private fun LyricsToolsBar(
+    art: Any?,
+    fontSize: Float,
+    karaoke: Boolean,
+    onKaraoke: () -> Unit,
+    onFont: () -> Unit,
+    onFontSize: (Float) -> Unit,
+    offsetMs: Long,
+    onOffset: (Long) -> Unit,
+    onRetry: () -> Unit,
+    hazeState: HazeState? = null,
+) {
+    GlassSurface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(26.dp),
+        strong = true,
+        art = art,
+        artBlur = 34.dp,
+        hazeState = hazeState,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 11.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                GlassPill(text = "A−", selected = false, onClick = { onFontSize(fontSize - 2f) })
+                GlassPill(text = "A+", selected = false, onClick = { onFontSize(fontSize + 2f) })
+                GlassPill(text = tr("Караоке", "Karaoke"), selected = karaoke, onClick = onKaraoke)
+                CircleButton(
+                    icon = Icons.Rounded.TextFields,
+                    contentDescription = tr("Шрифт", "Font"),
+                    size = 38.dp,
+                    iconSize = 18.dp,
+                    onClick = onFont,
+                )
+                Text(
+                    text = "Aa ${fontSize.toInt()}",
+                    color = OnyxFaint,
+                    fontSize = 10.sp,
+                    modifier = Modifier.padding(start = 2.dp),
+                )
+                Spacer(Modifier.weight(1f))
+                CircleButton(
+                    icon = Icons.Rounded.Refresh,
+                    contentDescription = tr("Искать заново", "Search again"),
+                    size = 38.dp,
+                    iconSize = 17.dp,
+                    onClick = onRetry,
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    text = tr("Смещение", "Offset"),
+                    color = OnyxFaint,
+                    fontSize = 10.sp,
+                    letterSpacing = 0.8.sp,
+                )
+                GlassPill(text = "−0.1", selected = false, onClick = { onOffset(offsetMs - 100) })
+                GlassPill(
+                    text = if (offsetMs == 0L) tr("0 мс", "0 ms") else "$offsetMs ${tr("мс", "ms")}",
+                    selected = offsetMs != 0L,
+                    onClick = { onOffset(0) },
+                )
+                GlassPill(text = "+0.1", selected = false, onClick = { onOffset(offsetMs + 100) })
+            }
         }
     }
 }

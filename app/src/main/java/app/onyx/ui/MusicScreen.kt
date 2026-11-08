@@ -41,7 +41,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -77,7 +76,6 @@ import java.io.File
 @Composable
 fun MusicScreen(
     controller: AppController,
-    hazeState: HazeState? = null,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -86,7 +84,6 @@ fun MusicScreen(
     var query by remember { mutableStateOf("") }
     var selectedFolder by remember { mutableStateOf<String?>(null) }
     var editingTrack by remember { mutableStateOf<LocalTrack?>(null) }
-    val scope = rememberCoroutineScope()
 
     val folders = library.folders
     val filtered = remember(library.tracks, query, selectedFolder) {
@@ -288,61 +285,49 @@ fun MusicScreen(
             }
         }
 
-        playback.current?.let { current ->
-            Box(Modifier.padding(bottom = 104.dp)) {
-                MiniPlayer(
-                    track = current,
-                    playing = playback.isPlaying,
-                    onToggle = { controller.localPlayer.toggle() },
-                    onNext = { controller.localPlayer.next() },
-                    hazeState = hazeState,
-                )
-            }
+        editingTrack?.let { track ->
+            TrackEditDialog(
+                track = track,
+                onDismiss = { editingTrack = null },
+                onSave = { title, artist, album, artUri, writeTags ->
+                    controller.localLibrary.updateTrack(track.id, title, artist, album, artUri)
+                    editingTrack = null
+                    if (writeTags) {
+                        if (playback.current?.id == track.id) {
+                            controller.localPlayer.stop()
+                        }
+                        controller.appScope.launch {
+                            val name = runCatching {
+                                DocumentFile.fromSingleUri(context, android.net.Uri.parse(track.uri))?.name
+                            }.getOrNull() ?: track.uri.substringAfterLast('/')
+                            val result = TagWriter.write(
+                                context = context,
+                                uri = android.net.Uri.parse(track.uri),
+                                displayName = name,
+                                title = title,
+                                artist = artist,
+                                album = album,
+                                artUri = artUri,
+                            )
+                            controller.toast(
+                                if (result.ok) {
+                                    tr("Теги записаны в файл", "Tags written to the file")
+                                } else {
+                                    tr(
+                                        "Сохранено в ONYX, файл не изменён",
+                                        "Saved in ONYX, file unchanged",
+                                    )
+                                },
+                            )
+                        }
+                    }
+                },
+                onReset = {
+                    controller.localLibrary.resetTrack(track.id)
+                    editingTrack = null
+                },
+            )
         }
-    }
-
-    editingTrack?.let { track ->
-        TrackEditDialog(
-            track = track,
-            onDismiss = { editingTrack = null },
-            onSave = { title, artist, album, artUri, writeTags ->
-                controller.localLibrary.updateTrack(track.id, title, artist, album, artUri)
-                editingTrack = null
-                if (writeTags) {
-                    if (playback.current?.id == track.id) {
-                        controller.localPlayer.stop()
-                    }
-                    scope.launch {
-                        val name = runCatching {
-                            DocumentFile.fromSingleUri(context, android.net.Uri.parse(track.uri))?.name
-                        }.getOrNull() ?: track.uri.substringAfterLast('/')
-                        val result = TagWriter.write(
-                            context = context,
-                            uri = android.net.Uri.parse(track.uri),
-                            displayName = name,
-                            title = title,
-                            artist = artist,
-                            album = album,
-                            artUri = artUri,
-                        )
-                        controller.toast(
-                            if (result.ok) {
-                                tr("Теги записаны в файл", "Tags written to the file")
-                            } else {
-                                tr(
-                                    "Сохранено в ONYX, файл не изменён",
-                                    "Saved in ONYX, file unchanged",
-                                )
-                            },
-                        )
-                    }
-                }
-            },
-            onReset = {
-                controller.localLibrary.resetTrack(track.id)
-                editingTrack = null
-            },
-        )
     }
 }
 
@@ -415,12 +400,15 @@ private fun TrackRow(
     }
 }
 
+/**
+ * Mini-player for local playback, rendered by OnyxApp above the dock and outside
+ * the haze source so the panel stays sharp while everything behind it blurs.
+ */
 @Composable
-private fun MiniPlayer(
+internal fun MusicMiniPlayer(
+    controller: AppController,
     track: LocalTrack,
     playing: Boolean,
-    onToggle: () -> Unit,
-    onNext: () -> Unit,
     hazeState: HazeState? = null,
 ) {
     GlassSurface(
@@ -467,7 +455,7 @@ private fun MiniPlayer(
                 size = 38.dp,
                 iconSize = 18.dp,
                 filled = true,
-                onClick = onToggle,
+                onClick = { controller.localPlayer.toggle() },
             )
             Spacer(Modifier.width(8.dp))
             CircleButton(
@@ -475,7 +463,7 @@ private fun MiniPlayer(
                 contentDescription = tr("Следующий", "Next"),
                 size = 34.dp,
                 iconSize = 16.dp,
-                onClick = onNext,
+                onClick = { controller.localPlayer.next() },
             )
         }
     }

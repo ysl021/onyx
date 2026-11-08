@@ -258,7 +258,7 @@ fun PlaylistsScreen(
                                         val ok = controller.spotify.playTrack(track.uri)
                                         if (!ok) controller.toast(
                                             tr(
-                                                tr("Spotify не разрешил запуск — проверь Premium", "Spotify refused playback — check Premium"),
+                                                "Spotify не разрешил запуск — проверь Premium",
                                                 "Spotify refused playback — check Premium",
                                             ),
                                         )

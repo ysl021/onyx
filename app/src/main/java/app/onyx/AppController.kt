@@ -51,6 +51,12 @@ class AppController private constructor(context: Context) {
     val lyrics = LyricsRepository(appContext, prefs) { spotify.token() }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    /**
+     * Long-lived scope for work initiated from the UI that must survive leaving
+     * the screen (e.g. TagWriter rewriting a file that is currently playing).
+     */
+    val appScope: CoroutineScope = scope
     private var watcher: Job? = null
 
     /** Local playback wins over notification sessions so artwork and lyrics never go stale. */

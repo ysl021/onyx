@@ -26,6 +26,8 @@ import java.io.File
 data class LocalPlaybackState(
     val connected: Boolean = false,
     val current: LocalTrack? = null,
+    val queue: List<LocalTrack> = emptyList(),
+    val currentIndex: Int = -1,
     val isPlaying: Boolean = false,
     val positionMs: Long = 0L,
     val durationMs: Long = 0L,
@@ -128,6 +130,30 @@ class LocalPlaybackController(
         controller?.seekToPreviousMediaItem()
     }
 
+    fun move(from: Int, to: Int) {
+        val c = controller ?: return
+        if (from == to || from < 0 || to < 0) return
+        if (from >= c.mediaItemCount || to >= c.mediaItemCount) return
+        runCatching {
+            c.moveMediaItem(from, to)
+            publish(c)
+        }
+    }
+
+    fun playAt(index: Int) {
+        val c = controller ?: return
+        if (index !in 0 until c.mediaItemCount) return
+        c.seekToDefaultPosition(index)
+        c.play()
+    }
+
+    fun removeAt(index: Int) {
+        val c = controller ?: return
+        if (index !in 0 until c.mediaItemCount) return
+        c.removeMediaItem(index)
+        publish(c)
+    }
+
     fun seekTo(ms: Long) {
         controller?.seekTo(ms)
     }
@@ -160,6 +186,18 @@ class LocalPlaybackController(
         _state.value = LocalPlaybackState(
             connected = true,
             current = track,
+            queue = (0 until c.mediaItemCount).mapNotNull { index ->
+                val media = c.getMediaItemAt(index)
+                library.state.value.tracks.firstOrNull { it.id == media.mediaId }
+                    ?: LocalTrack(
+                        id = media.mediaId,
+                        uri = media.localConfiguration?.uri?.toString().orEmpty(),
+                        title = media.mediaMetadata.title?.toString().orEmpty(),
+                        artist = media.mediaMetadata.artist?.toString().orEmpty(),
+                        album = media.mediaMetadata.albumTitle?.toString().orEmpty(),
+                    )
+            },
+            currentIndex = if (c.mediaItemCount == 0) -1 else c.currentMediaItemIndex,
             isPlaying = c.isPlaying,
             positionMs = c.currentPosition.coerceAtLeast(0L),
             durationMs = c.duration.takeIf { it > 0 } ?: track?.durationMs ?: 0L,

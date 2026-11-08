@@ -39,7 +39,6 @@ import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.RestartAlt
 import androidx.compose.material.icons.rounded.Search
-import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
@@ -90,7 +89,6 @@ import app.onyx.lyrics.LyricsState
 import app.onyx.ui.components.BlurredBackdrop
 import app.onyx.ui.components.CircleButton
 import app.onyx.ui.components.GlassPill
-import app.onyx.ui.components.GlassSurface
 import app.onyx.ui.theme.OnyxDim
 import app.onyx.ui.theme.OnyxFaint
 import app.onyx.ui.theme.OnyxLine
@@ -124,7 +122,6 @@ fun LyricsScreen(
     var fullscreen by rememberSaveable { mutableStateOf(false) }
     var showSearch by remember { mutableStateOf(false) }
     var showActions by remember { mutableStateOf(false) }
-    var showFontPicker by remember { mutableStateOf(false) }
     var manualTitle by remember { mutableStateOf("") }
     var manualArtist by remember { mutableStateOf("") }
     val hazeState = remember { HazeState() }
@@ -222,30 +219,8 @@ fun LyricsScreen(
             }
         }
 
-        if (!fullscreen) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth(),
-            ) {
-                BottomBar(
-                    art = nowPlaying.art ?: nowPlaying.artUri,
-                    fontSize = prefs.lyricFontSize,
-                    karaoke = prefs.karaoke,
-                    onKaraoke = { scratch.launch { controller.prefs.setKaraoke(!prefs.karaoke) } },
-                    onFont = { showFontPicker = true },
-                    onFontSize = { size ->
-                        scratch.launch { controller.prefs.setFontSize(size.coerceIn(20f, 48f)) }
-                    },
-                    offsetMs = prefs.lyricOffsetMs,
-                    onOffset = { ms ->
-                        scratch.launch { controller.prefs.setOffset((ms / 100).toLong() * 100) }
-                    },
-                    onRetry = { controller.lyrics.retry() },
-                    hazeState = hazeState,
-                )
-            }
-        }
+        // The lyrics toolbar is rendered by OnyxApp (outside the haze source) so its
+        // content stays sharp while the backdrop and lyrics behind it are blurred.
 
         if (fullscreen) {
             Box(
@@ -342,14 +317,6 @@ fun LyricsScreen(
                     Text(tr("Закрыть", "Close"), color = OnyxWhite)
                 }
             },
-        )
-    }
-
-    if (showFontPicker) {
-        FontPickerDialog(
-            selected = prefs.lyricFont,
-            onSelect = { id -> scratch.launch { controller.prefs.setLyricFont(id) } },
-            onDismiss = { showFontPicker = false },
         )
     }
 }
@@ -871,87 +838,4 @@ private fun activeLineIndex(doc: LyricsDoc, position: Long): Int {
         if (doc.lines[i].startMs <= position) index = i else break
     }
     return index
-}
-
-@Composable
-private fun BottomBar(
-    art: Any?,
-    fontSize: Float,
-    karaoke: Boolean,
-    onKaraoke: () -> Unit,
-    onFont: () -> Unit,
-    onFontSize: (Float) -> Unit,
-    offsetMs: Long,
-    onOffset: (Long) -> Unit,
-    onRetry: () -> Unit,
-    hazeState: HazeState? = null,
-) {
-    GlassSurface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 18.dp)
-            .padding(top = 4.dp, bottom = 104.dp),
-        shape = RoundedCornerShape(26.dp),
-        strong = true,
-        art = art,
-        artBlur = 34.dp,
-        hazeState = hazeState,
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 11.dp),
-        ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            GlassPill(text = "A−", selected = false, onClick = { onFontSize(fontSize - 2f) })
-            GlassPill(text = "A+", selected = false, onClick = { onFontSize(fontSize + 2f) })
-            GlassPill(text = tr("Караоке", "Karaoke"), selected = karaoke, onClick = onKaraoke)
-            CircleButton(
-                icon = Icons.Rounded.TextFields,
-                contentDescription = tr("Шрифт", "Font"),
-                size = 38.dp,
-                iconSize = 18.dp,
-                onClick = onFont,
-            )
-            Text(
-                text = "Aa ${fontSize.toInt()}",
-                color = OnyxFaint,
-                fontSize = 10.sp,
-                modifier = Modifier.padding(start = 2.dp),
-            )
-            Spacer(Modifier.weight(1f))
-            CircleButton(
-                icon = Icons.Rounded.Refresh,
-                contentDescription = tr("Искать заново", "Search again"),
-                size = 38.dp,
-                iconSize = 17.dp,
-                onClick = onRetry,
-            )
-        }
-        Spacer(Modifier.height(6.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text(
-                text = tr("Смещение", "Offset"),
-                color = OnyxFaint,
-                fontSize = 10.sp,
-                letterSpacing = 0.8.sp,
-            )
-            GlassPill(text = "−0.1", selected = false, onClick = { onOffset(offsetMs - 100) })
-            GlassPill(
-                text = if (offsetMs == 0L) tr("0 мс", "0 ms") else "$offsetMs ${tr("мс", "ms")}",
-                selected = offsetMs != 0L,
-                onClick = { onOffset(0) },
-            )
-            GlassPill(text = "+0.1", selected = false, onClick = { onOffset(offsetMs + 100) })
-        }
-        }
-    }
 }

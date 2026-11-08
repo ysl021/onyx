@@ -3,6 +3,7 @@ package app.onyx.music
 import android.content.Context
 import android.net.Uri
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import org.jaudiotagger.audio.AudioFileIO
 import org.jaudiotagger.tag.FieldKey
@@ -80,11 +81,16 @@ object TagWriter {
             }
             if (temp.length() <= 0L) return@withContext Result(false, "empty")
 
-            context.contentResolver.openOutputStream(uri, "wt")?.use { output ->
-                temp.inputStream().use { input -> input.copyTo(output) }
-            } ?: return@withContext Result(false, "write")
+            // From here on the original file is truncated by "wt", so the write-back
+            // must never be interrupted by coroutine cancellation (e.g. user leaving
+            // the screen) — otherwise the file would be left damaged.
+            withContext(NonCancellable) {
+                context.contentResolver.openOutputStream(uri, "wt")?.use { output ->
+                    temp.inputStream().use { input -> input.copyTo(output) }
+                } ?: return@withContext Result(false, "write")
 
-            Result(true)
+                Result(true)
+            }
         } catch (t: Throwable) {
             Result(false, t.message ?: t.javaClass.simpleName)
         } finally {

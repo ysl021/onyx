@@ -196,10 +196,6 @@ class Prefs(private val context: Context) {
         it[K.eqPreset] = preset
         it[K.eqLevels] = levels
     }
-    suspend fun setLocalFolder(uri: String, name: String) = edit {
-        it[K.localFolderUri] = uri
-        it[K.localFolderName] = name
-    }
     suspend fun setLocalFolders(folders: List<LocalFolder>) = edit {
         it[K.localFolders] = encodeFolders(folders)
         it[K.localFolderUri] = folders.firstOrNull()?.uri.orEmpty()

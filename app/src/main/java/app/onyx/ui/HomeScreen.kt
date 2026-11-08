@@ -12,6 +12,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,6 +32,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Bluetooth
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Pause
@@ -56,6 +58,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -85,6 +88,7 @@ import app.onyx.ui.theme.OnyxFaint
 import app.onyx.ui.theme.OnyxLine
 import app.onyx.ui.theme.OnyxWhite
 import coil.compose.AsyncImage
+import androidx.media3.common.Player
 import kotlinx.coroutines.launch
 
 @Composable
@@ -106,6 +110,8 @@ fun HomeScreen(
 
     val connected = prefs.spotifyRefresh.isNotBlank() || prefs.spotifyAccess.isNotBlank()
     val queue by controller.queue.collectAsStateWithLifecycle()
+    val localPlayback by controller.localPlayer.state.collectAsStateWithLifecycle()
+    val localQueueActive = localPlayback.current != null && localPlayback.queue.isNotEmpty()
     val localName = remember {
         if (androidx.core.content.ContextCompat.checkSelfPermission(
                 context,
@@ -161,35 +167,42 @@ fun HomeScreen(
                 activeHeadphone = activeHeadphone,
                 activeBattery = activeHeadphone?.let { headphoneBattery[it] } ?: -1,
             )
-            QueueCard(
-                connected = connected,
-                queue = queue,
-                onOpenSettings = onOpenSettings,
-                onPlay = { uri ->
-                    scope.launch {
-                        val ok = controller.spotify.playTrack(uri)
-                        if (ok) controller.refreshQueue(force = true)
-                        if (!ok) {
-                            controller.toast(
-                                tr(
-                                    "Spotify не разрешил запуск — проверь Premium и активное устройство",
-                                    "Spotify refused playback — check Premium and the active device",
-                                ),
-                            )
+            if (localQueueActive) {
+                LocalQueueCard(
+                    controller = controller,
+                    state = localPlayback,
+                )
+            } else {
+                QueueCard(
+                    connected = connected,
+                    queue = queue,
+                    onOpenSettings = onOpenSettings,
+                    onPlay = { uri ->
+                        scope.launch {
+                            val ok = controller.spotify.playTrack(uri)
+                            if (ok) controller.refreshQueue(force = true)
+                            if (!ok) {
+                                controller.toast(
+                                    tr(
+                                        "Spotify не разрешил запуск — проверь Premium и активное устройство",
+                                        "Spotify refused playback — check Premium and the active device",
+                                    ),
+                                )
+                            }
                         }
-                    }
-                },
-                onRepeat = { state ->
-                    scope.launch {
-                        val ok = controller.spotify.setRepeat(state)
-                        if (ok) {
-                            controller.refreshQueue(force = true)
-                        } else {
-                            controller.toast(tr("Spotify не разрешил повтор — проверь Premium", "Spotify refused repeat — check Premium"))
+                    },
+                    onRepeat = { state ->
+                        scope.launch {
+                            val ok = controller.spotify.setRepeat(state)
+                            if (ok) {
+                                controller.refreshQueue(force = true)
+                            } else {
+                                controller.toast(tr("Spotify не разрешил повтор — проверь Premium", "Spotify refused repeat — check Premium"))
+                            }
                         }
-                    }
-                },
-            )
+                    },
+                )
+            }
         }
     }
 }
@@ -713,6 +726,166 @@ private fun BudsCard(
                 color = OnyxFaint,
                 fontSize = 10.sp,
                 lineHeight = 14.sp,
+            )
+        }
+    }
+}
+
+@Composable
+private fun LocalQueueCard(
+    controller: AppController,
+    state: app.onyx.music.LocalPlaybackState,
+) {
+    val player = controller.localPlayer
+    // Drag-to-reorder: the row being dragged and accumulated vertical drag.
+    var dragIndex by remember { mutableStateOf<Int?>(null) }
+    var dragAccum by remember { mutableStateOf(0f) }
+
+    GlassCard(modifier = Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            SectionLabel(tr("Дальше в очереди", "Up next"), Modifier.weight(1f))
+            Text(
+                text = "ONYX",
+                color = OnyxFaint,
+                fontSize = 10.sp,
+                maxLines = 1,
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            GlassPill(
+                text = tr("Повтор", "Repeat"),
+                selected = state.repeatMode != Player.REPEAT_MODE_OFF,
+                modifier = Modifier.weight(1f),
+                onClick = {
+                    player.setRepeatMode(
+                        when (state.repeatMode) {
+                            Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
+                            Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
+                            else -> Player.REPEAT_MODE_OFF
+                        },
+                    )
+                },
+            )
+            GlassPill(
+                text = tr("Перемешать", "Shuffle"),
+                selected = state.shuffle,
+                modifier = Modifier.weight(1f),
+                onClick = { player.setShuffle(!state.shuffle) },
+            )
+        }
+        Spacer(Modifier.height(12.dp))
+
+        val rows = state.queue.take(50)
+        rows.forEachIndexed { index, track ->
+            val isCurrent = index == state.currentIndex
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(
+                        if (isCurrent || dragIndex == index) OnyxWhite.copy(alpha = 0.07f)
+                        else Color.Transparent,
+                    )
+                    .graphicsLayer {
+                        if (dragIndex == index) {
+                            scaleX = 1.03f
+                            scaleY = 1.03f
+                            alpha = 0.88f
+                        }
+                    }
+                    .pointerInput(state.queue.size) {
+                        detectDragGesturesAfterLongPress(
+                            onDragStart = {
+                                dragIndex = index
+                                dragAccum = 0f
+                            },
+                            onDrag = { change, amount ->
+                                change.consume()
+                                val from = dragIndex ?: return@detectDragGesturesAfterLongPress
+                                dragAccum += amount.y
+                                val threshold = 46.dp.toPx()
+                                while (dragAccum <= -threshold && from > 0) {
+                                    player.move(from, from - 1)
+                                    dragIndex = from - 1
+                                    dragAccum += threshold
+                                }
+                                while (dragAccum >= threshold && from < state.queue.size - 1) {
+                                    player.move(from, from + 1)
+                                    dragIndex = from + 1
+                                    dragAccum -= threshold
+                                }
+                            },
+                            onDragEnd = { dragIndex = null },
+                            onDragCancel = { dragIndex = null },
+                        )
+                    }
+                    .clickable { player.playAt(index) }
+                    .padding(vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = (index + 1).toString().padStart(2, '0'),
+                    color = OnyxFaint,
+                    fontSize = 10.sp,
+                    modifier = Modifier.width(24.dp),
+                )
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .clip(RoundedCornerShape(9.dp))
+                        .background(OnyxWhite.copy(alpha = 0.05f)),
+                ) {
+                    val art = track.artPath?.let { java.io.File(it) }
+                    if (art != null) {
+                        AsyncImage(
+                            model = art,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                        )
+                    }
+                }
+                Spacer(Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = track.title,
+                        color = OnyxWhite,
+                        fontSize = 13.sp,
+                        fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        text = track.artist.ifBlank { track.album },
+                        color = OnyxFaint,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
+                Text(text = fmt(track.durationMs), color = OnyxFaint, fontSize = 10.sp)
+                Spacer(Modifier.width(8.dp))
+                Icon(
+                    Icons.Rounded.Delete,
+                    contentDescription = tr("Удалить из очереди", "Remove from queue"),
+                    tint = if (isCurrent) Color.Transparent else OnyxFaint,
+                    modifier = Modifier
+                        .size(16.dp)
+                        .then(if (isCurrent) Modifier else Modifier.clickable { player.removeAt(index) }),
+                )
+            }
+        }
+        if (state.queue.size > rows.size) {
+            Spacer(Modifier.height(6.dp))
+            Text(
+                tr("+${state.queue.size - rows.size} треки дальше…", "+${state.queue.size - rows.size} more tracks…"),
+                color = OnyxFaint,
+                fontSize = 10.sp,
             )
         }
     }

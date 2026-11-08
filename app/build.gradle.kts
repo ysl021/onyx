@@ -27,8 +27,8 @@ android {
         applicationId = "app.onyx"
         minSdk = 31
         targetSdk = 35
-        versionCode = 15
-        versionName = "0.6.8"
+        versionCode = 16
+        versionName = "0.6.9"
 
         buildConfigField("String", "SPICY_KEY", "\"${secret("SPICY_KEY")}\"")
     }

@@ -10,6 +10,7 @@ import app.onyx.core.Prefs
 import app.onyx.ui.tr
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -60,11 +61,14 @@ private data class LibraryCache(
     val tracks: List<LocalTrack> = emptyList(),
 )
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class LocalLibrary(
     private val context: Context,
     private val prefs: Prefs,
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    // Single-thread confinement: all mutations of rawTracks/overrides/cache are
+    // serialized so concurrent UI actions can never interleave read-modify-write.
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO.limitedParallelism(1))
     private val json = Json { ignoreUnknownKeys = true }
     private val _state = MutableStateFlow(LibraryState())
     val state: StateFlow<LibraryState> = _state.asStateFlow()
@@ -116,6 +120,7 @@ class LocalLibrary(
             val merged = p.localFolders.filterNot { it.uri == uri }
             prefs.setLocalFolders(merged)
             rawTracks = rawTracks.filterNot { it.folderUri == uri }
+            dropOrphanOverrides()
             _state.value = _state.value.copy(
                 folders = merged,
                 tracks = rawTracks.map(::applyOverride),
@@ -134,6 +139,7 @@ class LocalLibrary(
             prefs.clearLocalFolder()
             cacheFile.delete()
             rawTracks = emptyList()
+            dropOrphanOverrides()
             _state.value = LibraryState()
         }
     }
@@ -150,6 +156,7 @@ class LocalLibrary(
             }
             _state.value = _state.value.copy(folders = folders, scanning = true, progress = 0, error = null)
             val files = ArrayList<PendingFile>(512)
+            val folderErrors = ArrayList<String>()
             for (folder in folders) {
                 val root = try {
                     DocumentFile.fromTreeUri(context, Uri.parse(folder.uri))
@@ -157,9 +164,8 @@ class LocalLibrary(
                     null
                 }
                 if (root == null || !root.exists()) {
-                    _state.value = _state.value.copy(
-                        error = tr("Нет доступа к папке", "No access to folder") + " «${folder.name}». " + tr("Добавь её заново.", "Add it again."),
-                    )
+                    folderErrors += tr("Нет доступа к папке", "No access to folder") +
+                        " «${folder.name}». " + tr("Добавь её заново.", "Add it again.")
                     continue
                 }
                 collect(root, folder, files)
@@ -182,7 +188,11 @@ class LocalLibrary(
                 scanning = false,
                 progress = 100,
                 tracks = sorted.map(::applyOverride),
-                error = if (sorted.isEmpty()) tr("В выбранных папках не найдено аудиофайлов.", "No audio files found in the selected folders.") else null,
+                error = when {
+                    folderErrors.isNotEmpty() -> folderErrors.joinToString("\n")
+                    sorted.isEmpty() -> tr("В выбранных папках не найдено аудиофайлов.", "No audio files found in the selected folders.")
+                    else -> null
+                },
             )
             writeCache(folders, sorted)
         }
@@ -225,7 +235,11 @@ class LocalLibrary(
                     BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
                     if (opts.outWidth <= 0 || opts.outHeight <= 0) return@runCatching null
                     val f = File(artDir, sha1(uri.toString()) + ".jpg")
-                    f.writeBytes(bytes)
+                    // Skip the write when the identical cover is already cached:
+                    // rescans otherwise rewrite every image every time.
+                    if (!(f.exists() && f.length() == bytes.size.toLong())) {
+                        f.writeBytes(bytes)
+                    }
                     f.absolutePath
                 }.getOrNull()
             }
@@ -289,6 +303,23 @@ class LocalLibrary(
         if (f.length() <= 0L) return@runCatching null
         f.absolutePath
     }.getOrNull()
+
+    /**
+     * Overrides and custom artwork for tracks that are no longer in any folder are
+     * pruned so local_overrides.json and filesDir/local_art cannot grow forever.
+     */
+    private fun dropOrphanOverrides() {
+        val ids = rawTracks.mapTo(HashSet()) { it.id }
+        val orphaned = overrides.filterKeys { it !in ids }
+        if (orphaned.isEmpty()) return
+        orphaned.values.forEach { override ->
+            override.artPath
+                ?.takeIf { it.startsWith(customArtDir.absolutePath) }
+                ?.let { path -> runCatching { File(path).delete() } }
+        }
+        overrides -= orphaned.keys
+        writeOverrides()
+    }
 
     private fun publishTracks() {
         val current = _state.value
