@@ -36,6 +36,7 @@ data class PrefsData(
     val lyricFontSize: Float = 30f,
     val lyricOffsetMs: Long = 0L,
     val lyricActiveColor: Long = 0xFFF6F6F7,
+    val lyricBrightness: Int = 100,
     val lyricFont: String = "system",
     val uiFont: String = "system",
     val spicyKey: String = Prefs.SPICY_DEFAULT_KEY,
@@ -72,6 +73,7 @@ class Prefs(private val context: Context) {
         val fontSize = floatPreferencesKey("font_size")
         val offset = longPreferencesKey("offset")
         val lyricActiveColor = longPreferencesKey("lyric_active_color")
+        val lyricBrightness = intPreferencesKey("lyric_brightness")
         val lyricFont = stringPreferencesKey("lyric_font")
         val uiFont = stringPreferencesKey("ui_font")
         val spicyKey = stringPreferencesKey("spicy_key")
@@ -111,6 +113,7 @@ class Prefs(private val context: Context) {
         lyricFontSize = this[K.fontSize] ?: 30f,
         lyricOffsetMs = this[K.offset] ?: 0L,
         lyricActiveColor = this[K.lyricActiveColor] ?: 0xFFF6F6F7,
+        lyricBrightness = this[K.lyricBrightness] ?: 100,
         lyricFont = this[K.lyricFont] ?: "system",
         uiFont = this[K.uiFont] ?: "system",
         spicyKey = this[K.spicyKey] ?: SPICY_DEFAULT_KEY,
@@ -157,6 +160,7 @@ class Prefs(private val context: Context) {
     suspend fun setFontSize(v: Float) = edit { it[K.fontSize] = v }
     suspend fun setOffset(v: Long) = edit { it[K.offset] = v }
     suspend fun setLyricActiveColor(v: Long) = edit { it[K.lyricActiveColor] = v }
+    suspend fun setLyricBrightness(v: Int) = edit { it[K.lyricBrightness] = v }
     suspend fun setLyricFont(v: String) = edit { it[K.lyricFont] = v }
     suspend fun setUiFont(v: String) = edit { it[K.uiFont] = v }
     suspend fun setSpicyKey(v: String) = edit { it[K.spicyKey] = v.trim() }

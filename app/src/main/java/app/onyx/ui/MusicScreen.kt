@@ -62,6 +62,7 @@ import app.onyx.ui.components.AsyncArt
 import app.onyx.ui.components.CircleButton
 import app.onyx.ui.components.GlassCard
 import app.onyx.ui.components.GlassPill
+import app.onyx.ui.components.GlassSurface
 import app.onyx.ui.components.OnyxSwitch
 import app.onyx.ui.components.SectionLabel
 import app.onyx.ui.theme.OnyxDim
@@ -418,13 +419,19 @@ private fun MiniPlayer(
     onToggle: () -> Unit,
     onNext: () -> Unit,
 ) {
-    GlassCard(
+    GlassSurface(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 14.dp, vertical = 6.dp),
-        padding = 10.dp,
+        shape = RoundedCornerShape(22.dp),
+        strong = true,
+        art = track.artPath?.let { File(it) },
+        artBlur = 28.dp,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             AsyncArt(
                 model = track.artPath?.let { File(it) },
                 modifier = Modifier

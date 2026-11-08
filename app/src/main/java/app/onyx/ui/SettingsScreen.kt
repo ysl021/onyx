@@ -216,7 +216,7 @@ fun SettingsScreen(
                     letterSpacing = (-0.5).sp,
                 )
                 Text(
-                    text = "ONYX · v0.6.5",
+                    text = "ONYX · v0.6.6",
                     color = OnyxFaint,
                     fontSize = 10.sp,
                     letterSpacing = 1.4.sp,
@@ -835,6 +835,9 @@ private fun AppearanceSection(
     var intensity by remember(prefs.coverIntensity) {
         mutableFloatStateOf(prefs.coverIntensity.toFloat())
     }
+    var lyricBrightness by remember(prefs.lyricBrightness) {
+        mutableFloatStateOf(prefs.lyricBrightness.toFloat())
+    }
     val context = androidx.compose.ui.platform.LocalContext.current
     val savedThemes = remember(prefs.customThemes) {
         CustomThemeCodec.decodeList(prefs.customThemes)
@@ -1221,9 +1224,33 @@ private fun AppearanceSection(
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            tr(tr("Применяется к активной строке и заливке слов.", "Applied to the active line and word fill."), "Applies to the active line and word fill."),
+            tr("Применяется к активной строке и заливке слов.", "Applied to the active line and word fill."),
             color = OnyxFaint,
             fontSize = 10.sp,
+        )
+        Spacer(Modifier.height(14.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                tr("Яркость текста", "Lyrics brightness"),
+                color = OnyxWhite,
+                fontSize = 13.sp,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                "${lyricBrightness.toInt()}%",
+                color = OnyxFaint,
+                fontSize = 10.sp,
+            )
+        }
+        OnyxSlider(
+            value = (lyricBrightness / 100f).coerceIn(0.35f, 1f),
+            onValueChange = { lyricBrightness = it * 100f },
+            onValueChangeFinished = {
+                scope.launch {
+                    controller.prefs.setLyricBrightness(lyricBrightness.toInt().coerceIn(35, 100))
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
         )
     }
 

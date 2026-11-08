@@ -214,6 +214,7 @@ fun LyricsScreen(
                             fullscreen = fullscreen,
                             showTranslation = prefs.translate,
                             activeColor = Color(prefs.lyricActiveColor),
+                            brightness = prefs.lyricBrightness / 100f,
                             fontFamily = lyricFamily,
                         )
                     }
@@ -602,6 +603,7 @@ private fun LyricsBody(
     fullscreen: Boolean,
     showTranslation: Boolean,
     activeColor: Color,
+    brightness: Float = 1f,
     fontFamily: FontFamily?,
 ) {
     val activeIndex = remember(doc, position) { activeLineIndex(doc, position) }
@@ -641,7 +643,7 @@ private fun LyricsBody(
         ) {
             Text(
                 text = doc.lines.joinToString("\n\n") { it.text },
-                color = OnyxWhite,
+                color = OnyxWhite.copy(alpha = brightness.coerceIn(0.35f, 1f)),
                 fontSize = (fontSize * 0.65f).sp,
                 lineHeight = (fontSize * 0.95f).sp,
                 fontWeight = FontWeight.Medium,
@@ -671,7 +673,11 @@ private fun LyricsBody(
                 Column(Modifier.fillMaxWidth()) {
                     Text(
                         text = line.text,
-                        color = if (active) OnyxWhite else OnyxWhite.copy(alpha = 0.68f),
+                        color = if (active) {
+                            OnyxWhite.copy(alpha = brightness.coerceIn(0.35f, 1f))
+                        } else {
+                            OnyxWhite.copy(alpha = 0.68f * brightness.coerceIn(0.35f, 1f))
+                        },
                         fontSize = (fontSize * 0.82f).sp,
                         lineHeight = (fontSize * 1.08f).sp,
                         fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
@@ -683,7 +689,10 @@ private fun LyricsBody(
                         Spacer(Modifier.height(4.dp))
                         Text(
                             text = translation,
-                            color = OnyxWhite.copy(alpha = if (active) 0.56f else 0.36f),
+                            color = OnyxWhite.copy(
+                                alpha = (if (active) 0.56f else 0.36f) *
+                                    brightness.coerceIn(0.35f, 1f),
+                            ),
                             fontSize = (fontSize * 0.46f).sp,
                             lineHeight = (fontSize * 0.60f).sp,
                         )

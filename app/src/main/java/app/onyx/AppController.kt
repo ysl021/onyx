@@ -61,6 +61,9 @@ class AppController private constructor(context: Context) {
     val queue = MutableStateFlow<QueueData?>(null)
     private var queueFetchedAt = 0L
 
+    @Volatile
+    var lastTab: String = "Player"
+
     fun refreshQueue(force: Boolean = false) {
         if (!force && SystemClock.elapsedRealtime() - queueFetchedAt < 8_000L) return
         scope.launch {

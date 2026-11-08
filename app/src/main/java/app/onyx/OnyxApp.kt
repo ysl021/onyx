@@ -119,12 +119,12 @@ fun OnyxApp() {
         controller.isAppearanceLightStatusBars = effectiveLight
         controller.isAppearanceLightNavigationBars = effectiveLight
     }
-    var tab by rememberSaveable(
-        stateSaver = androidx.compose.runtime.saveable.Saver(
-            save = { it.name },
-            restore = { runCatching { Tab.valueOf(it) }.getOrDefault(Tab.Player) },
-        ),
-    ) { mutableStateOf(Tab.Player) }
+    var tab by remember {
+        mutableStateOf(
+            runCatching { Tab.valueOf(controller.lastTab) }.getOrDefault(Tab.Player),
+        )
+    }
+    LaunchedEffect(tab) { controller.lastTab = tab.name }
     var showIntro by rememberSaveable { mutableStateOf(true) }
     var lyricsFullscreen by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
