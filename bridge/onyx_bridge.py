@@ -63,6 +63,9 @@ def update(data: dict) -> None:
     playing = bool(data.get("playing"))
     duration = int(data.get("durationMs") or 0)
 
+    link = (data.get("url") or GITHUB).strip()
+    label = "Открыть трек" if link.startswith("https://open.spotify.com/") else "ONYX на GitHub"
+
     args = dict(
         details=title[:128] or "ONYX",
         state=(artist[:128] if artist else "music control center"),
@@ -70,7 +73,7 @@ def update(data: dict) -> None:
         large_text="ONYX",
         small_image="playing" if playing else "pause",
         small_text="ONYX",
-        buttons=[{"label": "ONYX на GitHub", "url": GITHUB}],
+        buttons=[{"label": label, "url": link}],
     )
     if playing and duration > 0:
         args["start"] = int(time.time())

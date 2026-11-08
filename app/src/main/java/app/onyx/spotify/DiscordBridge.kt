@@ -43,6 +43,11 @@ class DiscordBridge(
             put("playing", now.isPlaying)
             put("durationMs", now.durationMs)
             put("source", now.packageName)
+            put(
+                "url",
+                now.spotifyTrackId?.let { "https://open.spotify.com/track/$it" }
+                    ?: app.onyx.core.DiscordConfig.GITHUB_URL,
+            )
         }.toString()
         if (payload == lastPayload) return
         val url = "http://${p.discordBridgeHost.trim()}:${p.discordBridgePort.coerceIn(1, 65535)}/presence"

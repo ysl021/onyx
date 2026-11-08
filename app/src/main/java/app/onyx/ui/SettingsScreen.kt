@@ -220,7 +220,7 @@ fun SettingsScreen(
                     letterSpacing = (-0.5).sp,
                 )
                 Text(
-                    text = "ONYX · v0.6.7",
+                    text = "ONYX · v0.6.8",
                     color = OnyxFaint,
                     fontSize = 10.sp,
                     letterSpacing = 1.4.sp,
@@ -451,7 +451,10 @@ fun SettingsScreen(
                                 if (now.artist.isNotBlank()) append(" — ").append(now.artist)
                                 append("\n")
                             }
-                            append("ONYX · https://github.com/ysl021/onyx")
+                            val trackUrl = now.spotifyTrackId?.let {
+                                "https://open.spotify.com/track/$it"
+                            } ?: DiscordConfig.GITHUB_URL
+                            append("ONYX · $trackUrl")
                         }
                         runCatching {
                             val send = Intent(Intent.ACTION_SEND).apply {
