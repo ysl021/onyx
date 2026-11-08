@@ -1,4 +1,4 @@
-package app.onyx
+﻿package app.onyx
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -40,6 +40,7 @@ import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -62,7 +63,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.onyx.core.PrefsData
 import app.onyx.core.ThemeMode
 import app.onyx.ui.HomeScreen
+import app.onyx.ui.AppLanguageState
+import app.onyx.ui.FontCatalog
 import app.onyx.ui.IntroScreen
+import app.onyx.ui.LocalAppLanguage
+import app.onyx.ui.tr
 import app.onyx.ui.LyricsScreen
 import app.onyx.ui.MusicScreen
 import app.onyx.ui.QueueScreen
@@ -118,10 +123,55 @@ fun OnyxApp() {
         tab = Tab.Player
     }
 
-    OnyxTheme(prefs.themeMode) {
-    Box(modifier = Modifier.fillMaxSize().background(OnyxBlack)) {
-        if (prefs.coverBackdrop) {
-            BlurredBackdrop(art = media.now.art ?: media.now.artUri)
+    AppLanguageState.current = prefs.language
+    val uiFontFamily = FontCatalog.family(context, prefs.uiFont)
+    OnyxTheme(prefs.themeMode, uiFontFamily) {
+        AnimatedContent(
+            targetState = prefs.language,
+            transitionSpec = {
+                fadeIn(tween(320)) togetherWith fadeOut(tween(220))
+            },
+            label = "language",
+        ) { lang ->
+            CompositionLocalProvider(LocalAppLanguage provides lang) {
+                Box(modifier = Modifier.fillMaxSize().background(OnyxBlack)) {
+                    val pageKey = when (tab) {
+            Tab.Player -> "player"
+            Tab.Lyrics -> "lyrics"
+            Tab.Queue -> "queue"
+            Tab.Music -> "music"
+            Tab.Visualizer -> "visualizer"
+            Tab.Settings -> "settings"
+        }
+        val pageCover = prefs.coverPages.split(',').contains(pageKey)
+        val pageBackgrounds = remember(prefs.pageBackgrounds) {
+            prefs.pageBackgrounds.split('\u001E').mapNotNull { record ->
+                if (record.isBlank()) return@mapNotNull null
+                val parts = record.split('\u001F', limit = 2)
+                val key = parts.getOrNull(0).orEmpty()
+                val path = parts.getOrNull(1).orEmpty()
+                if (key.isBlank() || path.isBlank()) null else key to java.io.File(path)
+            }.toMap()
+        }
+        val customBg = pageBackgrounds[pageKey]?.takeIf { it.exists() }
+        if (customBg != null) {
+            val f = (prefs.coverIntensity / 100f).coerceIn(0f, 1f)
+            BlurredBackdrop(
+                art = customBg,
+                artAlpha = 0.30f + 0.60f * f,
+                scrimTop = 0.86f - 0.34f * f,
+                scrimMid = 0.92f - 0.28f * f,
+                scrimBottom = 1f - 0.08f * f,
+            )
+        } else if (prefs.coverBackdrop && pageCover) {
+            val f = (prefs.coverIntensity / 100f).coerceIn(0f, 1f)
+            BlurredBackdrop(
+                art = media.now.art ?: media.now.artUri,
+                artAlpha = 0.22f + 0.68f * f,
+                scrimTop = 0.92f - 0.40f * f,
+                scrimMid = 0.96f - 0.34f * f,
+                scrimBottom = 1f - 0.10f * f,
+            )
         }
         Column(Modifier.fillMaxSize()) {
             Box(
@@ -181,6 +231,7 @@ fun OnyxApp() {
                             lyricsFullscreen = false
                             tab = it
                         },
+                        art = media.now.art ?: media.now.artUri,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
@@ -214,7 +265,9 @@ fun OnyxApp() {
         if (showIntro) {
             IntroScreen(onFinish = { showIntro = false })
         }
-    }
+                }
+            }
+        }
     }
 }
 
@@ -222,12 +275,15 @@ fun OnyxApp() {
 private fun BottomNav(
     tab: Tab,
     onSelect: (Tab) -> Unit,
+    art: Any? = null,
     modifier: Modifier = Modifier,
 ) {
     GlassSurface(
         modifier = modifier,
         shape = RoundedCornerShape(24.dp),
         strong = true,
+        art = art,
+        artBlur = 36.dp,
     ) {
         Row(
             modifier = Modifier
@@ -238,42 +294,42 @@ private fun BottomNav(
         ) {
             NavItem(
                 icon = Icons.Rounded.GraphicEq,
-                label = "Плеер",
+                label = tr("Плеер", "Player"),
                 selected = tab == Tab.Player,
                 modifier = Modifier.weight(1f),
                 onClick = { onSelect(Tab.Player) },
             )
             NavItem(
                 icon = Icons.Rounded.Translate,
-                label = "Текст",
+                label = tr("Текст", "Lyrics"),
                 selected = tab == Tab.Lyrics,
                 modifier = Modifier.weight(1f),
                 onClick = { onSelect(Tab.Lyrics) },
             )
             NavItem(
                 icon = Icons.AutoMirrored.Rounded.QueueMusic,
-                label = "Очередь",
+                label = tr("Очередь", "Queue"),
                 selected = tab == Tab.Queue,
                 modifier = Modifier.weight(1f),
                 onClick = { onSelect(Tab.Queue) },
             )
             NavItem(
                 icon = Icons.Rounded.LibraryMusic,
-                label = "Музыка",
+                label = tr("Музыка", "Music"),
                 selected = tab == Tab.Music,
                 modifier = Modifier.weight(1f),
                 onClick = { onSelect(Tab.Music) },
             )
             NavItem(
                 icon = Icons.Rounded.BarChart,
-                label = "Визуал",
+                label = tr("Визуал", "Visual"),
                 selected = tab == Tab.Visualizer,
                 modifier = Modifier.weight(1f),
                 onClick = { onSelect(Tab.Visualizer) },
             )
             NavItem(
                 icon = Icons.Rounded.Settings,
-                label = "Настройки",
+                label = tr("Настройки", "Settings"),
                 selected = tab == Tab.Settings,
                 modifier = Modifier.weight(1f),
                 onClick = { onSelect(Tab.Settings) },

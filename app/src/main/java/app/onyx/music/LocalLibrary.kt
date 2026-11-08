@@ -5,6 +5,7 @@ import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
+import app.onyx.core.LocalFolder
 import app.onyx.core.Prefs
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,11 +32,12 @@ data class LocalTrack(
     val album: String = "",
     val durationMs: Long = 0L,
     val artPath: String? = null,
+    val folderUri: String = "",
+    val folderName: String = "",
 )
 
 data class LibraryState(
-    val folderUri: String = "",
-    val folderName: String = "",
+    val folders: List<LocalFolder> = emptyList(),
     val scanning: Boolean = false,
     val progress: Int = 0,
     val tracks: List<LocalTrack> = emptyList(),
@@ -44,7 +46,7 @@ data class LibraryState(
 
 @Serializable
 private data class LibraryCache(
-    val folderUri: String = "",
+    val folders: List<LocalFolder> = emptyList(),
     val tracks: List<LocalTrack> = emptyList(),
 )
 
@@ -61,20 +63,40 @@ class LocalLibrary(
     private val artDir = File(context.cacheDir, "local_art").apply { mkdirs() }
     private val cacheFile = File(context.filesDir, "local_library.json")
 
+    private data class PendingFile(val file: DocumentFile, val folder: LocalFolder)
+
     init {
         scope.launch {
             val p = prefs.snapshot()
-            _state.value = LibraryState(folderUri = p.localFolderUri, folderName = p.localFolderName)
-            readCache(p.localFolderUri)
-            if (p.localFolderUri.isNotBlank()) scan()
+            _state.value = LibraryState(folders = p.localFolders)
+            readCache()
+            if (p.localFolders.isNotEmpty()) scan()
         }
     }
 
-    fun setFolder(uri: Uri, name: String) {
+    fun addFolder(uri: Uri, name: String) {
         scope.launch {
-            prefs.setLocalFolder(uri.toString(), name)
-            _state.value = _state.value.copy(folderUri = uri.toString(), folderName = name)
+            val p = prefs.snapshot()
+            val folder = LocalFolder(uri.toString(), name)
+            val merged = (p.localFolders + folder).distinctBy { it.uri }
+            prefs.setLocalFolders(merged)
+            _state.value = _state.value.copy(folders = merged)
             scan()
+        }
+    }
+
+    fun removeFolder(uri: String) {
+        job?.cancel()
+        scope.launch {
+            val p = prefs.snapshot()
+            val merged = p.localFolders.filterNot { it.uri == uri }
+            prefs.setLocalFolders(merged)
+            _state.value = _state.value.copy(
+                folders = merged,
+                tracks = _state.value.tracks.filterNot { it.folderUri == uri },
+            )
+            writeCache(merged, _state.value.tracks)
+            if (merged.isEmpty()) _state.value = LibraryState()
         }
     }
 
@@ -87,39 +109,35 @@ class LocalLibrary(
         }
     }
 
-    fun rescan() {
-        scan()
-    }
+    fun rescan() = scan()
 
     private fun scan() {
         job?.cancel()
         job = scope.launch {
-            val folder = _state.value.folderUri.ifBlank {
-                prefs.snapshot().localFolderUri
-            }
-            if (folder.isBlank()) {
-                _state.value = _state.value.copy(scanning = false, tracks = emptyList())
+            val folders = prefs.snapshot().localFolders
+            if (folders.isEmpty()) {
+                _state.value = LibraryState()
                 return@launch
             }
-            val uri = Uri.parse(folder)
-            val root = try {
-                DocumentFile.fromTreeUri(context, uri)
-            } catch (_: Exception) {
-                null
+            _state.value = _state.value.copy(folders = folders, scanning = true, progress = 0, error = null)
+            val files = ArrayList<PendingFile>(512)
+            for (folder in folders) {
+                val root = try {
+                    DocumentFile.fromTreeUri(context, Uri.parse(folder.uri))
+                } catch (_: Exception) {
+                    null
+                }
+                if (root == null || !root.exists()) {
+                    _state.value = _state.value.copy(
+                        error = "Нет доступа к папке «${folder.name}». Добавь её заново.",
+                    )
+                    continue
+                }
+                collect(root, folder, files)
             }
-            if (root == null || !root.exists()) {
-                _state.value = _state.value.copy(
-                    scanning = false,
-                    error = "Нет доступа к папке. Выбери её заново.",
-                )
-                return@launch
-            }
-            _state.value = _state.value.copy(scanning = true, progress = 0, error = null)
-            val files = ArrayList<DocumentFile>(256)
-            collect(root, files)
             val tracks = ArrayList<LocalTrack>(files.size)
-            files.forEachIndexed { index, file ->
-                readTrack(file)?.let { tracks += it }
+            files.forEachIndexed { index, pending ->
+                readTrack(pending.file, pending.folder)?.let { tracks += it }
                 if (index % 20 == 0) {
                     _state.value = _state.value.copy(
                         progress = if (files.isEmpty()) 0 else index * 100 / files.size,
@@ -127,20 +145,20 @@ class LocalLibrary(
                     yield()
                 }
             }
-            val sorted = tracks.sortedWith(
-                compareBy(String.CASE_INSENSITIVE_ORDER) { it.title },
-            )
+            val sorted = tracks
+                .distinctBy { it.id }
+                .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
             _state.value = _state.value.copy(
                 scanning = false,
                 progress = 100,
                 tracks = sorted,
-                error = if (sorted.isEmpty()) "В папке не найдено аудиофайлов." else null,
+                error = if (sorted.isEmpty()) "В выбранных папках не найдено аудиофайлов." else null,
             )
-            writeCache(folder, sorted)
+            writeCache(folders, sorted)
         }
     }
 
-    private fun collect(dir: DocumentFile, out: MutableList<DocumentFile>) {
+    private fun collect(dir: DocumentFile, folder: LocalFolder, out: MutableList<PendingFile>) {
         val children = try {
             dir.listFiles()
         } catch (_: Exception) {
@@ -150,14 +168,14 @@ class LocalLibrary(
             val name = child.name.orEmpty()
             if (name.startsWith(".")) continue
             if (child.isDirectory) {
-                collect(child, out)
+                collect(child, folder, out)
             } else if (name.substringAfterLast('.', "").lowercase() in AUDIO_EXT) {
-                out += child
+                out += PendingFile(child, folder)
             }
         }
     }
 
-    private fun readTrack(file: DocumentFile): LocalTrack? {
+    private fun readTrack(file: DocumentFile, folder: LocalFolder): LocalTrack? {
         val uri = file.uri
         val fallback = file.name?.substringBeforeLast('.') ?: return null
         val retriever = MediaMetadataRetriever()
@@ -189,6 +207,8 @@ class LocalLibrary(
                 album = album,
                 durationMs = duration,
                 artPath = art,
+                folderUri = folder.uri,
+                folderName = folder.name,
             )
         } catch (_: Exception) {
             null
@@ -197,19 +217,22 @@ class LocalLibrary(
         }
     }
 
-    private fun readCache(folder: String) {
-        if (folder.isBlank() || !cacheFile.exists()) return
+    private fun readCache() {
+        if (!cacheFile.exists()) return
         runCatching {
             val cache = json.decodeFromString<LibraryCache>(cacheFile.readText())
-            if (cache.folderUri == folder && cache.tracks.isNotEmpty()) {
-                _state.value = _state.value.copy(tracks = cache.tracks)
+            if (cache.tracks.isNotEmpty()) {
+                _state.value = _state.value.copy(
+                    folders = _state.value.folders.ifEmpty { cache.folders },
+                    tracks = cache.tracks,
+                )
             }
         }
     }
 
-    private fun writeCache(folder: String, tracks: List<LocalTrack>) {
+    private fun writeCache(folders: List<LocalFolder>, tracks: List<LocalTrack>) {
         runCatching {
-            cacheFile.writeText(json.encodeToString(LibraryCache(folder, tracks)))
+            cacheFile.writeText(json.encodeToString(LibraryCache(folders, tracks)))
         }
     }
 

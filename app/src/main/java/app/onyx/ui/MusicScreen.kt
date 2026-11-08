@@ -5,6 +5,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -70,6 +72,23 @@ fun MusicScreen(
     val library by controller.localLibrary.state.collectAsStateWithLifecycle()
     val playback by controller.localPlayer.state.collectAsStateWithLifecycle()
     var query by remember { mutableStateOf("") }
+    var selectedFolder by remember { mutableStateOf<String?>(null) }
+
+    val folders = library.folders
+    val filtered = remember(library.tracks, query, selectedFolder) {
+        val base = library.tracks.filter { track ->
+            selectedFolder == null || track.folderUri == selectedFolder
+        }
+        if (query.isBlank()) base
+        else base.filter {
+            it.title.contains(query, ignoreCase = true) ||
+                it.artist.contains(query, ignoreCase = true) ||
+                it.album.contains(query, ignoreCase = true)
+        }
+    }
+    androidx.compose.runtime.LaunchedEffect(folders) {
+        if (selectedFolder != null && folders.none { it.uri == selectedFolder }) selectedFolder = null
+    }
 
     val picker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree(),
@@ -85,16 +104,7 @@ fun MusicScreen(
                 .getOrNull()
                 ?: uri.lastPathSegment
                 ?: "Папка"
-            controller.localLibrary.setFolder(uri, name)
-        }
-    }
-
-    val filtered = remember(library.tracks, query) {
-        if (query.isBlank()) library.tracks
-        else library.tracks.filter {
-            it.title.contains(query, ignoreCase = true) ||
-                it.artist.contains(query, ignoreCase = true) ||
-                it.album.contains(query, ignoreCase = true)
+            controller.localLibrary.addFolder(uri, name)
         }
     }
 
@@ -107,14 +117,22 @@ fun MusicScreen(
         ) {
             Column(Modifier.weight(1f)) {
                 Text(
-                    "Музыка",
+                    tr("Музыка", "Music"),
                     color = OnyxWhite,
                     fontSize = 26.sp,
                     fontWeight = FontWeight.Black,
                     letterSpacing = (-0.6).sp,
                 )
                 Text(
-                    library.folderName.ifBlank { "Локальные файлы" },
+                    if (selectedFolder == null) {
+                        when (folders.size) {
+                            0 -> tr("Локальные файлы", "Local files")
+                            1 -> folders.first().name
+                            else -> "${folders.size} ${tr("папки", "folders")}"
+                        }
+                    } else {
+                        folders.firstOrNull { it.uri == selectedFolder }?.name ?: "Папка"
+                    },
                     color = OnyxFaint,
                     fontSize = 10.sp,
                     letterSpacing = 1.2.sp,
@@ -124,37 +142,63 @@ fun MusicScreen(
             }
             CircleButton(
                 icon = Icons.Rounded.Refresh,
-                contentDescription = "Пересканировать",
+                contentDescription = tr("Пересканировать", "Rescan"),
                 size = 38.dp,
                 iconSize = 17.dp,
-                enabled = library.folderUri.isNotBlank() && !library.scanning,
+                enabled = folders.isNotEmpty() && !library.scanning,
                 onClick = { controller.localLibrary.rescan() },
             )
         }
 
-        if (library.folderUri.isBlank()) {
+        if (folders.isEmpty()) {
             GlassCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(18.dp),
             ) {
-                SectionLabel("Папка")
+                SectionLabel(tr("Папки", "Folders"))
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Выбери папку с музыкой. Доступ будет только к ней, без разрешения на всё хранилище.",
+                    tr("Добавь одну или несколько папок с музыкой. Доступ будет только к ним, без разрешения на всё хранилище.", "Add one or more music folders. Access is limited to them."),
                     color = OnyxDim,
                     fontSize = 12.sp,
                     lineHeight = 17.sp,
                 )
                 Spacer(Modifier.height(12.dp))
                 GlassPill(
-                    text = "Выбрать папку",
+                    text = tr("Добавить папку", "Add folder"),
                     selected = true,
                     icon = Icons.Rounded.FolderOpen,
                     onClick = { picker.launch(null) },
                 )
             }
             return@Column
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 18.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            GlassPill(
+                text = tr("Все", "All"),
+                selected = selectedFolder == null,
+                onClick = { selectedFolder = null },
+            )
+            folders.forEach { folder ->
+                GlassPill(
+                    text = folder.name.ifBlank { "Папка" },
+                    selected = selectedFolder == folder.uri,
+                    onClick = { selectedFolder = folder.uri },
+                )
+            }
+            GlassPill(
+                text = "+ Добавить",
+                selected = false,
+                onClick = { picker.launch(null) },
+            )
         }
 
         if (library.scanning) {
@@ -180,7 +224,7 @@ fun MusicScreen(
                 .fillMaxWidth()
                 .padding(horizontal = 18.dp, vertical = 8.dp),
             singleLine = true,
-            placeholder = { Text("Поиск", color = OnyxFaint, fontSize = 12.sp) },
+            placeholder = { Text(tr("Поиск", "Search"), color = OnyxFaint, fontSize = 12.sp) },
             leadingIcon = {
                 Icon(Icons.Rounded.Search, contentDescription = null, tint = OnyxFaint)
             },
@@ -212,7 +256,7 @@ fun MusicScreen(
                 item {
                     Text(
                         if (query.isBlank()) "В папке пока нет треков."
-                        else "Ничего не найдено.",
+                        else tr("Ничего не найдено.", "Nothing found."),
                         color = OnyxFaint,
                         fontSize = 11.sp,
                         modifier = Modifier.padding(vertical = 12.dp),
@@ -222,7 +266,7 @@ fun MusicScreen(
             item {
                 Spacer(Modifier.height(8.dp))
                 GlassPill(
-                    text = "Сменить папку",
+                    text = tr("Добавить папку", "Add folder"),
                     selected = false,
                     onClick = { picker.launch(null) },
                 )
@@ -337,7 +381,7 @@ private fun MiniPlayer(
             }
             CircleButton(
                 icon = if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                contentDescription = "Играть/пауза",
+                contentDescription = tr("Играть/пауза", "Play/pause"),
                 size = 38.dp,
                 iconSize = 18.dp,
                 filled = true,
@@ -346,7 +390,7 @@ private fun MiniPlayer(
             Spacer(Modifier.width(8.dp))
             CircleButton(
                 icon = Icons.Rounded.SkipNext,
-                contentDescription = "Следующий",
+                contentDescription = tr("Следующий", "Next"),
                 size = 34.dp,
                 iconSize = 16.dp,
                 onClick = onNext,

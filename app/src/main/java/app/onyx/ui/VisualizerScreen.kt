@@ -81,6 +81,7 @@ fun VisualizerScreen(
     ) { granted = it }
 
     val wave by visualizer.wave.collectAsStateWithLifecycle()
+    val fft by visualizer.fft.collectAsStateWithLifecycle()
     val error by visualizer.error.collectAsStateWithLifecycle()
 
     LaunchedEffect(granted) {
@@ -121,14 +122,14 @@ fun VisualizerScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Text(
-                "ВИЗУАЛИЗАТОР",
+                tr("ВИЗУАЛИЗАТОР", "VISUALIZER"),
                 color = OnyxFaint,
                 fontSize = 10.sp,
                 letterSpacing = 2.6.sp,
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                text = media.now.title.ifBlank { "Тишина" },
+                text = media.now.title.ifBlank { tr("Тишина", "Silence") },
                 color = OnyxWhite,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
@@ -149,14 +150,14 @@ fun VisualizerScreen(
             if (!granted) {
                 GlassCard(modifier = Modifier.fillMaxWidth()) {
                     Text(
-                        "Для визуализатора нужен доступ к микрофону — так Android отдаёт аудиопоток.",
+                        tr("Для визуализатора нужен доступ к микрофону — так Android отдаёт аудиопоток.", "Visualizer needs microphone access — that is how Android exposes the audio stream."),
                         color = OnyxDim,
                         fontSize = 12.sp,
                         lineHeight = 17.sp,
                     )
                     Spacer(Modifier.height(12.dp))
                     GlassPill(
-                        text = "Разрешить доступ",
+                        text = tr("Разрешить доступ", "Allow access"),
                         selected = true,
                         onClick = { launcher.launch(Manifest.permission.RECORD_AUDIO) },
                     )
@@ -164,6 +165,7 @@ fun VisualizerScreen(
             } else {
                 Spectrum(
                     wave = wave,
+                    fft = fft,
                     fallbackPhase = phase,
                     modifier = Modifier
                         .fillMaxWidth()
@@ -184,13 +186,13 @@ fun VisualizerScreen(
             ) {
                 CircleButton(
                     icon = Icons.Rounded.SkipPrevious,
-                    contentDescription = "Предыдущий",
+                    contentDescription = tr("Предыдущий", "Previous"),
                     size = 48.dp,
                     onClick = { controller.media.previous() },
                 )
                 CircleButton(
                     icon = if (media.now.isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                    contentDescription = "Играть/пауза",
+                    contentDescription = tr("Играть/пауза", "Play/pause"),
                     size = 64.dp,
                     filled = true,
                     iconSize = 26.dp,
@@ -198,7 +200,7 @@ fun VisualizerScreen(
                 )
                 CircleButton(
                     icon = Icons.Rounded.SkipNext,
-                    contentDescription = "Следующий",
+                    contentDescription = tr("Следующий", "Next"),
                     size = 48.dp,
                     onClick = { controller.media.next() },
                 )
@@ -210,11 +212,13 @@ fun VisualizerScreen(
 @Composable
 private fun Spectrum(
     wave: FloatArray,
+    fft: FloatArray,
     fallbackPhase: Float,
     modifier: Modifier = Modifier,
 ) {
     val color = OnyxWhite
-    val hasSignal = wave.isNotEmpty() && wave.any { abs(it) > 0.012f }
+    val hasFft = fft.isNotEmpty() && fft.any { it > 0.02f }
+    val hasWave = wave.isNotEmpty() && wave.any { abs(it) > 0.012f }
     Canvas(modifier) {
         val bars = 64
         val w = size.width
@@ -223,10 +227,10 @@ private fun Spectrum(
         val step = w / bars
         val barWidth = (step * 0.42f).coerceAtLeast(1.5f)
         for (i in 0 until bars) {
-            val sample = if (hasSignal) {
-                wave[(i * wave.size / bars).coerceIn(0, wave.size - 1)]
-            } else {
-                sin(fallbackPhase + i * 0.42f).toFloat() * 0.55f
+            val sample = when {
+                hasFft -> fft[(i * fft.size / bars).coerceIn(0, fft.size - 1)]
+                hasWave -> wave[(i * wave.size / bars).coerceIn(0, wave.size - 1)]
+                else -> sin(fallbackPhase + i * 0.42f).toFloat() * 0.55f
             }
             val amp = (abs(sample) * h * 0.36f).coerceAtLeast(2.5f)
             val x = i * step + step / 2f

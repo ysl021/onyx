@@ -1,4 +1,4 @@
-package app.onyx.ui
+﻿package app.onyx.ui
 
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -10,6 +10,7 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,6 +31,7 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -88,6 +90,7 @@ fun SettingsScreen(
     var fontSize by remember { mutableFloatStateOf(prefs.lyricFontSize) }
     var section by rememberSaveable { mutableStateOf(0) }
     var showEq by rememberSaveable { mutableStateOf(false) }
+    var pendingBgPage by remember { mutableStateOf<String?>(null) }
     var offset by remember { mutableFloatStateOf(prefs.lyricOffsetMs.toFloat()) }
     var listenerOn by remember { mutableStateOf(isListenerEnabled(context)) }
     var batteryFree by remember { mutableStateOf(isBatteryFree(context)) }
@@ -134,8 +137,34 @@ fun SettingsScreen(
             }
             val name = runCatching { DocumentFile.fromTreeUri(context, uri)?.name }
                 .getOrNull() ?: uri.lastPathSegment ?: "Папка"
-            controller.localLibrary.setFolder(uri, name)
+            controller.localLibrary.addFolder(uri, name)
             controller.toast("Папка сохранена")
+        }
+    }
+
+    val backgroundPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        val page = pendingBgPage
+        pendingBgPage = null
+        if (uri != null && page != null) {
+            scope.launch {
+                val saved = runCatching {
+                    val f = java.io.File(context.filesDir, "bg_$page.jpg")
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        f.outputStream().use { out -> input.copyTo(out) }
+                    }
+                    f.absolutePath
+                }.getOrNull()
+                if (saved != null) {
+                    val map = decodeBackgrounds(prefs.pageBackgrounds).toMutableMap()
+                    map[page] = saved
+                    controller.prefs.setPageBackgrounds(encodeBackgrounds(map))
+                    controller.toast("Фон обновлён")
+                } else {
+                    controller.toast("Не удалось загрузить фото")
+                }
+            }
         }
     }
 
@@ -174,14 +203,14 @@ fun SettingsScreen(
             Spacer(Modifier.width(12.dp))
             Column {
                 Text(
-                    text = "Настройки",
+                    text = tr("Настройки", "Settings"),
                     color = OnyxWhite,
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = (-0.5).sp,
                 )
                 Text(
-                    text = "ONYX · v0.3",
+                    text = "ONYX · v0.4",
                     color = OnyxFaint,
                     fontSize = 10.sp,
                     letterSpacing = 1.4.sp,
@@ -194,12 +223,12 @@ fun SettingsScreen(
             modifier = Modifier.fillMaxWidth(),
         ) {
             GlassPill(
-                text = "Основные",
+                text = tr("Основные", "General"),
                 selected = section == 0,
                 onClick = { section = 0 },
             )
             GlassPill(
-                text = "Внешний вид",
+                text = tr("Внешний вид", "Appearance"),
                 selected = section == 1,
                 onClick = { section = 1 },
             )
@@ -297,7 +326,7 @@ fun SettingsScreen(
                 Spacer(Modifier.height(12.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     GlassPill(
-                        text = "Сохранить",
+                        text = tr("Сохранить", "Save"),
                         selected = false,
                         enabled = clientId.isNotBlank(),
                         onClick = {
@@ -308,7 +337,7 @@ fun SettingsScreen(
                         },
                     )
                     GlassPill(
-                        text = if (busy) "Ждём браузер…" else "Войти",
+                        text = if (busy) tr("Ждём браузер…", "Waiting for browser…") else tr("Войти", "Sign in"),
                         selected = true,
                         enabled = !busy && clientId.isNotBlank(),
                         onClick = {
@@ -342,7 +371,7 @@ fun SettingsScreen(
 
         // -------------------------------------------------------------- Lyrics
         GlassCard(modifier = Modifier.fillMaxWidth()) {
-            SectionLabel("Текст и караоке")
+            SectionLabel(tr("Текст и караоке", "Lyrics & karaoke"))
             Spacer(Modifier.height(12.dp))
             Text(
                 text = "Spicy Lyrics · общинная база TTML. Отдаёт текст и тайминги " +
@@ -361,14 +390,14 @@ fun SettingsScreen(
             )
             Spacer(Modifier.height(18.dp))
             ToggleRow(
-                title = "Караоке по словам",
+                title = tr("Караоке по словам", "Word karaoke"),
                 subtitle = "Плавная подсветка слов, если провайдер отдал тайминги",
                 checked = prefs.karaoke,
                 onChange = { scope.launch { controller.prefs.setKaraoke(it) } },
             )
             Spacer(Modifier.height(12.dp))
             ToggleRow(
-                title = "Русский перевод",
+                title = tr("Русский перевод", "Russian translation"),
                 subtitle = "Spicy/Musixmatch, затем Google",
                 checked = prefs.translate,
                 onChange = { scope.launch { controller.prefs.setTranslate(it) } },
@@ -396,7 +425,7 @@ fun SettingsScreen(
 
         // ---------------------------------------------------------------- Buds
         GlassCard(modifier = Modifier.fillMaxWidth()) {
-            SectionLabel("Наушники")
+            SectionLabel(tr("Наушники", "Headphones"))
             Spacer(Modifier.height(12.dp))
             Text(
                 text = "ONYX управляет Galaxy Buds по служебному SPP-каналу Samsung. " +
@@ -410,12 +439,12 @@ fun SettingsScreen(
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 GlassPill(
-                    text = "Переподключить",
+                    text = tr("Переподключить", "Reconnect"),
                     selected = false,
                     onClick = { BudsService.reconnect(context) },
                 )
                 GlassPill(
-                    text = "Открыть Bluetooth",
+                    text = tr("Открыть Bluetooth", "Open Bluetooth"),
                     selected = false,
                     onClick = { controller.router.openBluetoothSettings() },
                 )
@@ -432,12 +461,12 @@ fun SettingsScreen(
 
         // ------------------------------------------------------------- System
         GlassCard(modifier = Modifier.fillMaxWidth()) {
-            SectionLabel("Доступы")
+            SectionLabel(tr("Доступы", "Permissions"))
             Spacer(Modifier.height(12.dp))
             StatusRow(
-                title = "Доступ к уведомлениям",
+                title = tr("Доступ к уведомлениям", "Notification access"),
                 ok = listenerOn,
-                action = "Открыть",
+                action = tr("Открыть", "Open"),
                 onAction = {
                     runCatching {
                         context.startActivity(
@@ -449,9 +478,9 @@ fun SettingsScreen(
             )
             Spacer(Modifier.height(12.dp))
             StatusRow(
-                title = "Bluetooth-разрешения",
+                title = tr("Bluetooth-разрешения", "Bluetooth permissions"),
                 ok = hasBluetooth(context),
-                action = "Выдать",
+                action = tr("Выдать", "Grant"),
                 onAction = {
                     val perms = buildList {
                         add(android.Manifest.permission.BLUETOOTH_CONNECT)
@@ -465,9 +494,9 @@ fun SettingsScreen(
             )
             Spacer(Modifier.height(12.dp))
             StatusRow(
-                title = "Без оптимизации батареи",
+                title = tr("Без оптимизации батареи", "Battery optimization off"),
                 ok = batteryFree,
-                action = "Открыть",
+                action = tr("Открыть", "Open"),
                 onAction = {
                     runCatching {
                         context.startActivity(
@@ -481,26 +510,51 @@ fun SettingsScreen(
         }
 
         GlassCard(modifier = Modifier.fillMaxWidth()) {
-            SectionLabel("Локальная музыка")
+            SectionLabel(tr("Локальная музыка", "Local music"))
             Spacer(Modifier.height(10.dp))
-            Text(
-                text = if (prefs.localFolderName.isBlank()) "Папка не выбрана"
-                else "Папка: ${prefs.localFolderName}",
-                color = if (prefs.localFolderName.isBlank()) OnyxFaint else OnyxWhite,
-                fontSize = 13.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            if (prefs.localFolders.isEmpty()) {
+                Text(
+                    "Папки не выбраны",
+                    color = OnyxFaint,
+                    fontSize = 13.sp,
+                )
+            } else {
+                prefs.localFolders.forEach { folder ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            folder.name.ifBlank { "Папка" },
+                            color = OnyxWhite,
+                            fontSize = 13.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Icon(
+                            Icons.Rounded.Delete,
+                            contentDescription = "Удалить папку",
+                            tint = OnyxFaint,
+                            modifier = Modifier
+                                .size(18.dp)
+                                .clickable { controller.localLibrary.removeFolder(folder.uri) },
+                        )
+                    }
+                }
+            }
             Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 GlassPill(
-                    text = if (prefs.localFolderName.isBlank()) "Выбрать папку" else "Сменить папку",
+                    text = if (prefs.localFolders.isEmpty()) "Выбрать папку" else "Добавить папку",
                     selected = true,
                     onClick = { musicFolderLauncher.launch(null) },
                 )
-                if (prefs.localFolderUri.isNotBlank()) {
+                if (prefs.localFolders.isNotEmpty()) {
                     GlassPill(
-                        text = "Очистить",
+                        text = tr("Очистить всё", "Clear all"),
                         selected = false,
                         onClick = { controller.localLibrary.clearFolder() },
                     )
@@ -509,7 +563,7 @@ fun SettingsScreen(
         }
 
         GlassCard(modifier = Modifier.fillMaxWidth()) {
-            SectionLabel("Звук")
+            SectionLabel(tr("Звук", "Sound"))
             Spacer(Modifier.height(10.dp))
             Text(
                 "Эквалайзер с пресетами и ручной настройкой полос. " +
@@ -520,7 +574,7 @@ fun SettingsScreen(
             )
             Spacer(Modifier.height(12.dp))
             GlassPill(
-                text = "Открыть эквалайзер",
+                text = tr("Открыть эквалайзер", "Open equalizer"),
                 selected = true,
                 onClick = { showEq = true },
             )
@@ -536,7 +590,7 @@ fun SettingsScreen(
         }
 
         GlassCard(modifier = Modifier.fillMaxWidth()) {
-            SectionLabel("О приложении")
+            SectionLabel(tr("О приложении", "About"))
             Spacer(Modifier.height(8.dp))
             Text(
                 text = "ONYX — личный пульт управления музыкой. " +
@@ -548,7 +602,15 @@ fun SettingsScreen(
             )
         }
         } else {
-            AppearanceSection(controller, prefs, scope)
+            AppearanceSection(
+                controller = controller,
+                prefs = prefs,
+                scope = scope,
+                onPickBackground = { page ->
+                    pendingBgPage = page
+                    backgroundPicker.launch(arrayOf("image/*"))
+                },
+            )
         }
     }
 }
@@ -558,23 +620,104 @@ private fun AppearanceSection(
     controller: AppController,
     prefs: app.onyx.core.PrefsData,
     scope: kotlinx.coroutines.CoroutineScope,
+    onPickBackground: (String) -> Unit,
 ) {
+    var intensity by remember(prefs.coverIntensity) {
+        mutableFloatStateOf(prefs.coverIntensity.toFloat())
+    }
+    var showUiFont by remember { mutableStateOf(false) }
+    var showLyricFont by remember { mutableStateOf(false) }
+    val pages = prefs.coverPages.split(',').filter { it.isNotBlank() }.toSet()
+
     GlassCard(modifier = Modifier.fillMaxWidth()) {
-        SectionLabel("Тема")
+        SectionLabel("Язык · Language")
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             GlassPill(
-                text = "Тёмная",
+                text = "Русский",
+                selected = prefs.language == app.onyx.core.AppLanguage.RU,
+                onClick = { scope.launch { controller.prefs.setLanguage(app.onyx.core.AppLanguage.RU) } },
+            )
+            GlassPill(
+                text = "English",
+                selected = prefs.language == app.onyx.core.AppLanguage.EN,
+                onClick = { scope.launch { controller.prefs.setLanguage(app.onyx.core.AppLanguage.EN) } },
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Интерфейс переключается с плавным затуханием.",
+            color = OnyxFaint,
+            fontSize = 11.sp,
+        )
+    }
+
+    GlassCard(modifier = Modifier.fillMaxWidth()) {
+        SectionLabel(tr("Шрифты", "Fonts"))
+        Spacer(Modifier.height(12.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                tr("Шрифт интерфейса", "Interface font"),
+                color = OnyxWhite,
+                fontSize = 13.sp,
+                modifier = Modifier.weight(1f),
+            )
+            GlassPill(
+                text = FontCatalog.choices.firstOrNull { it.id == prefs.uiFont }?.label
+                    ?: tr("Системный", "System"),
+                selected = false,
+                onClick = { showUiFont = true },
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                tr("Шрифт текста песен", "Lyrics font"),
+                color = OnyxWhite,
+                fontSize = 13.sp,
+                modifier = Modifier.weight(1f),
+            )
+            GlassPill(
+                text = FontCatalog.choices.firstOrNull { it.id == prefs.lyricFont }?.label
+                    ?: tr("Системный", "System"),
+                selected = false,
+                onClick = { showLyricFont = true },
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            tr(
+                "Шрифт интерфейса меняет всё приложение. Шрифт текста — только строки песен.",
+                "Interface font changes the whole app. Lyrics font only affects song lines.",
+            ),
+            color = OnyxFaint,
+            fontSize = 10.sp,
+            lineHeight = 14.sp,
+        )
+    }
+
+    GlassCard(modifier = Modifier.fillMaxWidth()) {
+        SectionLabel(tr("Тема", "Theme"))
+        Spacer(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            GlassPill(
+                text = tr("Тёмная", "Dark"),
                 selected = prefs.themeMode == app.onyx.core.ThemeMode.DARK,
                 onClick = { scope.launch { controller.prefs.setThemeMode(app.onyx.core.ThemeMode.DARK) } },
             )
             GlassPill(
-                text = "Светлая",
+                text = tr("Светлая", "Light"),
                 selected = prefs.themeMode == app.onyx.core.ThemeMode.LIGHT,
                 onClick = { scope.launch { controller.prefs.setThemeMode(app.onyx.core.ThemeMode.LIGHT) } },
             )
             GlassPill(
-                text = "Система",
+                text = tr("Система", "System"),
                 selected = prefs.themeMode == app.onyx.core.ThemeMode.SYSTEM,
                 onClick = { scope.launch { controller.prefs.setThemeMode(app.onyx.core.ThemeMode.SYSTEM) } },
             )
@@ -589,13 +732,153 @@ private fun AppearanceSection(
     }
 
     GlassCard(modifier = Modifier.fillMaxWidth()) {
-        SectionLabel("Фон")
+        SectionLabel(tr("Цвет караоке", "Karaoke color"))
+        Spacer(Modifier.height(12.dp))
+        val colors = listOf(
+            0xFFF6F6F7L, 0xFFB8B8C0L, 0xFFFF6B6BL, 0xFFFFA94DL,
+            0xFFFFD166L, 0xFF6EE7B7L, 0xFF6CB6FFL, 0xFFC084FCL,
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            colors.forEach { value ->
+                val selected = prefs.lyricActiveColor == value
+                Box(
+                    modifier = Modifier
+                        .size(28.dp)
+                        .clip(androidx.compose.foundation.shape.CircleShape)
+                        .background(Color(value))
+                        .then(
+                            if (selected) Modifier.border(
+                                2.dp,
+                                OnyxWhite,
+                                androidx.compose.foundation.shape.CircleShape,
+                            ) else Modifier,
+                        )
+                        .clickable {
+                            scope.launch { controller.prefs.setLyricActiveColor(value) }
+                        },
+                )
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            tr("Применяется к активной строке и заливке слов.", "Applies to the active line and word fill."),
+            color = OnyxFaint,
+            fontSize = 10.sp,
+        )
+    }
+
+    GlassCard(modifier = Modifier.fillMaxWidth()) {
+        SectionLabel(tr("Фон", "Background"))
         Spacer(Modifier.height(12.dp))
         ToggleRow(
-            title = "Фон по обложке",
-            subtitle = "Размытая обложка и цветовой оттенок на всех экранах",
+            title = tr("Фон по обложке", "Cover background"),
+            subtitle = "Размытая обложка и цветовой оттенок",
             checked = prefs.coverBackdrop,
             onChange = { scope.launch { controller.prefs.setCoverBackdrop(it) } },
+        )
+        Spacer(Modifier.height(10.dp))
+        SliderRow(
+            title = tr("Интенсивность фона", "Background intensity"),
+            value = "${intensity.toInt()}%",
+            sliderValue = (intensity / 100f).coerceIn(0f, 1f),
+            onChange = { intensity = (it * 100f).coerceIn(0f, 100f) },
+            onFinish = { scope.launch { controller.prefs.setCoverIntensity(intensity.toInt()) } },
+        )
+        Spacer(Modifier.height(12.dp))
+        SectionLabel(tr("Где показывать", "Show background on"))
+        Spacer(Modifier.height(8.dp))
+        val pageItems = listOf(
+            "player" to tr("Плеер", "Player"),
+            "lyrics" to tr("Текст", "Lyrics"),
+            "queue" to tr("Очередь", "Queue"),
+            "music" to tr("Музыка", "Music"),
+            "visualizer" to tr("Визуал", "Visual"),
+            "settings" to tr("Настройки", "Settings"),
+        )
+        pageItems.forEachIndexed { index, (key, label) ->
+            ToggleRow(
+                title = label,
+                subtitle = "Фон из обложки на этой странице",
+                checked = pages.contains(key),
+                onChange = { on ->
+                    val next = if (on) pages + key else pages - key
+                    scope.launch { controller.prefs.setCoverPages(next.joinToString(",")) }
+                },
+            )
+            if (index != pageItems.lastIndex) Spacer(Modifier.height(10.dp))
+        }
+    }
+
+    GlassCard(modifier = Modifier.fillMaxWidth()) {
+        SectionLabel(tr("Фоны страниц", "Page backgrounds"))
+        Spacer(Modifier.height(10.dp))
+        val backgrounds = decodeBackgrounds(prefs.pageBackgrounds)
+        val pages = listOf(
+            "player" to tr("Плеер", "Player"),
+            "lyrics" to tr("Текст", "Lyrics"),
+            "queue" to tr("Очередь", "Queue"),
+            "music" to tr("Музыка", "Music"),
+            "visualizer" to tr("Визуал", "Visual"),
+            "settings" to tr("Настройки", "Settings"),
+        )
+        pages.forEachIndexed { index, (key, label) ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    label,
+                    color = OnyxWhite,
+                    fontSize = 13.sp,
+                    modifier = Modifier.weight(1f),
+                )
+                if (backgrounds[key] != null) {
+                    GlassPill(
+                        text = tr("Сброс", "Reset"),
+                        selected = false,
+                        onClick = {
+                            val map = backgrounds.toMutableMap()
+                            map.remove(key)
+                            scope.launch { controller.prefs.setPageBackgrounds(encodeBackgrounds(map)) }
+                        },
+                    )
+                } else {
+                    GlassPill(
+                        text = tr("Фото", "Photo"),
+                        selected = false,
+                        onClick = { onPickBackground(key) },
+                    )
+                }
+            }
+            if (index != pages.lastIndex) Spacer(Modifier.height(8.dp))
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(
+            tr(
+                "Своё фото заменяет обложку на выбранной странице. Оно сильно размывается, чтобы не мешать тексту.",
+                "A custom photo replaces the cover on that page. It is heavily blurred so text stays readable.",
+            ),
+            color = OnyxFaint,
+            fontSize = 10.sp,
+            lineHeight = 14.sp,
+        )
+    }
+
+    if (showUiFont) {
+        FontPickerDialog(
+            selected = prefs.uiFont,
+            onSelect = { scope.launch { controller.prefs.setUiFont(it) } },
+            onDismiss = { showUiFont = false },
+        )
+    }
+    if (showLyricFont) {
+        FontPickerDialog(
+            selected = prefs.lyricFont,
+            onSelect = { scope.launch { controller.prefs.setLyricFont(it) } },
+            onDismiss = { showLyricFont = false },
         )
     }
 }
@@ -726,3 +1009,17 @@ private fun isBatteryFree(context: Context): Boolean {
     val pm = context.getSystemService(PowerManager::class.java) ?: return true
     return pm.isIgnoringBatteryOptimizations(context.packageName)
 }
+
+private fun decodeBackgrounds(raw: String): Map<String, String> {
+    if (raw.isBlank()) return emptyMap()
+    return raw.split('\u001E').mapNotNull { record ->
+        if (record.isBlank()) return@mapNotNull null
+        val parts = record.split('\u001F', limit = 2)
+        val key = parts.getOrNull(0).orEmpty()
+        val path = parts.getOrNull(1).orEmpty()
+        if (key.isBlank() || path.isBlank()) null else key to path
+    }.toMap()
+}
+
+private fun encodeBackgrounds(map: Map<String, String>): String =
+    map.entries.joinToString("\u001E") { it.key + "\u001F" + it.value }

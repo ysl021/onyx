@@ -88,6 +88,25 @@ class LyricsRepository(
         if (now.hasTrack) sync(now, force = true)
     }
 
+    /** Manual title/artist lookup, including downloaded tracks with poor metadata. */
+    fun searchManual(title: String, artist: String) {
+        val t = title.trim()
+        if (t.isBlank()) return
+        val now = NowPlaying(
+            packageName = "manual",
+            title = t,
+            artist = artist.trim(),
+            album = "",
+            durationMs = 0L,
+            mediaId = "",
+        )
+        val key = keyOf(now)
+        current = now
+        currentKey = key
+        job?.cancel()
+        job = scope.launch { load(now, key) }
+    }
+
     /** Called when the user turns translation on after the lyrics are already loaded. */
     fun translateCurrent() {
         val doc = (_state.value as? LyricsState.Ready)?.doc ?: return
@@ -132,14 +151,33 @@ class LyricsRepository(
             return
         }
 
-        val found = runCatching { spicy(now, prefsNow.spicyKey) }.getOrNull()
-            ?: runCatching { musixmatch(now, prefsNow.translate) }.getOrNull()
-            ?: runCatching { spotify(now) }.getOrNull()
-            ?: runCatching { lrclib(now) }.getOrNull()
-            ?: runCatching { genius(now) }.getOrNull()
+        val attempts = ArrayList<String>(5)
+        var found: LyricsDoc? = null
+        val providers: List<Pair<String, suspend () -> LyricsDoc?>> = listOf(
+            "Spicy" to { spicy(now, prefsNow.spicyKey) },
+            "Musixmatch" to { musixmatch(now, prefsNow.translate) },
+            "Spotify" to { spotify(now) },
+            "LRCLIB" to { lrclib(now) },
+            "Genius" to { genius(now) },
+        )
+        for ((name, provider) in providers) {
+            val doc = runCatching { provider() }.getOrElse {
+                attempts += "$name: ошибка"
+                null
+            }
+            if (doc != null) {
+                found = doc
+                attempts += "$name: найдено"
+                break
+            }
+            if (attempts.none { it.startsWith("$name:") }) attempts += "$name: нет"
+        }
 
         if (found == null) {
-            _state.value = LyricsState.Error("Нет ни в Spicy Lyrics, ни в Musixmatch, ни в Spotify, ни в LRCLIB, ни в Genius")
+            _state.value = LyricsState.Error(
+                "Текст не найден.\n" + attempts.joinToString(" · ") +
+                    "\nМожно указать название и исполнителя вручную.",
+            )
             return
         }
         if (app.onyx.BuildConfig.DEBUG) {
@@ -175,8 +213,8 @@ class LyricsRepository(
         val seconds = (now.durationMs / 1000.0).takeIf { it > 0 }
         val searchUrl = buildString {
             append("https://api.spicylyrics.org/v1/tracks/search?")
-            append("title=").append(enc(now.title))
-            append("&artist=").append(enc(now.artist))
+            append("title=").append(enc(cleanTitle(now.title)))
+            append("&artist=").append(enc(cleanArtist(now.artist)))
             if (now.album.isNotBlank()) append("&album=").append(enc(now.album))
             if (seconds != null) append("&duration=").append(seconds.toInt())
             append("&limit=5")
@@ -341,15 +379,17 @@ class LyricsRepository(
         token: String,
     ): LyricsDoc? {
         val seconds = (now.durationMs / 1000.0).takeIf { it > 0 } ?: 0.0
+        val searchTitle = cleanTitle(now.title)
+        val searchArtist = cleanArtist(now.artist)
         val params = buildList {
             add("format=json")
             add("namespace=lyrics_richsynched")
             add("subtitle_format=mxm")
             add("app_id=mac-ios-v2.0")
             add("q_album=" + enc(now.album))
-            add("q_artist=" + enc(now.artist))
-            add("q_artists=" + enc(now.artist))
-            add("q_track=" + enc(now.title))
+            add("q_artist=" + enc(searchArtist))
+            add("q_artists=" + enc(searchArtist))
+            add("q_track=" + enc(searchTitle))
             now.spotifyTrackId?.let { add("track_spotify_id=" + enc("spotify:track:$it")) }
             if (seconds > 0) {
                 add("q_duration=" + enc(seconds.toString()))
@@ -644,8 +684,8 @@ class LyricsRepository(
     private suspend fun lrclib(now: NowPlaying): LyricsDoc? {
         val seconds = (now.durationMs / 1000).toInt()
         val direct = "https://lrclib.net/api/get?" + buildList {
-            add("track_name=" + enc(now.title))
-            add("artist_name=" + enc(now.artist))
+            add("track_name=" + enc(cleanTitle(now.title)))
+            add("artist_name=" + enc(cleanArtist(now.artist)))
             if (now.album.isNotBlank()) add("album_name=" + enc(now.album))
             if (seconds > 0) add("duration=" + seconds)
         }.joinToString("&")
@@ -656,8 +696,8 @@ class LyricsRepository(
         }
 
         val search = "https://lrclib.net/api/search?" + buildList {
-            add("track_name=" + enc(now.title))
-            add("artist_name=" + enc(now.artist))
+            add("track_name=" + enc(cleanTitle(now.title)))
+            add("artist_name=" + enc(cleanArtist(now.artist)))
         }.joinToString("&")
         val searchBody = fetchLrclib(search) ?: return null
         val arr = runCatching { json.parseToJsonElement(searchBody).jsonArray }.getOrNull() ?: return null
@@ -714,7 +754,7 @@ class LyricsRepository(
     // -------------------------------------------------------------------- Genius
 
     private suspend fun genius(now: NowPlaying): LyricsDoc? {
-        val query = enc("${now.artist} ${now.title}".trim())
+        val query = enc("${cleanArtist(now.artist)} ${cleanTitle(now.title)}".trim())
         val searchUrl = "https://genius.com/api/search/song?per_page=10&q=$query"
         val searchReq = Request.Builder()
             .url(searchUrl)
@@ -877,6 +917,26 @@ class LyricsRepository(
 
     private fun normalize(s: String): String =
         s.lowercase().filter { it.isLetterOrDigit() }
+
+    private fun cleanTitle(raw: String): String {
+        var t = raw.substringBeforeLast('.').replace('_', ' ')
+        t = Regex(
+            """[\[(（].*?(official|video|audio|lyrics|slowed|reverb|hardtekk|remix|sped\s*up|nightcore|prod\.).*?[\])）]""",
+            RegexOption.IGNORE_CASE,
+        ).replace(t, " ")
+        t = Regex(
+            """\b(slowed|reverb|hardtekk|sped\s*up|nightcore|remix|remaster(ed)?|version)\b""",
+            RegexOption.IGNORE_CASE,
+        ).replace(t, " ")
+        t = t.replace(Regex("""^\s*\d{1,3}[\s._-]+"""), "")
+        return t.replace(Regex("""\s{2,}"""), " ").trim().ifBlank { raw }
+    }
+
+    private fun cleanArtist(raw: String): String =
+        Regex("""\s*[-–—]\s*topic$""", RegexOption.IGNORE_CASE)
+            .replace(raw.trim(), "")
+            .trim()
+            .ifBlank { raw.trim() }
 
     private fun enc(s: String): String = URLEncoder.encode(s, "UTF-8")
 

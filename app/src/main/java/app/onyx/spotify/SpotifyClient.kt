@@ -19,6 +19,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import okhttp3.FormBody
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -72,6 +73,35 @@ data class SpotifyPlayer(
 data class SpotifyQueue(
     @SerialName("currently_playing") val currentlyPlaying: SpotifyTrack? = null,
     val queue: List<SpotifyTrack> = emptyList(),
+)
+
+@Serializable
+data class SpotifyPlaylist(
+    val id: String = "",
+    val name: String = "",
+    val images: List<SpotifyImage> = emptyList(),
+    val tracks: SpotifyPlaylistTracks = SpotifyPlaylistTracks(),
+    val uri: String = "",
+)
+
+@Serializable
+data class SpotifyPlaylistTracks(
+    val total: Int = 0,
+)
+
+@Serializable
+private data class SpotifyPlaylistsResponse(
+    val items: List<SpotifyPlaylist> = emptyList(),
+)
+
+@Serializable
+private data class SpotifyPlaylistItem(
+    val track: SpotifyTrack? = null,
+)
+
+@Serializable
+private data class SpotifyPlaylistTracksResponse(
+    val items: List<SpotifyPlaylistItem> = emptyList(),
 )
 
 @Serializable
@@ -326,6 +356,84 @@ class SpotifyClient(private val context: Context, private val prefs: Prefs) {
         }
     }
 
+    suspend fun playlists(): List<SpotifyPlaylist>? {
+        val t = token() ?: return null
+        return apiGet<SpotifyPlaylistsResponse>(
+            "https://api.spotify.com/v1/me/playlists?limit=50",
+            t,
+        )?.items
+    }
+
+    suspend fun playlistTracks(id: String): List<SpotifyTrack>? {
+        val t = token() ?: return null
+        return apiGet<SpotifyPlaylistTracksResponse>(
+            "https://api.spotify.com/v1/playlists/$id/tracks?limit=100",
+            t,
+        )?.items?.mapNotNull { it.track }
+    }
+
+    suspend fun addToPlaylist(playlistId: String, trackUri: String): Boolean {
+        val t = token() ?: return false
+        val uri = java.net.URLEncoder.encode(trackUri, "UTF-8")
+        val req = Request.Builder()
+            .url("https://api.spotify.com/v1/playlists/$playlistId/tracks?uris=$uri")
+            .post(ByteArray(0).toRequestBody())
+            .header("Authorization", "Bearer $t")
+            .build()
+        return withContext(Dispatchers.IO) {
+            try {
+                Http.client.newCall(req).execute().use { it.isSuccessful || it.code == 201 }
+            } catch (_: Exception) {
+                false
+            }
+        }
+    }
+
+    suspend fun removeFromPlaylist(playlistId: String, trackUri: String): Boolean {
+        val t = token() ?: return false
+        val body = """{"tracks":[{"uri":"$trackUri"}]}"""
+        val req = Request.Builder()
+            .url("https://api.spotify.com/v1/playlists/$playlistId/tracks")
+            .delete(body.toRequestBody("application/json".toMediaType()))
+            .header("Authorization", "Bearer $t")
+            .build()
+        return withContext(Dispatchers.IO) {
+            try {
+                Http.client.newCall(req).execute().use { it.isSuccessful || it.code == 200 }
+            } catch (_: Exception) {
+                false
+            }
+        }
+    }
+
+    /** Starts a single track on the active Spotify device. Requires Premium. */
+    suspend fun playTrack(uri: String): Boolean = playerCommand(
+        "https://api.spotify.com/v1/me/player/play",
+        """{"uris":["$uri"]}""",
+    )
+
+    /** Starts a playlist/album/artist context. Requires Premium. */
+    suspend fun playContext(contextUri: String): Boolean = playerCommand(
+        "https://api.spotify.com/v1/me/player/play",
+        """{"context_uri":"$contextUri"}""",
+    )
+
+    private suspend fun playerCommand(url: String, body: String): Boolean {
+        val t = token() ?: return false
+        val req = Request.Builder()
+            .url(url)
+            .put(body.toRequestBody("application/json".toMediaType()))
+            .header("Authorization", "Bearer $t")
+            .build()
+        return withContext(Dispatchers.IO) {
+            try {
+                Http.client.newCall(req).execute().use { it.isSuccessful || it.code == 204 }
+            } catch (_: Exception) {
+                false
+            }
+        }
+    }
+
     private suspend inline fun <reified T> apiGet(url: String, token: String): T? {
         val req = Request.Builder()
             .url(url)
@@ -371,7 +479,9 @@ class SpotifyClient(private val context: Context, private val prefs: Prefs) {
         private const val TAG = "ONYX_Spotify"
         private const val REDIRECT = "http://127.0.0.1:8899/callback"
         private const val SCOPES =
-            "user-read-playback-state user-modify-playback-state user-read-currently-playing"
+            "user-read-playback-state user-modify-playback-state user-read-currently-playing " +
+                "playlist-read-private playlist-read-collaborative " +
+                "playlist-modify-private playlist-modify-public"
         private const val AUTH = "https://accounts.spotify.com/authorize"
         private const val TOKEN = "https://accounts.spotify.com/api/token"
     }

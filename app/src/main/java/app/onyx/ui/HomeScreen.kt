@@ -214,7 +214,7 @@ private fun AccessBanner() {
     val context = LocalContext.current
     GlassCard(modifier = Modifier.fillMaxWidth(), padding = 16.dp) {
         Text(
-            text = "Нет доступа к медиа",
+            text = tr("Нет доступа к медиа", "No media access"),
             color = OnyxWhite,
             fontSize = 14.sp,
             fontWeight = FontWeight.SemiBold,
@@ -329,7 +329,7 @@ private fun Hero(media: MediaState, onOpenLyrics: () -> Unit) {
         if (now.hasTrack) {
             Spacer(Modifier.height(12.dp))
             GlassPill(
-                text = "Текст песни",
+                text = tr("Текст песни", "Lyrics"),
                 selected = false,
                 icon = Icons.Rounded.Translate,
                 onClick = onOpenLyrics,
@@ -423,7 +423,7 @@ private fun OutputCard(
 ) {
     GlassCard(modifier = Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            SectionLabel("Вывод звука", Modifier.weight(1f))
+            SectionLabel(tr("Вывод звука", "Audio output"), Modifier.weight(1f))
             if (routes.isEmpty()) {
                 Text(
                     text = "открыть Bluetooth",
@@ -552,12 +552,12 @@ private fun BudsCard(
             Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 GlassPill(
-                    text = "Подключить Buds",
+                    text = tr("Подключить Buds", "Connect Buds"),
                     selected = false,
                     onClick = { BudsService.reconnect(context) },
                 )
                 GlassPill(
-                    text = "Настройки BT",
+                    text = tr("Настройки BT", "BT settings"),
                     selected = false,
                     onClick = {
                         context.startActivity(
@@ -587,8 +587,8 @@ private fun BudsCard(
             Text(
                 text = when {
                     buds.connected -> buds.name
-                    buds.connecting -> "Подключение…"
-                    else -> buds.error ?: "Не подключены"
+                    buds.connecting -> tr("Подключение…", "Connecting…")
+                    else -> buds.error ?: tr("Не подключены", "Not connected")
                 },
                 color = if (buds.connected) OnyxWhite else OnyxDim,
                 fontSize = 14.sp,
@@ -601,7 +601,7 @@ private fun BudsCard(
         if (!buds.connected) {
             Spacer(Modifier.height(12.dp))
             GlassPill(
-                text = if (buds.connecting) "Подключаемся…" else "Подключить Buds",
+                text = if (buds.connecting) tr("Подключаемся…", "Connecting…") else tr("Подключить Buds", "Connect Buds"),
                 selected = true,
                 enabled = !buds.connecting,
                 onClick = { BudsService.reconnect(context) },
@@ -627,7 +627,7 @@ private fun BudsCard(
         }
 
         Spacer(Modifier.height(18.dp))
-        SectionLabel("Шумоподавление")
+        SectionLabel(tr("Шумоподавление", "Noise control"))
         Spacer(Modifier.height(10.dp))
         Row(
             modifier = Modifier
@@ -636,7 +636,7 @@ private fun BudsCard(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             GlassPill(
-                text = "Выкл",
+                text = tr("Выкл", "Off"),
                 selected = buds.mode == BudsState.MODE_OFF,
                 onClick = { BudsService.setMode(context, BudsState.MODE_OFF) },
             )
@@ -660,12 +660,12 @@ private fun BudsCard(
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             GlassPill(
-                text = "ANC на одно ухо",
+                text = tr("ANC на одно ухо", "ANC one ear"),
                 selected = buds.oneEar,
                 onClick = { BudsService.setOneEar(context, !buds.oneEar) },
             )
             GlassPill(
-                text = "ANC максимум",
+                text = tr("ANC максимум", "ANC maximum"),
                 selected = buds.ancHigh,
                 onClick = { BudsService.setAncHigh(context, !buds.ancHigh) },
             )
@@ -708,7 +708,7 @@ private fun QueueCard(
     val data = queue ?: return
     GlassCard(modifier = Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            SectionLabel("Дальше в очереди", Modifier.weight(1f))
+            SectionLabel(tr("Дальше в очереди", "Up next"), Modifier.weight(1f))
             Text(
                 text = data.deviceName.ifBlank { "Spotify" },
                 color = OnyxFaint,
@@ -718,26 +718,32 @@ private fun QueueCard(
             )
         }
         Spacer(Modifier.height(10.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
             GlassPill(
-                text = "Выкл",
+                text = tr("Выкл", "Off"),
                 selected = data.repeatState == "off",
+                modifier = Modifier.weight(1f),
                 onClick = { onRepeat("off") },
             )
             GlassPill(
-                text = "Плейлист",
+                text = tr("Плейлист", "Playlist"),
                 selected = data.repeatState == "context",
+                modifier = Modifier.weight(1f),
                 onClick = { onRepeat("context") },
             )
             GlassPill(
-                text = "Трек",
+                text = tr("Трек", "Track"),
                 selected = data.repeatState == "track",
+                modifier = Modifier.weight(1f),
                 onClick = { onRepeat("track") },
             )
         }
         Spacer(Modifier.height(10.dp))
         GlassPill(
-            text = "Вся очередь",
+            text = tr("Вся очередь", "Full queue"),
             selected = false,
             onClick = onOpenQueue,
         )
@@ -746,7 +752,7 @@ private fun QueueCard(
             Text("Очередь пуста", color = OnyxFaint, fontSize = 12.sp)
             return@GlassCard
         }
-        data.next.take(5).forEachIndexed { index, track ->
+        data.next.take(3).forEachIndexed { index, track ->
             Row(
                 modifier = Modifier
                     .fillMaxWidth()

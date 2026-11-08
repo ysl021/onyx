@@ -1,5 +1,9 @@
 package app.onyx.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,9 +22,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.onyx.AppController
 import app.onyx.audio.EqBand
@@ -41,6 +47,13 @@ fun EqualizerScreen(
     modifier: Modifier = Modifier,
 ) {
     val eq by controller.sound.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val autoLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) controller.sound.setAuto(true)
+        else controller.toast(tr("Нужен доступ к микрофону", "Microphone access is required"))
+    }
 
     Column(
         modifier = modifier
@@ -53,7 +66,7 @@ fun EqualizerScreen(
         Row(verticalAlignment = Alignment.CenterVertically) {
             CircleButton(
                 icon = Icons.AutoMirrored.Rounded.ArrowBack,
-                contentDescription = "Назад",
+                contentDescription = tr("Назад", "Back"),
                 size = 42.dp,
                 iconSize = 20.dp,
                 onClick = onBack,
@@ -61,13 +74,13 @@ fun EqualizerScreen(
             Spacer(Modifier.width(12.dp))
             Column {
                 Text(
-                    "Эквалайзер",
+                    tr("Эквалайзер", "Equalizer"),
                     color = OnyxWhite,
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
-                    "Звук · ONYX",
+                    tr("Звук · ONYX", "Sound · ONYX"),
                     color = OnyxFaint,
                     fontSize = 10.sp,
                     letterSpacing = 1.4.sp,
@@ -77,10 +90,10 @@ fun EqualizerScreen(
 
         if (!eq.available) {
             GlassCard(modifier = Modifier.fillMaxWidth()) {
-                SectionLabel("Недоступно")
+                SectionLabel(tr("Недоступно", "Unavailable"))
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    eq.error ?: "Эквалайзер не поддерживается на этом устройстве.",
+                    eq.error ?: tr("Эквалайзер не поддерживается на этом устройстве.", "Equalizer is not supported on this device."),
                     color = OnyxDim,
                     fontSize = 12.sp,
                     lineHeight = 17.sp,
@@ -93,13 +106,13 @@ fun EqualizerScreen(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(
-                        "Включить эквалайзер",
+                        tr("Включить эквалайзер", "Enable equalizer"),
                         color = OnyxWhite,
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Medium,
                     )
                     Text(
-                        "Общий эффект для активного аудиовыхода",
+                        tr("Общий эффект для активного аудиовыхода", "Global effect for the active audio output"),
                         color = OnyxFaint,
                         fontSize = 11.sp,
                     )
@@ -109,10 +122,58 @@ fun EqualizerScreen(
         }
 
         GlassCard(modifier = Modifier.fillMaxWidth()) {
-            SectionLabel("Пресеты")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        tr("Умный эквалайзер", "Smart equalizer"),
+                        color = OnyxWhite,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                    )
+                    Text(
+                        tr(
+                            "Авто-коррекция низа, середины и верха в пределах ±3 дБ",
+                            "Auto-corrects low, mid and high within ±3 dB",
+                        ),
+                        color = OnyxFaint,
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp,
+                    )
+                }
+                OnyxSwitch(
+                    checked = eq.auto,
+                    onCheckedChange = { on ->
+                        if (!on) {
+                            controller.sound.setAuto(false)
+                        } else if (ContextCompat.checkSelfPermission(
+                                context,
+                                Manifest.permission.RECORD_AUDIO,
+                            ) == PackageManager.PERMISSION_GRANTED
+                        ) {
+                            controller.sound.setAuto(true)
+                        } else {
+                            autoLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                        }
+                    },
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                tr(
+                    "Работает через захват аудиопотока; на части Bluetooth-устройств может быть недоступен.",
+                    "Uses audio capture; may be unavailable on some Bluetooth devices.",
+                ),
+                color = OnyxFaint,
+                fontSize = 10.sp,
+                lineHeight = 14.sp,
+            )
+        }
+
+        GlassCard(modifier = Modifier.fillMaxWidth()) {
+            SectionLabel(tr("Пресеты", "Presets"))
             Spacer(Modifier.height(10.dp))
             if (eq.presets.isEmpty()) {
-                Text("Пресеты не найдены — настрой полосы вручную.", color = OnyxFaint, fontSize = 11.sp)
+                Text(tr("Пресеты не найдены — настрой полосы вручную.", "No presets found — adjust the bands manually."), color = OnyxFaint, fontSize = 11.sp)
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     eq.presets.chunked(2).forEach { chunk ->
@@ -131,15 +192,15 @@ fun EqualizerScreen(
             }
             Spacer(Modifier.height(10.dp))
             Text(
-                if (eq.preset < 0) "Режим: своя настройка"
-                else "Режим: ${eq.presets.getOrNull(eq.preset) ?: "—"}",
+                if (eq.preset < 0) tr("Режим: своя настройка", "Mode: custom")
+                else "${tr("Режим", "Mode")}: ${eq.presets.getOrNull(eq.preset) ?: "—"}",
                 color = OnyxFaint,
                 fontSize = 10.sp,
             )
         }
 
         GlassCard(modifier = Modifier.fillMaxWidth()) {
-            SectionLabel("Полосы")
+            SectionLabel(tr("Полосы", "Bands"))
             Spacer(Modifier.height(6.dp))
             eq.bands.forEach { band ->
                 BandSlider(

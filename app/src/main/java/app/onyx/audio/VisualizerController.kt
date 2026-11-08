@@ -11,10 +11,14 @@ class VisualizerController(context: Context) {
     private val _wave = MutableStateFlow(FloatArray(0))
     val wave: StateFlow<FloatArray> = _wave.asStateFlow()
 
+    private val _fft = MutableStateFlow(FloatArray(0))
+    val fft: StateFlow<FloatArray> = _fft.asStateFlow()
+
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
     private var visualizer: Visualizer? = null
+    private var smoothed = FloatArray(64)
 
     fun start() {
         if (visualizer != null) return
@@ -52,11 +56,32 @@ class VisualizerController(context: Context) {
                         visualizer: Visualizer?,
                         fft: ByteArray?,
                         samplingRate: Int,
-                    ) = Unit
+                    ) {
+                        if (fft == null || fft.size < 4) return
+                        val n = fft.size / 2
+                        val out = FloatArray(64)
+                        var max = 0.0001f
+                        for (i in out.indices) {
+                            val frac = i.toDouble() / (out.size - 1)
+                            // Log-ish spacing: more resolution in the low end.
+                            val bin = (Math.pow(n.toDouble(), frac) - 1.0)
+                                .toInt().coerceIn(0, n - 1)
+                            val re = fft[bin * 2].toInt()
+                            val im = fft[bin * 2 + 1].toInt()
+                            val mag = kotlin.math.sqrt((re * re + im * im).toFloat()) / 128f
+                            out[i] = mag
+                            if (mag > max) max = mag
+                        }
+                        for (i in out.indices) {
+                            val norm = (out[i] / max).coerceIn(0f, 1f)
+                            smoothed[i] = smoothed[i] * 0.65f + norm * 0.35f
+                        }
+                        _fft.value = smoothed.copyOf()
+                    }
                 },
                 Visualizer.getMaxCaptureRate() / 2,
                 true,
-                false,
+                true,
             )
             v.enabled = true
             visualizer = v

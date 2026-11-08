@@ -11,6 +11,8 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -33,10 +35,15 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Fullscreen
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -58,6 +65,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -78,6 +86,8 @@ import app.onyx.ui.components.CircleButton
 import app.onyx.ui.components.GlassPill
 import app.onyx.ui.theme.OnyxDim
 import app.onyx.ui.theme.OnyxFaint
+import app.onyx.ui.theme.OnyxLine
+import app.onyx.ui.theme.OnyxSurface
 import app.onyx.ui.theme.OnyxWhite
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -96,8 +106,13 @@ fun LyricsScreen(
     val scratch = rememberCoroutineScope()
     val context = LocalContext.current
     val view = LocalView.current
+    val lyricFamily = remember(prefs.lyricFont) { FontCatalog.family(context, prefs.lyricFont) }
 
     var fullscreen by rememberSaveable { mutableStateOf(false) }
+    var showSearch by remember { mutableStateOf(false) }
+    var showFontPicker by remember { mutableStateOf(false) }
+    var manualTitle by remember { mutableStateOf("") }
+    var manualArtist by remember { mutableStateOf("") }
 
     val position = media.positionMs + prefs.lyricOffsetMs
     val doc = (lyrics as? LyricsState.Ready)?.doc
@@ -151,15 +166,19 @@ fun LyricsScreen(
             Box(modifier = Modifier.weight(1f)) {
                 when (val s = lyrics) {
                     LyricsState.Idle -> CenterMessage(
-                        title = "Тишина",
-                        text = "Запусти трек — текст подтянется сам.",
+                        title = tr("Тишина", "Silence"),
+                        text = tr("Запусти трек — текст подтянется сам.", "Play a track and lyrics will load."),
                     )
                     LyricsState.Loading -> Loading()
                     is LyricsState.Error -> CenterMessage(
-                        title = "Текст не найден",
-                        text = s.message + "\nПопробуй другой трек или повтори поиск.",
-                        action = "Повторить",
-                        onAction = { controller.lyrics.retry() },
+                        title = tr("Текст не найден", "Lyrics not found"),
+                        text = s.message,
+                        action = tr("Указать название и исполнителя", "Enter title and artist"),
+                        onAction = {
+                            manualTitle = media.now.title
+                            manualArtist = media.now.artist
+                            showSearch = true
+                        },
                     )
                     is LyricsState.Ready -> LyricsBody(
                         doc = s.doc,
@@ -169,6 +188,8 @@ fun LyricsScreen(
                         karaoke = prefs.karaoke,
                         fullscreen = fullscreen,
                         showTranslation = prefs.translate,
+                        activeColor = Color(prefs.lyricActiveColor),
+                        fontFamily = lyricFamily,
                     )
                 }
             }
@@ -178,6 +199,7 @@ fun LyricsScreen(
                     fontSize = prefs.lyricFontSize,
                     karaoke = prefs.karaoke,
                     onKaraoke = { scratch.launch { controller.prefs.setKaraoke(!prefs.karaoke) } },
+                    onFont = { showFontPicker = true },
                     onFontSize = { size ->
                         scratch.launch { controller.prefs.setFontSize(size.coerceIn(20f, 48f)) }
                     },
@@ -193,7 +215,7 @@ fun LyricsScreen(
         if (fullscreen) {
             CircleButton(
                 icon = Icons.Rounded.Close,
-                contentDescription = "Выйти из полноэкранного режима",
+                contentDescription = tr("Выйти из полноэкранного режима", "Exit fullscreen"),
                 size = 38.dp,
                 iconSize = 18.dp,
                 modifier = Modifier
@@ -204,6 +226,98 @@ fun LyricsScreen(
             )
         }
     }
+
+    if (showSearch) {
+        SearchLyricsDialog(
+            title = manualTitle,
+            artist = manualArtist,
+            onTitle = { manualTitle = it },
+            onArtist = { manualArtist = it },
+            onDismiss = { showSearch = false },
+            onSearch = {
+                controller.lyrics.searchManual(manualTitle, manualArtist)
+                showSearch = false
+            },
+        )
+    }
+
+    if (showFontPicker) {
+        FontPickerDialog(
+            selected = prefs.lyricFont,
+            onSelect = { id -> scratch.launch { controller.prefs.setLyricFont(id) } },
+            onDismiss = { showFontPicker = false },
+        )
+    }
+}
+
+@Composable
+private fun SearchLyricsDialog(
+    title: String,
+    artist: String,
+    onTitle: (String) -> Unit,
+    onArtist: (String) -> Unit,
+    onDismiss: () -> Unit,
+    onSearch: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = OnyxSurface,
+        title = {
+            Text(tr("Поиск текста", "Search lyrics"), color = OnyxWhite, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        },
+        text = {
+            Column {
+                Text(
+                    tr("Введи название и исполнителя. ONYX поищет в Spicy, Musixmatch, LRCLIB и Genius.", "Enter a title and artist. ONYX will search Spicy, Musixmatch, LRCLIB and Genius."),
+                    color = OnyxDim,
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = onTitle,
+                    singleLine = true,
+                    label = { Text(tr("Название", "Title"), fontSize = 11.sp) },
+                    textStyle = androidx.compose.ui.text.TextStyle(color = OnyxWhite, fontSize = 14.sp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = OnyxWhite.copy(alpha = 0.4f),
+                        unfocusedBorderColor = OnyxLine,
+                        focusedLabelColor = OnyxDim,
+                        unfocusedLabelColor = OnyxFaint,
+                        cursorColor = OnyxWhite,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = artist,
+                    onValueChange = onArtist,
+                    singleLine = true,
+                    label = { Text(tr("Исполнитель", "Artist"), fontSize = 11.sp) },
+                    textStyle = androidx.compose.ui.text.TextStyle(color = OnyxWhite, fontSize = 14.sp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = OnyxWhite.copy(alpha = 0.4f),
+                        unfocusedBorderColor = OnyxLine,
+                        focusedLabelColor = OnyxDim,
+                        unfocusedLabelColor = OnyxFaint,
+                        cursorColor = OnyxWhite,
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onSearch, enabled = title.isNotBlank()) {
+                Text(tr("Искать", "Search"), color = OnyxWhite, fontWeight = FontWeight.SemiBold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(tr("Отмена", "Cancel"), color = OnyxDim)
+            }
+        },
+    )
 }
 
 @Composable
@@ -227,7 +341,7 @@ private fun TopBar(
     ) {
         CircleButton(
             icon = Icons.AutoMirrored.Rounded.ArrowBack,
-            contentDescription = "Назад",
+            contentDescription = tr("Назад", "Back"),
             size = 42.dp,
             iconSize = 20.dp,
             onClick = onBack,
@@ -265,7 +379,7 @@ private fun TopBar(
                         if (isNotEmpty()) append(" · ")
                         append(provider)
                     }
-                    if (karaoke) append(" · караоке")
+                    if (karaoke) append(tr(" · караоке", " · karaoke"))
                 },
                 color = OnyxFaint,
                 fontSize = 10.sp,
@@ -276,7 +390,7 @@ private fun TopBar(
         Spacer(Modifier.width(8.dp))
         CircleButton(
             icon = Icons.Rounded.Translate,
-            contentDescription = "Перевод",
+            contentDescription = tr("Перевод", "Translation"),
             size = 38.dp,
             iconSize = 18.dp,
             filled = translating,
@@ -285,7 +399,7 @@ private fun TopBar(
         Spacer(Modifier.width(6.dp))
         CircleButton(
             icon = Icons.Rounded.Fullscreen,
-            contentDescription = "Полноэкранный режим",
+            contentDescription = tr("Полноэкранный режим", "Fullscreen"),
             size = 38.dp,
             iconSize = 18.dp,
             onClick = onFullscreen,
@@ -306,7 +420,7 @@ private fun Loading() {
             modifier = Modifier.size(28.dp),
         )
         Spacer(Modifier.height(14.dp))
-        Text("Ищем текст…", color = OnyxDim, fontSize = 13.sp)
+        Text(tr("Ищем текст…", "Searching lyrics…"), color = OnyxDim, fontSize = 13.sp)
     }
 }
 
@@ -355,6 +469,8 @@ private fun LyricsBody(
     karaoke: Boolean,
     fullscreen: Boolean,
     showTranslation: Boolean,
+    activeColor: Color,
+    fontFamily: FontFamily?,
 ) {
     val activeIndex = remember(doc, position) { activeLineIndex(doc, position) }
 
@@ -383,10 +499,12 @@ private fun LyricsBody(
     }
 
     if (!doc.synced) {
+        val scroll = androidx.compose.foundation.rememberScrollState()
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 26.dp),
+                .verticalScroll(scroll)
+                .padding(horizontal = 26.dp, vertical = 24.dp),
             verticalArrangement = Arrangement.Center,
         ) {
             Text(
@@ -396,6 +514,7 @@ private fun LyricsBody(
                 lineHeight = (fontSize * 0.95f).sp,
                 fontWeight = FontWeight.Medium,
                 textAlign = TextAlign.Center,
+                fontFamily = fontFamily,
                 modifier = Modifier.fillMaxWidth(),
             )
         }
@@ -425,6 +544,7 @@ private fun LyricsBody(
                         lineHeight = (fontSize * 1.08f).sp,
                         fontWeight = if (active) FontWeight.Bold else FontWeight.Medium,
                         letterSpacing = (-0.3).sp,
+                        fontFamily = fontFamily,
                     )
                     val translation = line.translation
                     if (showTranslation && translation != null) {
@@ -476,6 +596,8 @@ private fun LyricsBody(
                         position = if (active) smoothPosition else position,
                         fontSize = if (fullscreen) fontSize * 1.08f else fontSize,
                         karaoke = karaoke,
+                        activeColor = activeColor,
+                        fontFamily = fontFamily,
                     )
                     val translation = line.translation
                     if (showTranslation && translation != null) {
@@ -513,15 +635,17 @@ private fun LyricLineText(
     position: Long,
     fontSize: Float,
     karaoke: Boolean,
+    activeColor: Color,
+    fontFamily: FontFamily?,
 ) {
     val size by animateFloatAsState(
         targetValue = if (active) fontSize else fontSize * 0.66f,
         label = "lineSize",
     )
     val baseColor = when {
-        active -> OnyxWhite
-        line.startMs <= position -> OnyxWhite.copy(alpha = 0.42f)
-        else -> OnyxWhite.copy(alpha = 0.22f)
+        active -> activeColor
+        line.startMs <= position -> OnyxWhite.copy(alpha = 0.52f)
+        else -> OnyxWhite.copy(alpha = 0.30f)
     }
 
     val text: AnnotatedString = if (karaoke && line.words.isNotEmpty()) {
@@ -534,10 +658,10 @@ private fun LyricLineText(
                     SpanStyle(
                         color = when {
                             !active -> baseColor
-                            position >= word.endMs -> OnyxWhite
+                            position >= word.endMs -> activeColor
                             else -> androidx.compose.ui.graphics.lerp(
-                                OnyxWhite.copy(alpha = 0.22f),
-                                OnyxWhite,
+                                OnyxWhite.copy(alpha = 0.28f),
+                                activeColor,
                                 wordProgress,
                             )
                         },
@@ -561,6 +685,7 @@ private fun LyricLineText(
         fontSize = size.sp,
         lineHeight = (size * 1.12f).sp,
         letterSpacing = (-0.4).sp,
+        fontFamily = fontFamily,
         modifier = Modifier
             .fillMaxWidth()
             .alpha(if (active) 1f else if (line.startMs <= position) 0.9f else 0.65f),
@@ -612,6 +737,7 @@ private fun BottomBar(
     fontSize: Float,
     karaoke: Boolean,
     onKaraoke: () -> Unit,
+    onFont: () -> Unit,
     onFontSize: (Float) -> Unit,
     offsetMs: Long,
     onOffset: (Long) -> Unit,
@@ -630,7 +756,14 @@ private fun BottomBar(
         ) {
             GlassPill(text = "A−", selected = false, onClick = { onFontSize(fontSize - 2f) })
             GlassPill(text = "A+", selected = false, onClick = { onFontSize(fontSize + 2f) })
-            GlassPill(text = "Караоке", selected = karaoke, onClick = onKaraoke)
+            GlassPill(text = tr("Караоке", "Karaoke"), selected = karaoke, onClick = onKaraoke)
+            CircleButton(
+                icon = Icons.Rounded.TextFields,
+                contentDescription = tr("Шрифт", "Font"),
+                size = 38.dp,
+                iconSize = 18.dp,
+                onClick = onFont,
+            )
             Text(
                 text = "Aa ${fontSize.toInt()}",
                 color = OnyxFaint,
@@ -640,7 +773,7 @@ private fun BottomBar(
             Spacer(Modifier.weight(1f))
             CircleButton(
                 icon = Icons.Rounded.Refresh,
-                contentDescription = "Искать заново",
+                contentDescription = tr("Искать заново", "Search again"),
                 size = 38.dp,
                 iconSize = 17.dp,
                 onClick = onRetry,
@@ -653,14 +786,14 @@ private fun BottomBar(
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Text(
-                text = "Смещение",
+                text = tr("Смещение", "Offset"),
                 color = OnyxFaint,
                 fontSize = 10.sp,
                 letterSpacing = 0.8.sp,
             )
             GlassPill(text = "−0.1", selected = false, onClick = { onOffset(offsetMs - 100) })
             GlassPill(
-                text = if (offsetMs == 0L) "0 мс" else "$offsetMs мс",
+                text = if (offsetMs == 0L) tr("0 мс", "0 ms") else "$offsetMs ${tr("мс", "ms")}",
                 selected = offsetMs != 0L,
                 onClick = { onOffset(0) },
             )

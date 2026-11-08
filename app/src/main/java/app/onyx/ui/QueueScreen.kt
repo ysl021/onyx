@@ -1,6 +1,7 @@
 package app.onyx.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +17,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -62,6 +64,17 @@ fun QueueScreen(
     var queue by remember { mutableStateOf<QueueData?>(null) }
     var version by remember { mutableStateOf(0) }
     var loading by remember { mutableStateOf(false) }
+    var showPlaylists by remember { mutableStateOf(false) }
+
+    if (showPlaylists) {
+        PlaylistsScreen(
+            controller = controller,
+            onBack = { showPlaylists = false },
+            onOpenSettings = onOpenSettings,
+            modifier = modifier,
+        )
+        return
+    }
 
     LaunchedEffect(media.now.mediaId, media.now.title, media.now.artist, connected, version) {
         if (!connected) {
@@ -85,7 +98,7 @@ fun QueueScreen(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(
-                            "Очередь",
+                            tr("Очередь", "Queue"),
                             color = OnyxWhite,
                             fontSize = 26.sp,
                             fontWeight = FontWeight.Black,
@@ -98,9 +111,15 @@ fun QueueScreen(
                             letterSpacing = 1.4.sp,
                         )
                     }
+                    GlassPill(
+                        text = tr("Плейлисты", "Playlists"),
+                        selected = false,
+                        onClick = { showPlaylists = true },
+                    )
+                    Spacer(Modifier.width(8.dp))
                     CircleButton(
                         icon = Icons.Rounded.Refresh,
-                        contentDescription = "Обновить",
+                        contentDescription = tr("Обновить", "Refresh"),
                         size = 38.dp,
                         iconSize = 17.dp,
                         onClick = { version++ },
@@ -114,13 +133,13 @@ fun QueueScreen(
                         SectionLabel("Spotify")
                         Spacer(Modifier.height(10.dp))
                         Text(
-                            "Подключи Spotify, чтобы видеть очередь.",
+                            tr("Подключи Spotify, чтобы видеть очередь.", "Connect Spotify to see the queue."),
                             color = OnyxDim,
                             fontSize = 12.sp,
                         )
                         Spacer(Modifier.height(12.dp))
                         GlassPill(
-                            text = "Подключить Spotify",
+                            text = tr("Подключить Spotify", "Connect Spotify"),
                             selected = true,
                             onClick = onOpenSettings,
                         )
@@ -139,23 +158,26 @@ fun QueueScreen(
 
             item {
                 GlassCard {
-                    SectionLabel("Повтор")
+                    SectionLabel(tr("Повтор", "Repeat"))
                     Spacer(Modifier.height(10.dp))
                     val state = queue?.repeatState ?: "off"
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        RepeatPill("Выкл", state == "off") {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        RepeatPill(tr("Выкл", "Off"), state == "off", Modifier.weight(1f)) {
                             scope.launch {
                                 if (controller.spotify.setRepeat("off")) version++
                                 else controller.toast("Spotify не разрешил повтор — проверь Premium")
                             }
                         }
-                        RepeatPill("Плейлист", state == "context") {
+                        RepeatPill(tr("Плейлист", "Playlist"), state == "context", Modifier.weight(1f)) {
                             scope.launch {
                                 if (controller.spotify.setRepeat("context")) version++
                                 else controller.toast("Spotify не разрешил повтор — проверь Premium")
                             }
                         }
-                        RepeatPill("Трек", state == "track") {
+                        RepeatPill(tr("Трек", "Track"), state == "track", Modifier.weight(1f)) {
                             scope.launch {
                                 if (controller.spotify.setRepeat("track")) version++
                                 else controller.toast("Spotify не разрешил повтор — проверь Premium")
@@ -167,7 +189,7 @@ fun QueueScreen(
 
             item {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    SectionLabel("Дальше", Modifier.weight(1f))
+                    SectionLabel(tr("Дальше", "Next"), Modifier.weight(1f))
                     Text(
                         text = if (loading) "обновляем…" else "${queue?.next?.size ?: 0} треков",
                         color = OnyxFaint,
@@ -177,13 +199,27 @@ fun QueueScreen(
             }
 
             itemsIndexed(queue?.next.orEmpty(), key = { i, t -> "$i-${t.uri}-${t.title}" }) { index, track ->
-                QueueRow(index + 1, track)
+                QueueRow(
+                    index = index + 1,
+                    track = track,
+                    onPlay = {
+                        scope.launch {
+                            val ok = controller.spotify.playTrack(track.uri)
+                            if (!ok) controller.toast(
+                                tr(
+                                    "Spotify не разрешил запуск — проверь Premium и активное устройство",
+                                    "Spotify refused playback — check Premium and the active device",
+                                ),
+                            )
+                        }
+                    },
+                )
             }
 
             if (queue?.next.isNullOrEmpty() && !loading) {
                 item {
                     Text(
-                        "Очередь пуста. Spotify отдаёт максимум 50 следующих треков.",
+                        tr("Очередь пуста. Spotify отдаёт максимум 50 следующих треков.", "Queue is empty. Spotify returns up to 50 upcoming tracks."),
                         color = OnyxFaint,
                         fontSize = 11.sp,
                         lineHeight = 16.sp,
@@ -195,8 +231,13 @@ fun QueueScreen(
 }
 
 @Composable
-private fun RepeatPill(label: String, selected: Boolean, onClick: () -> Unit) {
-    GlassPill(text = label, selected = selected, onClick = onClick)
+private fun RepeatPill(
+    label: String,
+    selected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
+    GlassPill(text = label, selected = selected, modifier = modifier, onClick = onClick)
 }
 
 @Composable
@@ -242,8 +283,14 @@ private fun NowCard(title: String, artist: String, art: Any?) {
 }
 
 @Composable
-private fun QueueRow(index: Int, track: TrackUi) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+private fun QueueRow(index: Int, track: TrackUi, onPlay: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onPlay() }
+            .padding(vertical = 4.dp),
+    ) {
         Text(
             text = index.toString().padStart(2, '0'),
             color = OnyxFaint,
@@ -283,6 +330,13 @@ private fun QueueRow(index: Int, track: TrackUi) {
                 overflow = TextOverflow.Ellipsis,
             )
         }
+        Icon(
+            Icons.Rounded.PlayArrow,
+            contentDescription = tr("Играть", "Play"),
+            tint = OnyxFaint,
+            modifier = Modifier.size(16.dp),
+        )
+        Spacer(Modifier.width(6.dp))
         Text(
             fmtQueue(track.durationMs),
             color = OnyxFaint,

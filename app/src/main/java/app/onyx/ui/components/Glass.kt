@@ -61,6 +61,8 @@ fun GlassSurface(
     modifier: Modifier = Modifier,
     shape: Shape = RoundedCornerShape(28.dp),
     strong: Boolean = false,
+    art: Any? = null,
+    artBlur: Dp = 40.dp,
     content: @Composable BoxScope.() -> Unit,
 ) {
     val palette = LocalOnyx.current
@@ -83,20 +85,33 @@ fun GlassSurface(
         strong -> 0.16f
         else -> 0.09f
     }
-    Box(
-        modifier = modifier
-            .clip(shape)
-            .background(
-                Brush.verticalGradient(
-                    listOf(base.copy(alpha = top), base.copy(alpha = bottom)),
-                ),
+    Box(modifier = modifier.clip(shape)) {
+        if (art != null) {
+            AsyncImage(
+                model = art,
+                contentDescription = null,
+                modifier = Modifier
+                    .matchParentSize()
+                    .blur(artBlur),
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                alpha = if (palette.isLight) 0.16f else 0.26f,
             )
-            .border(
-                BorderStroke(1.dp, base.copy(alpha = border)),
-                shape,
-            ),
-        content = content,
-    )
+        }
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .background(
+                    Brush.verticalGradient(
+                        listOf(base.copy(alpha = top), base.copy(alpha = bottom)),
+                    ),
+                )
+                .border(
+                    BorderStroke(1.dp, base.copy(alpha = border)),
+                    shape,
+                ),
+        )
+        content()
+    }
 }
 
 @Composable
@@ -250,6 +265,7 @@ fun OnyxSlider(
     onValueChangeFinished: (() -> Unit)? = null,
     enabled: Boolean = true,
 ) {
+    val palette = LocalOnyx.current
     Slider(
         value = value.coerceIn(0f, 1f),
         onValueChange = onValueChange,
@@ -257,28 +273,29 @@ fun OnyxSlider(
         enabled = enabled,
         onValueChangeFinished = onValueChangeFinished,
         colors = SliderDefaults.colors(
-            thumbColor = OnyxWhite,
-            activeTrackColor = OnyxWhite,
-            inactiveTrackColor = Color.White.copy(alpha = 0.13f),
+            thumbColor = if (palette.isLight) Color.White else OnyxWhite,
+            activeTrackColor = OnyxAccent,
+            inactiveTrackColor = if (palette.isLight) Color.Black.copy(alpha = 0.12f) else Color.White.copy(alpha = 0.13f),
             disabledThumbColor = OnyxFaint,
             disabledActiveTrackColor = OnyxFaint,
-            disabledInactiveTrackColor = Color.White.copy(alpha = 0.07f),
+            disabledInactiveTrackColor = if (palette.isLight) Color.Black.copy(alpha = 0.06f) else Color.White.copy(alpha = 0.07f),
         ),
     )
 }
 
 @Composable
 fun OnyxSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, enabled: Boolean = true) {
+    val palette = LocalOnyx.current
     Switch(
         checked = checked,
         onCheckedChange = onCheckedChange,
         enabled = enabled,
         colors = SwitchDefaults.colors(
-            checkedThumbColor = Color(0xFF08080A),
-            checkedTrackColor = OnyxWhite,
+            checkedThumbColor = if (palette.isLight) Color.White else Color(0xFF08080A),
+            checkedTrackColor = OnyxAccent,
             checkedBorderColor = Color.Transparent,
             uncheckedThumbColor = OnyxDim,
-            uncheckedTrackColor = Color.White.copy(alpha = 0.06f),
+            uncheckedTrackColor = if (palette.isLight) Color.Black.copy(alpha = 0.08f) else Color.White.copy(alpha = 0.06f),
             uncheckedBorderColor = OnyxLine,
         ),
     )
@@ -324,7 +341,7 @@ fun BatteryMeter(
                     .weight(1f)
                     .height(5.dp)
                     .clip(RoundedCornerShape(50))
-                    .background(Color.White.copy(alpha = 0.10f)),
+                    .background(OnyxWhite.copy(alpha = 0.12f)),
             ) {
                 Box(
                     modifier = Modifier

@@ -93,7 +93,7 @@ val OnyxLineStrong: Color
 val OnyxAccent: Color
     @Composable @ReadOnlyComposable get() = LocalOnyx.current.accent
 
-private val onyxTypography = Typography(
+private val baseTypography = Typography(
     displayLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Black,
@@ -161,9 +161,27 @@ private val onyxTypography = Typography(
     ),
 )
 
+private fun typographyWith(family: FontFamily?): Typography {
+    if (family == null) return baseTypography
+    val b = baseTypography
+    return b.copy(
+        displayLarge = b.displayLarge.copy(fontFamily = family),
+        displayMedium = b.displayMedium.copy(fontFamily = family),
+        headlineLarge = b.headlineLarge.copy(fontFamily = family),
+        headlineMedium = b.headlineMedium.copy(fontFamily = family),
+        titleLarge = b.titleLarge.copy(fontFamily = family),
+        titleMedium = b.titleMedium.copy(fontFamily = family),
+        bodyLarge = b.bodyLarge.copy(fontFamily = family),
+        bodyMedium = b.bodyMedium.copy(fontFamily = family),
+        labelLarge = b.labelLarge.copy(fontFamily = family),
+        labelSmall = b.labelSmall.copy(fontFamily = family),
+    )
+}
+
 @Composable
 fun OnyxTheme(
     mode: ThemeMode = ThemeMode.DARK,
+    uiFontFamily: FontFamily? = null,
     content: @Composable () -> Unit,
 ) {
     val dark = when (mode) {
@@ -239,7 +257,7 @@ fun OnyxTheme(
     CompositionLocalProvider(LocalOnyx provides palette) {
         MaterialTheme(
             colorScheme = material,
-            typography = onyxTypography,
+            typography = typographyWith(uiFontFamily),
             content = content,
         )
     }
