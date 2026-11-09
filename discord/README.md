@@ -12,7 +12,9 @@ Upload these files in **Discord Developer Portal → your app → Rich Presence 
 | `play.png` | `play` | play state |
 | `pause.png` | `pause` | pause state |
 
-`onyx_large.png` is 512×512, the rest 256×256. All have transparency where needed.
+All assets are 512×512 (Discord's minimum for Art Assets) with transparency where
+needed. The small icons keep ~20% padding so Discord's circular crop does not
+clip the glyph.
 
 ## Presence payload (desktop ONYX 1.0)
 
