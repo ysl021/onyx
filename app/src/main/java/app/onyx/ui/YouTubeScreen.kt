@@ -560,7 +560,7 @@ fun YouTubeScreen(
                                     )
                                 }
                             }
-                            items(prefs.youtubeHistory) { entry ->
+                            items(prefs.youtubeHistory, key = { it }) { entry ->
                                 HistoryRow(
                                     text = entry,
                                     onDelete = {
