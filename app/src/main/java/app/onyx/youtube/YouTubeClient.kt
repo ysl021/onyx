@@ -12,8 +12,11 @@ import org.schabi.newpipe.extractor.downloader.Downloader
 import org.schabi.newpipe.extractor.downloader.Request
 import org.schabi.newpipe.extractor.downloader.Response
 import org.schabi.newpipe.extractor.localization.Localization
+import org.schabi.newpipe.extractor.services.youtube.extractors.YoutubeMusicSearchExtractor
+import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeSearchQueryHandlerFactory
 import org.schabi.newpipe.extractor.stream.AudioStream
 import org.schabi.newpipe.extractor.stream.StreamInfo
+import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import java.util.concurrent.TimeUnit
 
 /** Shared HTTP client: NewPipe extraction, audio download and cover fetch. */
@@ -91,11 +94,54 @@ object YouTubeClient {
      * Search is done by [YouTubeSearch] (direct HTML/innerTube) because the
      * extractor's search breaks on current YouTube layouts; only stream
      * resolution still goes through NewPipe.
+     *
+     * Music mode uses NewPipe's dedicated YouTube Music extractor instead:
+     * its page layout is different and the regular parser cannot read it.
      */
-    suspend fun search(query: String, page: String? = null): YtSearchPage {
+    suspend fun search(query: String, page: String? = null, music: Boolean = false): YtSearchPage {
+        if (music) return searchMusic(query, more = page != null)
         val result = YouTubeSearch.search(query, page)
         return YtSearchPage(items = result.items, next = result.continuation)
     }
+
+    private var musicQuery = ""
+    private var musicPage: org.schabi.newpipe.extractor.Page? = null
+
+    private suspend fun searchMusic(query: String, more: Boolean): YtSearchPage =
+        withContext(Dispatchers.IO) {
+            ensureInit()
+            if (query != musicQuery) {
+                musicQuery = query
+                musicPage = null
+            }
+            val handler = YoutubeSearchQueryHandlerFactory.getInstance().fromQuery(
+                query,
+                listOf(YoutubeSearchQueryHandlerFactory.MUSIC_VIDEOS),
+                "",
+            )
+            val extractor = YoutubeMusicSearchExtractor(service(), handler)
+            val cachedPage = musicPage
+            val result = if (more && cachedPage != null) {
+                extractor.getPage(cachedPage)
+            } else {
+                extractor.initialPage
+            }
+            musicPage = result.nextPage
+            val items = result.items.filterIsInstance<StreamInfoItem>().map { item ->
+                val id = videoIdOf(item.url)
+                YtSearchResult(
+                    id = id,
+                    url = item.url,
+                    title = item.name.orEmpty(),
+                    channel = item.uploaderName.orEmpty(),
+                    durationMs = item.duration * 1000L,
+                    thumbnailUrl = item.thumbnails
+                        ?.maxByOrNull { it.height }
+                        ?.url,
+                )
+            }
+            YtSearchPage(items = items, next = if (result.hasNextPage()) "music" else null)
+        }
 
     suspend fun resolve(rawUrl: String): YtVideo = withContext(Dispatchers.IO) {
         ensureInit()
@@ -140,7 +186,39 @@ object YouTubeClient {
             audioExt = (audio.format?.suffix ?: "m4a").lowercase(),
             audioBitrate = audio.averageBitrate,
             chapters = chapters,
+            related = info.relatedStreams
+                .filterIsInstance<StreamInfoItem>()
+                .mapNotNull { it.toSearchResult() },
         )
+    }
+
+    private fun StreamInfoItem.toSearchResult(): YtSearchResult? {
+        val videoId = videoIdOf(url)
+        if (videoId.isBlank()) return null
+        val fullUrl = when {
+            url.startsWith("http", ignoreCase = true) -> url
+            url.startsWith("/") -> "https://www.youtube.com$url"
+            else -> normalizeUrl(url)
+        }
+        return YtSearchResult(
+            id = videoId,
+            url = fullUrl,
+            title = name.orEmpty(),
+            channel = uploaderName.orEmpty(),
+            durationMs = duration * 1000L,
+            thumbnailUrl = thumbnails.maxByOrNull { it.height }?.url,
+        )
+    }
+
+    /** Related videos for a resolved track; used when the radio needs more. */
+    suspend fun related(rawUrl: String): List<YtSearchResult> = withContext(Dispatchers.IO) {
+        ensureInit()
+        runCatching {
+            val info = StreamInfo.getInfo(normalizeUrl(rawUrl))
+            info.relatedStreams
+                .filterIsInstance<StreamInfoItem>()
+                .mapNotNull { it.toSearchResult() }
+        }.getOrDefault(emptyList())
     }
 
     private data class Client(

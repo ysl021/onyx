@@ -1,10 +1,13 @@
 ﻿package app.onyx.ui
 
+import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -179,6 +182,34 @@ fun SettingsScreen(
             previewBgPage = page
             previewBgUri = uri
             previewAll = false
+        }
+    }
+
+    val audioPermission = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        Manifest.permission.READ_MEDIA_AUDIO
+    } else {
+        Manifest.permission.READ_EXTERNAL_STORAGE
+    }
+    val detectMusic: () -> Unit = {
+        scope.launch {
+            val found = controller.localLibrary.detectMediaFolders()
+            if (found.isEmpty()) {
+                controller.toast(tr("Музыка не найдена", "No music found"))
+            } else {
+                controller.localLibrary.addFolders(found)
+                controller.toast(
+                    tr("Найдено папок: ${found.size}", "Found ${found.size} folders"),
+                )
+            }
+        }
+    }
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) {
+            detectMusic()
+        } else {
+            controller.toast(tr("Нужен доступ к аудио", "Audio access is required"))
         }
     }
 
@@ -764,10 +795,24 @@ fun SettingsScreen(
                 }
             }
             Spacer(Modifier.height(10.dp))
+            GlassPill(
+                text = tr("Найти музыку автоматически", "Find music automatically"),
+                selected = true,
+                onClick = {
+                    if (ContextCompat.checkSelfPermission(context, audioPermission) ==
+                        PackageManager.PERMISSION_GRANTED
+                    ) {
+                        detectMusic()
+                    } else {
+                        audioPermissionLauncher.launch(audioPermission)
+                    }
+                },
+            )
+            Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 GlassPill(
                     text = if (prefs.localFolders.isEmpty()) tr("Выбрать папку", "Choose folder") else tr("Добавить папку", "Add folder"),
-                    selected = true,
+                    selected = false,
                     onClick = { musicFolderLauncher.launch(null) },
                 )
                 if (prefs.localFolders.isNotEmpty()) {

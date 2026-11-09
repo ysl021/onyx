@@ -38,12 +38,28 @@ class DiscordBridge(
     private var lastPlaying = false
     private var lastOk = false
     private var hadTrack = false
+    private var enabled = false
 
     init {
         scope.launch {
             combine(nowPlaying, position) { now, pos -> now to pos }.collect { (now, rawPos) ->
                 val p = prefs.snapshot()
-                if (!p.discordBridgeEnabled || p.discordBridgeHost.isBlank()) return@collect
+                if (!p.discordBridgeEnabled || p.discordBridgeHost.isBlank()) {
+                    // Turning the bridge off must remove the card immediately.
+                    // Without this the PC keeps the last presence for up to
+                    // IDLE_CLEAR_SECONDS after the phone stops sending updates.
+                    if (enabled) {
+                        enabled = false
+                        hadTrack = false
+                        lastSignature = ""
+                        lastOk = false
+                        if (p.discordBridgeHost.isNotBlank()) {
+                            post(p, JSONObject().put("clear", true))
+                        }
+                    }
+                    return@collect
+                }
+                enabled = true
 
                 if (now.title.isBlank()) {
                     if (hadTrack) {
@@ -56,7 +72,6 @@ class DiscordBridge(
                 hadTrack = true
 
                 val duration = now.durationMs.coerceAtLeast(0L)
-                val pos = if (duration > 0) rawPos.coerceIn(0L, duration) else rawPos.coerceAtLeast(0L)
                 val signature = listOf(
                     now.title,
                     now.artist,
@@ -68,10 +83,15 @@ class DiscordBridge(
                 ).joinToString("\u0000")
 
                 val nowMs = SystemClock.elapsedRealtime()
+                val trackChanged = signature != lastSignature
+                // On a track change the position flow still holds the previous
+                // track's value for a moment; starting at 0 beats showing the
+                // bar at the end of the new track.
+                val raw = if (trackChanged) 0L else rawPos
+                val pos = if (duration > 0) raw.coerceIn(0L, duration) else raw.coerceAtLeast(0L)
                 val expected = lastPosition +
                     if (lastPlaying && lastAttemptAt > 0) nowMs - lastAttemptAt else 0L
                 val seeked = abs(pos - expected) > SEEK_THRESHOLD_MS
-                val trackChanged = signature != lastSignature
                 val due = trackChanged || seeked ||
                     nowMs - lastAttemptAt >= if (lastOk) HEARTBEAT_MS else RETRY_MS
                 if (!due) return@collect

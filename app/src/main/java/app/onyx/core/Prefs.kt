@@ -80,6 +80,7 @@ data class PrefsData(
     val youtubeFolderUri: String = "",
     val youtubeFolderName: String = "",
     val youtubeHistory: List<String> = emptyList(),
+    val youtubeMusicOnly: Boolean = true,
     val youtubeDownloads: List<YouTubeDownloadEntry> = emptyList(),
 )
 
@@ -126,6 +127,7 @@ class Prefs(private val context: Context) {
         val youtubeFolderUri = stringPreferencesKey("youtube_folder_uri")
         val youtubeFolderName = stringPreferencesKey("youtube_folder_name")
         val youtubeHistory = stringPreferencesKey("youtube_history")
+    val youtubeMusicOnly = booleanPreferencesKey("youtube_music_only")
         val youtubeDownloads = stringPreferencesKey("youtube_downloads")
     }
 
@@ -185,6 +187,7 @@ class Prefs(private val context: Context) {
             .split('\n')
             .map { it.trim() }
             .filter { it.isNotEmpty() },
+        youtubeMusicOnly = this[K.youtubeMusicOnly] ?: true,
         youtubeDownloads = runCatching {
             Json.decodeFromString<List<YouTubeDownloadEntry>>(this[K.youtubeDownloads] ?: "[]")
         }.getOrDefault(emptyList()),
@@ -266,6 +269,10 @@ class Prefs(private val context: Context) {
     }
 
     suspend fun clearYouTubeHistory() = edit { it.remove(K.youtubeHistory) }
+
+    suspend fun setYouTubeMusicOnly(value: Boolean) = edit {
+        it[K.youtubeMusicOnly] = value
+    }
 
     suspend fun removeYouTubeQuery(query: String) {
         edit { prefs ->

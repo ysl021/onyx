@@ -30,6 +30,8 @@ data class YtVideo(
     val audioBitrate: Int,
     /** Chapters YouTube itself exposes (also used when the description has none). */
     val chapters: List<YtSection> = emptyList(),
+    /** Related videos from NewPipe, used by the radio queue. */
+    val related: List<YtSearchResult> = emptyList(),
 )
 
 /**

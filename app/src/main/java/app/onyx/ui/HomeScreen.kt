@@ -33,6 +33,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Bluetooth
 import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.Cast
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.MusicNote
@@ -147,7 +148,21 @@ fun HomeScreen(
                 .padding(top = 16.dp, bottom = 132.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Header()
+            Header(
+                discordEnabled = prefs.discordBridgeEnabled,
+                onToggleDiscord = {
+                    val next = !prefs.discordBridgeEnabled
+                    if (next && prefs.discordBridgeHost.isBlank()) {
+                        controller.toast(
+                            tr(
+                                "Укажи IP компьютера в Настройках → Discord",
+                                "Set the PC IP in Settings → Discord",
+                            ),
+                        )
+                    }
+                    scope.launch { controller.prefs.setDiscordBridgeEnabled(next) }
+                },
+            )
             if (!media.hasAccess) {
                 AccessBanner()
             }
@@ -211,7 +226,7 @@ fun HomeScreen(
 }
 
 @Composable
-private fun Header() {
+private fun Header(discordEnabled: Boolean, onToggleDiscord: () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -231,6 +246,17 @@ private fun Header() {
                 letterSpacing = 2.4.sp,
             )
         }
+        CircleButton(
+            icon = Icons.Rounded.Cast,
+            contentDescription = tr(
+                "Discord Rich Presence",
+                "Discord Rich Presence",
+            ),
+            size = 38.dp,
+            filled = discordEnabled,
+            iconSize = 18.dp,
+            onClick = onToggleDiscord,
+        )
     }
 }
 

@@ -37,6 +37,9 @@ import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Link
+import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -209,7 +212,7 @@ fun YouTubeScreen(
         }
     }
 
-    LaunchedEffect(query, mode) {
+    LaunchedEffect(query, mode, prefs.youtubeMusicOnly) {
         if (mode != MODE_SEARCH) return@LaunchedEffect
         val text = query.trim()
         if (text.length < 2) {
@@ -222,7 +225,7 @@ fun YouTubeScreen(
         searching = true
         delay(420)
         try {
-            val page = YouTubeClient.search(text)
+            val page = YouTubeClient.search(text, music = prefs.youtubeMusicOnly)
             results = page.items
             nextPage = page.next
             searchError = if (page.items.isEmpty()) {
@@ -329,6 +332,16 @@ fun YouTubeScreen(
                 icon = Icons.Rounded.Link,
                 onClick = { mode = MODE_LINK },
             )
+            GlassPill(
+                text = tr("Только музыка", "Music only"),
+                selected = prefs.youtubeMusicOnly,
+                icon = Icons.Rounded.MusicNote,
+                onClick = {
+                    scope.launch {
+                        controller.prefs.setYouTubeMusicOnly(!prefs.youtubeMusicOnly)
+                    }
+                },
+            )
             Spacer(Modifier.weight(1f))
             Text(
                 text = prefs.youtubeFolderName.ifBlank { tr("папка не выбрана", "no folder yet") },
@@ -400,6 +413,12 @@ fun YouTubeScreen(
                     controller.startYouTubeWhole(currentPreview, prefs.youtubeFolderUri)
                 },
                 onPickFolder = { folderPicker.launch(null) },
+                onListen = {
+                    controller.youtubeRadio.start(currentPreview, withRadio = false)
+                },
+                onRadio = {
+                    controller.youtubeRadio.start(currentPreview, withRadio = true)
+                },
                 modifier = Modifier.weight(1f),
             )
         } else {
@@ -522,7 +541,7 @@ fun YouTubeScreen(
                     LazyColumn(
                         modifier = Modifier
                             .weight(1f)
-                            .edgeFade(pageBlack),
+                            .edgeFade(pageBlack, top = 0.dp),
                         contentPadding = PaddingValues(top = 12.dp, bottom = 132.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
@@ -586,7 +605,11 @@ fun YouTubeScreen(
                                         loadingMore = true
                                         scope.launch {
                                             try {
-                                                val more = YouTubeClient.search(query.trim(), page)
+                                                val more = YouTubeClient.search(
+                                query.trim(),
+                                page,
+                                music = prefs.youtubeMusicOnly,
+                            )
                                                 results = results + more.items
                                                 nextPage = more.next
                                             } catch (t: Throwable) {
@@ -833,6 +856,8 @@ private fun PreviewPanel(
     onDownload: () -> Unit,
     onDownloadWhole: () -> Unit,
     onPickFolder: () -> Unit,
+    onListen: () -> Unit,
+    onRadio: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val pageBlack = app.onyx.ui.theme.LocalOnyx.current.black
@@ -1049,6 +1074,28 @@ private fun PreviewPanel(
                 .padding(horizontal = 18.dp)
                 .padding(top = 8.dp, bottom = 104.dp),
         ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                GlassPill(
+                    text = tr("Слушать", "Listen"),
+                    selected = true,
+                    modifier = Modifier.weight(1f),
+                    icon = Icons.Rounded.PlayArrow,
+                    enabled = !resolving && !busy,
+                    onClick = onListen,
+                )
+                GlassPill(
+                    text = tr("Радио", "Radio"),
+                    selected = false,
+                    modifier = Modifier.weight(1f),
+                    icon = Icons.Rounded.Radio,
+                    enabled = !resolving && !busy,
+                    onClick = onRadio,
+                )
+            }
+            Spacer(Modifier.height(8.dp))
             Text(
                 text = tr(
                     "Выбрано: ${selected.size} · " +
@@ -1495,31 +1542,35 @@ private fun Modifier.edgeFade(
     drawContent()
     val topPx = top.toPx()
     val bottomPx = bottom.toPx()
-    drawRect(
-        brush = Brush.verticalGradient(
-            colors = listOf(
-                color.copy(alpha = 0.97f),
-                color.copy(alpha = 0.55f),
-                Color.Transparent,
+    if (topPx > 0f) {
+        drawRect(
+            brush = Brush.verticalGradient(
+                colors = listOf(
+                    color.copy(alpha = 0.97f),
+                    color.copy(alpha = 0.55f),
+                    Color.Transparent,
+                ),
+                startY = 0f,
+                endY = topPx,
             ),
-            startY = 0f,
-            endY = topPx,
-        ),
-        size = Size(size.width, topPx),
-    )
-    drawRect(
-        brush = Brush.verticalGradient(
-            colors = listOf(
-                Color.Transparent,
-                color.copy(alpha = 0.35f),
-                color.copy(alpha = 0.82f),
+            size = Size(size.width, topPx),
+        )
+    }
+    if (bottomPx > 0f) {
+        drawRect(
+            brush = Brush.verticalGradient(
+                colors = listOf(
+                    Color.Transparent,
+                    color.copy(alpha = 0.35f),
+                    color.copy(alpha = 0.82f),
+                ),
+                startY = size.height - bottomPx,
+                endY = size.height,
             ),
-            startY = size.height - bottomPx,
-            endY = size.height,
-        ),
-        topLeft = androidx.compose.ui.geometry.Offset(0f, size.height - bottomPx),
-        size = Size(size.width, bottomPx),
-    )
+            topLeft = androidx.compose.ui.geometry.Offset(0f, size.height - bottomPx),
+            size = Size(size.width, bottomPx),
+        )
+    }
 }
 
 /** mm:ss for short clips, h:mm:ss for long mixes. */

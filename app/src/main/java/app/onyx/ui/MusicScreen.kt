@@ -133,6 +133,22 @@ fun MusicScreen(
         }
     }
 
+    val deleteConsent = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult(),
+    ) {
+        // The user either confirmed the system delete dialog or cancelled it;
+        // rescanning is safe in both cases and drops the removed files.
+        controller.localLibrary.rescan()
+    }
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        controller.localLibrary.deleteConsent = { sender ->
+            deleteConsent.launch(
+                androidx.activity.result.IntentSenderRequest.Builder(sender).build(),
+            )
+        }
+        onDispose { controller.localLibrary.deleteConsent = null }
+    }
+
     Column(modifier.fillMaxSize()) {
         Row(
             modifier = Modifier

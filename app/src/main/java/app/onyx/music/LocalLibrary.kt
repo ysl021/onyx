@@ -1,9 +1,13 @@
 package app.onyx.music
 
+import android.content.ContentUris
 import android.content.Context
+import android.content.IntentSender
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.os.Build
+import android.provider.MediaStore
 import androidx.documentfile.provider.DocumentFile
 import app.onyx.core.LocalFolder
 import app.onyx.core.Prefs
@@ -26,6 +30,8 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
+import java.net.URLDecoder
+import java.net.URLEncoder
 import java.security.MessageDigest
 
 @Serializable
@@ -79,6 +85,9 @@ class LocalLibrary(
     private val _state = MutableStateFlow(LibraryState())
     val state: StateFlow<LibraryState> = _state.asStateFlow()
 
+    /** UI installs this to launch MediaStore's delete-confirmation dialog. */
+    var deleteConsent: ((IntentSender) -> Unit)? = null
+
     private var job: Job? = null
     private var rawTracks: List<LocalTrack> = emptyList()
     private var overrides: Map<String, TrackOverride> = emptyMap()
@@ -117,6 +126,61 @@ class LocalLibrary(
             _state.value = _state.value.copy(folders = merged)
             scan()
         }
+    }
+
+    /** Adds a batch of folders found by [detectMediaFolders]. */
+    fun addFolders(folders: List<LocalFolder>) {
+        if (folders.isEmpty()) return
+        scope.launch {
+            val p = prefs.snapshot()
+            val merged = (p.localFolders + folders).distinctBy { it.uri }
+            prefs.setLocalFolders(merged)
+            _state.value = _state.value.copy(folders = merged)
+            scan()
+        }
+    }
+
+    /**
+     * One-tap folder discovery through MediaStore. No SAF picker is involved:
+     * the system index already knows every audio file, so we only group it by
+     * its containing folder.
+     */
+    suspend fun detectMediaFolders(): List<LocalFolder> = withContext(Dispatchers.IO) {
+        val found = LinkedHashMap<String, LocalFolder>()
+        val projection = arrayOf(
+            MediaStore.Audio.Media._ID,
+            MediaStore.Audio.Media.RELATIVE_PATH,
+            MediaStore.Audio.Media.BUCKET_DISPLAY_NAME,
+            MediaStore.Audio.Media.IS_MUSIC,
+            MediaStore.Audio.Media.DURATION,
+        )
+        val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND " +
+            "${MediaStore.Audio.Media.DURATION} >= 30000"
+        runCatching {
+            context.contentResolver.query(
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                projection,
+                selection,
+                null,
+                null,
+            )?.use { cursor ->
+                val pathIndex = cursor.getColumnIndex(MediaStore.Audio.Media.RELATIVE_PATH)
+                val bucketIndex = cursor.getColumnIndex(MediaStore.Audio.Media.BUCKET_DISPLAY_NAME)
+                while (cursor.moveToNext()) {
+                    val relative = if (pathIndex >= 0) cursor.getString(pathIndex)?.trim().orEmpty() else ""
+                    val bucket = if (bucketIndex >= 0) cursor.getString(bucketIndex)?.trim().orEmpty() else ""
+                    val key = relative.ifBlank { bucket }
+                    if (key.isBlank()) continue
+                    val uri = MEDIA_PREFIX + URLEncoder.encode(key, "UTF-8")
+                    if (found.containsKey(uri)) continue
+                    val name = relative.trimEnd('/').substringAfterLast('/')
+                        .ifBlank { bucket }
+                        .ifBlank { "Music" }
+                    found[uri] = LocalFolder(uri, name)
+                }
+            }
+        }
+        found.values.toList()
     }
 
     fun removeFolder(uri: String) {
@@ -162,8 +226,13 @@ class LocalLibrary(
             }
             _state.value = _state.value.copy(folders = folders, scanning = true, progress = 0, error = null)
             val files = ArrayList<PendingFile>(512)
+            val mediaFolders = ArrayList<LocalFolder>()
             val folderErrors = ArrayList<String>()
             for (folder in folders) {
+                if (folder.uri.startsWith(MEDIA_PREFIX)) {
+                    mediaFolders += folder
+                    continue
+                }
                 val root = try {
                     DocumentFile.fromTreeUri(context, Uri.parse(folder.uri))
                 } catch (_: Exception) {
@@ -176,7 +245,7 @@ class LocalLibrary(
                 }
                 collect(root, folder, files)
             }
-            val tracks = ArrayList<LocalTrack>(files.size)
+            val tracks = ArrayList<LocalTrack>(files.size + 64)
             val cachedByUri = rawTracks.associateBy { it.uri }
             var processed = 0
             // Metadata reading is the slow part; run a few files in parallel and
@@ -206,9 +275,17 @@ class LocalLibrary(
                 )
                 yield()
             }
-            val sorted = tracks
-                .distinctBy { it.id }
+            for (folder in mediaFolders) {
+                tracks += scanMediaFolder(folder)
+            }
+            val seenUris = HashSet<String>(tracks.size)
+            val sorted = tracks.asSequence()
+                .filter { seenUris.add(it.uri) }
+                .distinctBy {
+                    "${it.title.lowercase()}|${it.artist.lowercase()}|${it.durationMs}|${it.size}"
+                }
                 .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
+                .toList()
             rawTracks = sorted
             _state.value = _state.value.copy(
                 scanning = false,
@@ -239,6 +316,107 @@ class LocalLibrary(
                 out += PendingFile(child, folder)
             }
         }
+    }
+
+    /**
+     * Reads one MediaStore folder. The cursor already carries title/artist/album
+     * and duration, so only album art needs an extra lookup (cached per album).
+     */
+    private fun scanMediaFolder(folder: LocalFolder): List<LocalTrack> {
+        val key = runCatching {
+            URLDecoder.decode(folder.uri.removePrefix(MEDIA_PREFIX), "UTF-8")
+        }.getOrDefault("")
+        if (key.isBlank()) return emptyList()
+
+        val projection = arrayOf(
+            MediaStore.Audio.Media._ID,
+            MediaStore.Audio.Media.TITLE,
+            MediaStore.Audio.Media.ARTIST,
+            MediaStore.Audio.Media.ALBUM,
+            MediaStore.Audio.Media.DURATION,
+            MediaStore.Audio.Media.SIZE,
+            MediaStore.Audio.Media.DATE_MODIFIED,
+            MediaStore.Audio.Media.DISPLAY_NAME,
+            MediaStore.Audio.Media.ALBUM_ID,
+            MediaStore.Audio.Media.RELATIVE_PATH,
+            MediaStore.Audio.Media.BUCKET_DISPLAY_NAME,
+        )
+        val hasPath = key.contains('/')
+        val selection = if (hasPath) {
+            "${MediaStore.Audio.Media.RELATIVE_PATH} = ?"
+        } else {
+            "${MediaStore.Audio.Media.BUCKET_DISPLAY_NAME} = ?"
+        }
+        val out = ArrayList<LocalTrack>()
+        runCatching {
+            context.contentResolver.query(
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                projection,
+                selection,
+                arrayOf(key),
+                "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC",
+            )?.use { cursor ->
+                val idIndex = cursor.getColumnIndex(MediaStore.Audio.Media._ID)
+                val titleIndex = cursor.getColumnIndex(MediaStore.Audio.Media.TITLE)
+                val artistIndex = cursor.getColumnIndex(MediaStore.Audio.Media.ARTIST)
+                val albumIndex = cursor.getColumnIndex(MediaStore.Audio.Media.ALBUM)
+                val durationIndex = cursor.getColumnIndex(MediaStore.Audio.Media.DURATION)
+                val sizeIndex = cursor.getColumnIndex(MediaStore.Audio.Media.SIZE)
+                val modifiedIndex = cursor.getColumnIndex(MediaStore.Audio.Media.DATE_MODIFIED)
+                val nameIndex = cursor.getColumnIndex(MediaStore.Audio.Media.DISPLAY_NAME)
+                val albumIdIndex = cursor.getColumnIndex(MediaStore.Audio.Media.ALBUM_ID)
+                while (cursor.moveToNext()) {
+                    val mediaId = cursor.getLong(idIndex)
+                    if (mediaId <= 0L) continue
+                    val uri = ContentUris.withAppendedId(
+                        MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                        mediaId,
+                    )
+                    val fallback = cursor.getString(nameIndex)
+                        ?.substringBeforeLast('.')
+                        ?.takeIf { it.isNotBlank() }
+                        ?: "Track"
+                    val title = cursor.getString(titleIndex)
+                        ?.trim()?.takeIf { it.isNotEmpty() } ?: fallback
+                    val artist = cursor.getString(artistIndex)?.trim().orEmpty()
+                    val album = cursor.getString(albumIndex)?.trim().orEmpty()
+                    val duration = if (durationIndex >= 0) cursor.getLong(durationIndex) else 0L
+                    val size = if (sizeIndex >= 0) cursor.getLong(sizeIndex) else 0L
+                    val modified = if (modifiedIndex >= 0) cursor.getLong(modifiedIndex) * 1000L else 0L
+                    val albumId = if (albumIdIndex >= 0) cursor.getLong(albumIdIndex) else 0L
+                    out += LocalTrack(
+                        id = sha1("media:$uri"),
+                        uri = uri.toString(),
+                        title = title,
+                        artist = artist,
+                        album = album,
+                        durationMs = duration,
+                        artPath = saveAlbumArt(albumId),
+                        folderUri = folder.uri,
+                        folderName = folder.name,
+                        modified = modified,
+                        size = size,
+                    )
+                }
+            }
+        }
+        return out
+    }
+
+    private fun saveAlbumArt(albumId: Long): String? {
+        if (albumId <= 0L) return null
+        val file = File(artDir, "album_$albumId.jpg")
+        if (file.exists() && file.length() > 0L) return file.absolutePath
+        return runCatching {
+            val uri = ContentUris.withAppendedId(
+                Uri.parse("content://media/external/audio/albumart"),
+                albumId,
+            )
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                file.outputStream().use { output -> input.copyTo(output) }
+            }
+            file.takeIf { it.length() > 0L }?.absolutePath
+        }.getOrNull()
     }
 
     private fun readTrack(
@@ -316,21 +494,48 @@ class LocalLibrary(
         }
     }
 
-    /** Deletes the actual files (via SAF) and drops their cached metadata. */
+    /** Deletes the actual files (via SAF or MediaStore) and drops cached metadata. */
     fun deleteTracks(ids: Collection<String>) {
         if (ids.isEmpty()) return
         scope.launch {
             val targets = rawTracks.filter { it.id in ids }
+            val mediaUris = ArrayList<Uri>()
             targets.forEach { track ->
-                runCatching {
-                    DocumentFile.fromSingleUri(context, Uri.parse(track.uri))?.delete()
+                val uri = Uri.parse(track.uri)
+                if (uri.scheme == "content" && uri.authority?.startsWith("media") == true) {
+                    mediaUris += uri
+                } else {
+                    runCatching { DocumentFile.fromSingleUri(context, uri)?.delete() }
                 }
                 overrides = overrides - track.id
                 runCatching { File(artDir, "${track.id}.jpg").delete() }
                 runCatching { File(customArtDir, "${track.id}_custom.jpg").delete() }
             }
             writeOverrides()
-            rescan()
+
+            var waitingForConsent = false
+            if (mediaUris.isNotEmpty()) {
+                val launcher = deleteConsent
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && launcher != null) {
+                    runCatching {
+                        val pending = MediaStore.createDeleteRequest(
+                            context.contentResolver,
+                            mediaUris,
+                        )
+                        launcher(pending.intentSender)
+                        waitingForConsent = true
+                    }.onFailure {
+                        mediaUris.forEach { uri ->
+                            runCatching { context.contentResolver.delete(uri, null, null) }
+                        }
+                    }
+                } else {
+                    mediaUris.forEach { uri ->
+                        runCatching { context.contentResolver.delete(uri, null, null) }
+                    }
+                }
+            }
+            if (!waitingForConsent) rescan()
         }
     }
 
@@ -436,6 +641,8 @@ class LocalLibrary(
     }
 
     companion object {
+        private const val MEDIA_PREFIX = "mediastore:path="
+
         private val AUDIO_EXT = setOf(
             "mp3", "flac", "m4a", "aac", "ogg", "opus", "wav", "wma", "alac", "aiff", "aif",
         )

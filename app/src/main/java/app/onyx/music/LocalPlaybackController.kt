@@ -44,6 +44,9 @@ class LocalPlaybackController(
     private val _state = MutableStateFlow(LocalPlaybackState())
     val state: StateFlow<LocalPlaybackState> = _state.asStateFlow()
 
+    /** Radio hook: called when a YouTube queue is about to run out. */
+    var onQueueNearEnd: (() -> Unit)? = null
+
     private var controller: MediaController? = null
     private var pending: (() -> Unit)? = null
     private var connecting = false
@@ -153,6 +156,13 @@ class LocalPlaybackController(
         c.play()
     }
 
+    /** Appends radio tracks without interrupting the current one. */
+    fun appendToQueue(tracks: List<LocalTrack>) {
+        val c = controller ?: return
+        if (tracks.isEmpty()) return
+        c.addMediaItems(tracks.map { it.toMediaItem() })
+    }
+
     fun removeAt(index: Int) {
         val c = controller ?: return
         if (index !in 0 until c.mediaItemCount) return
@@ -187,6 +197,9 @@ class LocalPlaybackController(
                     title = media.mediaMetadata.title?.toString().orEmpty(),
                     artist = media.mediaMetadata.artist?.toString().orEmpty(),
                     album = media.mediaMetadata.albumTitle?.toString().orEmpty(),
+                    artPath = media.mediaMetadata.artworkUri?.let {
+                        if (it.scheme == "file") it.path else it.toString()
+                    },
                 )
         }
         _state.value = LocalPlaybackState(
@@ -201,6 +214,9 @@ class LocalPlaybackController(
                         title = media.mediaMetadata.title?.toString().orEmpty(),
                         artist = media.mediaMetadata.artist?.toString().orEmpty(),
                         album = media.mediaMetadata.albumTitle?.toString().orEmpty(),
+                        artPath = media.mediaMetadata.artworkUri?.let {
+                            if (it.scheme == "file") it.path else it.toString()
+                        },
                     )
             },
             currentIndex = if (c.mediaItemCount == 0) -1 else c.currentMediaItemIndex,
@@ -211,6 +227,13 @@ class LocalPlaybackController(
             repeatMode = c.repeatMode,
             error = null,
         )
+        val index = c.currentMediaItemIndex
+        val currentId = c.currentMediaItem?.mediaId.orEmpty()
+        if (currentId.startsWith("yt:") && c.mediaItemCount > 0 &&
+            index >= c.mediaItemCount - 2
+        ) {
+            onQueueNearEnd?.invoke()
+        }
     }
 
     private fun startTicker() {

@@ -28,6 +28,7 @@ import app.onyx.youtube.DownloadService
 import app.onyx.youtube.YtSection
 import app.onyx.youtube.YtVideo
 import app.onyx.youtube.YouTubeDownloads
+import app.onyx.youtube.YouTubeRadio
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -70,6 +71,9 @@ class AppController private constructor(context: Context) {
      * the screen (e.g. TagWriter rewriting a file that is currently playing).
      */
     val appScope: CoroutineScope = scope
+
+    /** YouTube streaming with automatic recommendations. */
+    val youtubeRadio = YouTubeRadio(appScope, appContext, localPlayer)
     private var watcher: Job? = null
 
     /** Local playback wins over notification sessions so artwork and lyrics never go stale. */
