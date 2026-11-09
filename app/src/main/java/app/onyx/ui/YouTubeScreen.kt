@@ -102,7 +102,6 @@ private const val MODE_LINK = "link"
 fun YouTubeScreen(
     controller: AppController,
     onBack: () -> Unit,
-    hazeState: dev.chrisbanes.haze.HazeState? = null,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -344,7 +343,6 @@ fun YouTubeScreen(
             DownloadsCard(
                 jobs = downloads.jobs,
                 busy = downloads.busy,
-                hazeState = hazeState,
                 modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp),
                 onClear = { YouTubeDownloads.clearFinished() },
             )
@@ -398,7 +396,6 @@ fun YouTubeScreen(
                     controller.startYouTubeWhole(currentPreview, prefs.youtubeFolderUri)
                 },
                 onPickFolder = { folderPicker.launch(null) },
-                hazeState = hazeState,
                 modifier = Modifier.weight(1f),
             )
         } else {
@@ -611,7 +608,7 @@ fun YouTubeScreen(
                     }
                 } else {
                     Spacer(Modifier.height(16.dp))
-                    EmptyLinkHint(hazeState = hazeState)
+                    EmptyLinkHint()
                 }
             }
         }
@@ -638,8 +635,8 @@ fun YouTubeScreen(
 }
 
 @Composable
-private fun EmptyLinkHint(hazeState: dev.chrisbanes.haze.HazeState? = null) {
-    GlassCard(modifier = Modifier.fillMaxWidth(), hazeState = hazeState) {
+private fun EmptyLinkHint() {
+    GlassCard(modifier = Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 Icons.Rounded.VideoLibrary,
@@ -830,7 +827,6 @@ private fun PreviewPanel(
     onDownload: () -> Unit,
     onDownloadWhole: () -> Unit,
     onPickFolder: () -> Unit,
-    hazeState: dev.chrisbanes.haze.HazeState? = null,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier.fillMaxWidth()) {
@@ -838,7 +834,6 @@ private fun PreviewPanel(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 18.dp),
-            hazeState = hazeState,
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 AsyncArt(
@@ -1096,7 +1091,6 @@ private fun DownloadsCard(
     jobs: List<DownloadJob>,
     busy: Boolean,
     modifier: Modifier = Modifier,
-    hazeState: dev.chrisbanes.haze.HazeState? = null,
     onClear: () -> Unit,
 ) {
     val active = jobs.filter { it.status != JobStatus.Done && it.status != JobStatus.Error }
@@ -1110,7 +1104,7 @@ private fun DownloadsCard(
             .toFloat()
     }
 
-    GlassCard(modifier = modifier.fillMaxWidth(), padding = 14.dp, hazeState = hazeState) {
+    GlassCard(modifier = modifier.fillMaxWidth(), padding = 14.dp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             SectionLabel(
                 if (busy) {

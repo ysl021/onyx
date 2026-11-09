@@ -331,7 +331,6 @@ fun OnyxApp() {
                                 Tab.YouTube -> YouTubeScreen(
                                     controller = controller,
                                     onBack = { tab = Tab.Player },
-                                    hazeState = hazeState,
                                 )
                                 Tab.Visualizer -> VisualizerScreen(controller = controller)
                                 Tab.Settings -> SettingsScreen(
