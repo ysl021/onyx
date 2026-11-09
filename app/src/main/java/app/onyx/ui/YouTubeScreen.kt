@@ -5,6 +5,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -58,6 +59,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -67,8 +69,6 @@ import androidx.compose.ui.unit.sp
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.HazeStyle
-import dev.chrisbanes.haze.hazeChild
 import app.onyx.AppController
 import app.onyx.core.PrefsData
 import app.onyx.ui.components.AsyncArt
@@ -130,22 +130,6 @@ fun YouTubeScreen(
     var manualText by YouTubeSession.manualText
     var queueOpen by rememberSaveable { mutableStateOf(false) }
     var historyOpen by rememberSaveable { mutableStateOf(false) }
-
-    // The mode strip used to sit on the raw backdrop while every other panel
-    // was blurred. Give it the same haze treatment as the rest of ONYX.
-    val modeHaze = if (hazeState != null) {
-        Modifier.hazeChild(
-            state = hazeState,
-            shape = RoundedCornerShape(22.dp),
-            style = HazeStyle(
-                tint = Color.Black.copy(alpha = 0.10f),
-                blurRadius = 36.dp,
-                noiseFactor = 0.02f,
-            ),
-        )
-    } else {
-        Modifier
-    }
 
     fun deleteSaved(entry: app.onyx.core.YouTubeDownloadEntry) {
         scope.launch {
@@ -320,7 +304,16 @@ fun YouTubeScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 18.dp)
-                .then(modeHaze)
+                .clip(RoundedCornerShape(22.dp))
+                .background(
+                    Brush.verticalGradient(
+                        listOf(
+                            OnyxWhite.copy(alpha = 0.07f),
+                            OnyxWhite.copy(alpha = 0.02f),
+                        ),
+                    ),
+                )
+                .border(1.dp, OnyxWhite.copy(alpha = 0.09f), RoundedCornerShape(22.dp))
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,

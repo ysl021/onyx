@@ -260,21 +260,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawDecor(
     val cy = h / 2f
     val white = Color.White
     when (index) {
-        1 -> { // five bars rising with the icon
-            val base = cy + 52f
-            val barW = 9f
-            for (i in 0 until 5) {
-                val phase = (p * 1.6f - i * 0.08f).coerceIn(0f, 1f)
-                val barH = 10f + 46f * phase * (0.5f + 0.5f * sin((i + 1) * 1.3f).toFloat())
-                val x = cx - 2 * 22f + i * 22f
-                drawLine(
-                    color = white.copy(alpha = 0.10f + 0.25f * phase),
-                    start = Offset(x, base),
-                    end = Offset(x, base - barH),
-                    strokeWidth = barW,
-                    cap = StrokeCap.Round,
-                )
-            }
+        1 -> { // equalizer icon: the icon itself is already bars, keep the stage clean
         }
         2 -> { // two rings expanding
             for (i in 0..1) {
