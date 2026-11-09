@@ -1,4 +1,4 @@
-﻿package app.onyx
+package app.onyx
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
@@ -15,6 +15,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -36,12 +37,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.BarChart
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.TextFields
+import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.Translate
+import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -62,6 +66,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
@@ -84,6 +89,7 @@ import app.onyx.ui.MusicScreen
 import app.onyx.ui.PlaylistsScreen
 import app.onyx.ui.SettingsScreen
 import app.onyx.ui.VisualizerScreen
+import app.onyx.ui.YouTubeScreen
 import app.onyx.ui.components.AmbientBackdrop
 import app.onyx.ui.components.BlurredBackdrop
 import app.onyx.ui.components.CircleButton
@@ -99,7 +105,7 @@ import app.onyx.ui.theme.OnyxWhite
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private enum class Tab { Player, Lyrics, Playlists, Music, Visualizer, Settings }
+private enum class Tab { Player, Lyrics, Playlists, Music, YouTube, Visualizer, Settings }
 
 @Composable
 fun OnyxApp() {
@@ -108,6 +114,13 @@ fun OnyxApp() {
     val prefs by controller.prefs.data.collectAsStateWithLifecycle(initialValue = PrefsData())
     val media by controller.media.state.collectAsStateWithLifecycle()
     val nowPlaying by controller.nowPlaying.collectAsStateWithLifecycle()
+
+    // Players briefly drop metadata (art = null) on pause and between tracks.
+    // Keeping the last cover avoids the backdrop falling back to a black
+    // AmbientBackdrop for a frame — that was the visible flash.
+    val rawArt = nowPlaying.art ?: nowPlaying.artUri
+    var stickyArt by remember { mutableStateOf<Any?>(rawArt) }
+    LaunchedEffect(rawArt) { if (rawArt != null) stickyArt = rawArt }
     val localPlayback by controller.localPlayer.state.collectAsStateWithLifecycle()
     val view = LocalView.current
     val panelScope = rememberCoroutineScope()
@@ -141,6 +154,17 @@ fun OnyxApp() {
     var showIntro by rememberSaveable { mutableStateOf(true) }
     var lyricsFullscreen by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+
+    // Horizontal swipe moves one tab left/right (Player <-> Lyrics is the common case).
+    fun shiftTab(delta: Int) {
+        val order = Tab.entries
+        val index = order.indexOf(tab)
+        val next = (index + delta).coerceIn(0, order.lastIndex)
+        if (next != index) {
+            lyricsFullscreen = false
+            tab = order[next]
+        }
+    }
     val spotifyConnected = prefs.spotifyRefresh.isNotBlank() || prefs.spotifyAccess.isNotBlank()
     LaunchedEffect(spotifyConnected) {
         if (!spotifyConnected && tab == Tab.Playlists) tab = Tab.Player
@@ -183,6 +207,7 @@ fun OnyxApp() {
                     Tab.Lyrics -> "lyrics"
                     Tab.Playlists -> "playlists"
                     Tab.Music -> "music"
+                    Tab.YouTube -> "youtube"
                     Tab.Visualizer -> "visualizer"
                     Tab.Settings -> "settings"
                 }
@@ -228,10 +253,10 @@ fun OnyxApp() {
                     )
                     if (customBg != null) {
                         CustomBackdrop(art = customBg, blurPercent = blurMap[pageKey] ?: 0)
-                    } else if (prefs.coverBackdrop && pageCover && (nowPlaying.art ?: nowPlaying.artUri) != null) {
+                    } else if (prefs.coverBackdrop && pageCover && (stickyArt) != null) {
                         val f = (prefs.coverIntensity / 100f).coerceIn(0f, 1f)
                         BlurredBackdrop(
-                            art = nowPlaying.art ?: nowPlaying.artUri,
+                            art = stickyArt,
                             artAlpha = 0.22f + 0.68f * f,
                             scrimTop = 0.78f - 0.42f * f,
                             scrimMid = 0.62f - 0.32f * f,
@@ -243,7 +268,11 @@ fun OnyxApp() {
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .statusBarsPadding(),
+                            .statusBarsPadding()
+                            .tabSwipe(
+                                onNext = { shiftTab(1) },
+                                onPrev = { shiftTab(-1) },
+                            ),
                     ) {
                         AnimatedContent(
                             targetState = tab,
@@ -267,6 +296,7 @@ fun OnyxApp() {
                                     controller = controller,
                                     onBack = { tab = Tab.Player },
                                     onFullscreenChanged = { lyricsFullscreen = it },
+                                    hazeState = hazeState,
                                 )
                                 Tab.Playlists -> PlaylistsScreen(
                                     controller = controller,
@@ -274,6 +304,10 @@ fun OnyxApp() {
                                     onOpenSettings = { tab = Tab.Settings },
                                 )
                                 Tab.Music -> MusicScreen(controller = controller)
+                                Tab.YouTube -> YouTubeScreen(
+                                    controller = controller,
+                                    onBack = { tab = Tab.Player },
+                                )
                                 Tab.Visualizer -> VisualizerScreen(controller = controller)
                                 Tab.Settings -> SettingsScreen(
                                     controller = controller,
@@ -297,7 +331,7 @@ fun OnyxApp() {
                                 lyricsFullscreen = false
                                 tab = it
                             },
-                            art = nowPlaying.art ?: nowPlaying.artUri,
+                            art = stickyArt,
                             spotifyConnected = spotifyConnected,
                             hazeState = hazeState,
                             modifier = Modifier.fillMaxWidth(),
@@ -333,7 +367,7 @@ fun OnyxApp() {
                 // reason: only the backdrop and the lyrics behind it are blurred.
                 if (tab == Tab.Lyrics) {
                     AnimatedVisibility(
-                        visible = !lyricsFullscreen,
+                        visible = !lyricsFullscreen && prefs.lyricsToolbarVisible,
                         enter = fadeIn() + slideInVertically(initialOffsetY = { it / 3 }),
                         exit = fadeOut() + slideOutVertically(targetOffsetY = { it / 3 }),
                         modifier = Modifier
@@ -343,7 +377,7 @@ fun OnyxApp() {
                             .padding(top = 4.dp, bottom = 104.dp),
                     ) {
                         LyricsToolsBar(
-                            art = nowPlaying.art ?: nowPlaying.artUri,
+                            art = stickyArt,
                             fontSize = prefs.lyricFontSize,
                             karaoke = prefs.karaoke,
                             onKaraoke = { panelScope.launch { controller.prefs.setKaraoke(!prefs.karaoke) } },
@@ -356,7 +390,23 @@ fun OnyxApp() {
                                 panelScope.launch { controller.prefs.setOffset((ms / 100).toLong() * 100) }
                             },
                             onRetry = { controller.lyrics.retry() },
+                            onHide = { panelScope.launch { controller.prefs.setLyricsToolbarVisible(false) } },
                             hazeState = hazeState,
+                        )
+                    }
+
+                    // Floating button to bring the toolbar back after hiding it.
+                    if (!prefs.lyricsToolbarVisible && !lyricsFullscreen) {
+                        CircleButton(
+                            icon = Icons.Rounded.Tune,
+                            contentDescription = tr("Показать панель текста", "Show lyrics toolbar"),
+                            size = 40.dp,
+                            iconSize = 20.dp,
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .navigationBarsPadding()
+                                .padding(end = 18.dp, bottom = 112.dp),
+                            onClick = { panelScope.launch { controller.prefs.setLyricsToolbarVisible(true) } },
                         )
                     }
                 }
@@ -440,21 +490,26 @@ private fun BottomNav(
                 modifier = Modifier.weight(1f),
                 onClick = { onSelect(Tab.Lyrics) },
             )
-            if (spotifyConnected) {
-                NavItem(
-                    icon = Icons.AutoMirrored.Rounded.PlaylistPlay,
-                    label = tr("Плейлист", "Playlist"),
-                    selected = tab == Tab.Playlists,
-                    modifier = Modifier.weight(1f),
-                    onClick = { onSelect(Tab.Playlists) },
-                )
-            }
+            NavItem(
+                icon = Icons.AutoMirrored.Rounded.PlaylistPlay,
+                label = tr("Плейлист", "Playlist"),
+                selected = tab == Tab.Playlists,
+                modifier = Modifier.weight(1f),
+                onClick = { onSelect(Tab.Playlists) },
+            )
             NavItem(
                 icon = Icons.Rounded.LibraryMusic,
                 label = tr("Музыка", "Music"),
                 selected = tab == Tab.Music,
                 modifier = Modifier.weight(1f),
                 onClick = { onSelect(Tab.Music) },
+            )
+            NavItem(
+                icon = Icons.Rounded.VideoLibrary,
+                label = "YouTube",
+                selected = tab == Tab.YouTube,
+                modifier = Modifier.weight(1f),
+                onClick = { onSelect(Tab.YouTube) },
             )
             NavItem(
                 icon = Icons.Rounded.BarChart,
@@ -490,6 +545,7 @@ private fun LyricsToolsBar(
     offsetMs: Long,
     onOffset: (Long) -> Unit,
     onRetry: () -> Unit,
+    onHide: () -> Unit = {},
     hazeState: HazeState? = null,
 ) {
     GlassSurface(
@@ -533,6 +589,13 @@ private fun LyricsToolsBar(
                     size = 38.dp,
                     iconSize = 17.dp,
                     onClick = onRetry,
+                )
+                CircleButton(
+                    icon = Icons.Rounded.ExpandMore,
+                    contentDescription = tr("Скрыть панель", "Hide toolbar"),
+                    size = 38.dp,
+                    iconSize = 18.dp,
+                    onClick = onHide,
                 )
             }
             Spacer(Modifier.height(6.dp))
@@ -613,10 +676,33 @@ private fun NavItem(
         Text(
             text = label,
             color = fg,
-            fontSize = 7.5.sp,
+            fontSize = 7.sp,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-            letterSpacing = 0.1.sp,
+            letterSpacing = 0.sp,
             maxLines = 1,
         )
     }
 }
+
+/**
+ * Horizontal swipe that flips one tab left/right. Vertical scrolling and inner
+ * horizontal lists keep priority: those children consume the gesture first, so
+ * this detector only sees a deliberate sideways drag on empty page area.
+ */
+private fun Modifier.tabSwipe(onNext: () -> Unit, onPrev: () -> Unit): Modifier =
+    pointerInput(Unit) {
+        val threshold = 110.dp.toPx()
+        var total = 0f
+        detectHorizontalDragGestures(
+            onDragStart = { total = 0f },
+            onDragEnd = {
+                when {
+                    total <= -threshold -> onNext()
+                    total >= threshold -> onPrev()
+                }
+            },
+        ) { change, dragAmount ->
+            total += dragAmount
+            change.consume()
+        }
+    }

@@ -12,7 +12,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,6 +32,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.Bluetooth
+import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.MusicNote
@@ -58,7 +59,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -82,7 +82,9 @@ import app.onyx.ui.components.GlassCard
 import app.onyx.ui.components.GlassPill
 import app.onyx.ui.components.GlassSurface
 import app.onyx.ui.components.OnyxSlider
+import app.onyx.ui.components.ReorderableRow
 import app.onyx.ui.components.SectionLabel
+import app.onyx.ui.components.rememberReorderState
 import app.onyx.ui.theme.OnyxDim
 import app.onyx.ui.theme.OnyxFaint
 import app.onyx.ui.theme.OnyxLine
@@ -167,6 +169,7 @@ fun HomeScreen(
                 activeHeadphone = activeHeadphone,
                 activeBattery = activeHeadphone?.let { headphoneBattery[it] } ?: -1,
             )
+            SleepTimerCard(controller = controller)
             if (localQueueActive) {
                 LocalQueueCard(
                     controller = controller,
@@ -362,6 +365,9 @@ private fun Hero(now: NowPlaying, onOpenLyrics: () -> Unit) {
 @Composable
 private fun Controls(controller: AppController, media: MediaState) {
     val now = media.now
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val localPlayback by controller.localPlayer.state.collectAsStateWithLifecycle()
+    val localQueueActive = localPlayback.current != null && localPlayback.queue.isNotEmpty()
     var drag by remember { mutableStateOf<Float?>(null) }
     var lastSeek by remember { mutableLongStateOf(0L) }
 
@@ -412,7 +418,13 @@ private fun Controls(controller: AppController, media: MediaState) {
                 contentDescription = tr("Предыдущий трек", "Previous track"),
                 size = 54.dp,
                 enabled = now.hasTrack,
-                onClick = { controller.media.previous() },
+                onClick = {
+                    if (localQueueActive && now.packageName == context.packageName) {
+                        controller.localPlayer.previous()
+                    } else {
+                        controller.media.previous()
+                    }
+                },
             )
             Spacer(Modifier.width(22.dp))
             CircleButton(
@@ -422,7 +434,13 @@ private fun Controls(controller: AppController, media: MediaState) {
                 filled = true,
                 iconSize = 32.dp,
                 enabled = now.hasTrack,
-                onClick = { controller.media.playPause() },
+                onClick = {
+                    if (localQueueActive && now.packageName == context.packageName) {
+                        controller.localPlayer.toggle()
+                    } else {
+                        controller.media.playPause()
+                    }
+                },
             )
             Spacer(Modifier.width(22.dp))
             CircleButton(
@@ -430,7 +448,13 @@ private fun Controls(controller: AppController, media: MediaState) {
                 contentDescription = tr("Следующий трек", "Next track"),
                 size = 54.dp,
                 enabled = now.hasTrack,
-                onClick = { controller.media.next() },
+                onClick = {
+                    if (localQueueActive && now.packageName == context.packageName) {
+                        controller.localPlayer.next()
+                    } else {
+                        controller.media.next()
+                    }
+                },
             )
         }
     }
@@ -531,6 +555,72 @@ private fun RemotePlaybackBanner(device: String) {
             }
         }
     }
+}
+
+@Composable
+private fun SleepTimerCard(controller: AppController) {
+    val remainingMs by controller.sleepRemainingMs.collectAsStateWithLifecycle()
+    val active = remainingMs > 0L
+    GlassCard(modifier = Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            SectionLabel(tr("Таймер сна", "Sleep timer"), Modifier.weight(1f))
+            Icon(
+                Icons.Rounded.Bedtime,
+                contentDescription = null,
+                tint = if (active) OnyxWhite else OnyxFaint,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        if (active) {
+            Text(
+                formatRemaining(remainingMs),
+                color = OnyxWhite,
+                fontSize = 30.sp,
+                fontWeight = FontWeight.Black,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(
+                tr("Музыка встанет на паузу по окончании", "Music pauses when it ends"),
+                color = OnyxFaint,
+                fontSize = 11.sp,
+            )
+            Spacer(Modifier.height(12.dp))
+            GlassPill(
+                text = tr("Отключить", "Turn off"),
+                selected = false,
+                onClick = { controller.cancelSleepTimer() },
+            )
+        } else {
+            Text(
+                tr("Минуты до автоматической паузы:", "Minutes until playback pauses:"),
+                color = OnyxDim,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+            )
+            Spacer(Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                listOf(15, 30, 45, 60).forEach { mins ->
+                    GlassPill(
+                        text = "$mins",
+                        selected = false,
+                        modifier = Modifier.weight(1f),
+                        onClick = { controller.startSleepTimer(mins) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun formatRemaining(ms: Long): String {
+    val total = (ms + 999) / 1000
+    val m = total / 60
+    val s = total % 60
+    return "%d:%02d".format(m, s)
 }
 
 @Composable
@@ -737,9 +827,8 @@ private fun LocalQueueCard(
     state: app.onyx.music.LocalPlaybackState,
 ) {
     val player = controller.localPlayer
-    // Drag-to-reorder: the row being dragged and accumulated vertical drag.
-    var dragIndex by remember { mutableStateOf<Int?>(null) }
-    var dragAccum by remember { mutableStateOf(0f) }
+    val rowHeight = 50.dp
+    val rowHeightPx = with(LocalDensity.current) { rowHeight.toPx() }
 
     GlassCard(modifier = Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -780,104 +869,88 @@ private fun LocalQueueCard(
         Spacer(Modifier.height(12.dp))
 
         val rows = state.queue.take(50)
-        rows.forEachIndexed { index, track ->
-            val isCurrent = index == state.currentIndex
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(
-                        if (isCurrent || dragIndex == index) OnyxWhite.copy(alpha = 0.07f)
-                        else Color.Transparent,
-                    )
-                    .graphicsLayer {
-                        if (dragIndex == index) {
-                            scaleX = 1.03f
-                            scaleY = 1.03f
-                            alpha = 0.88f
-                        }
-                    }
-                    .pointerInput(state.queue.size) {
-                        detectDragGesturesAfterLongPress(
-                            onDragStart = {
-                                dragIndex = index
-                                dragAccum = 0f
-                            },
-                            onDrag = { change, amount ->
-                                change.consume()
-                                val from = dragIndex ?: return@detectDragGesturesAfterLongPress
-                                dragAccum += amount.y
-                                val threshold = 46.dp.toPx()
-                                while (dragAccum <= -threshold && from > 0) {
-                                    player.move(from, from - 1)
-                                    dragIndex = from - 1
-                                    dragAccum += threshold
-                                }
-                                while (dragAccum >= threshold && from < state.queue.size - 1) {
-                                    player.move(from, from + 1)
-                                    dragIndex = from + 1
-                                    dragAccum -= threshold
-                                }
-                            },
-                            onDragEnd = { dragIndex = null },
-                            onDragCancel = { dragIndex = null },
-                        )
-                    }
-                    .clickable { player.playAt(index) }
-                    .padding(vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    text = (index + 1).toString().padStart(2, '0'),
-                    color = OnyxFaint,
-                    fontSize = 10.sp,
-                    modifier = Modifier.width(24.dp),
-                )
-                Box(
-                    modifier = Modifier
-                        .size(38.dp)
-                        .clip(RoundedCornerShape(9.dp))
-                        .background(OnyxWhite.copy(alpha = 0.05f)),
+        val reorder = rememberReorderState(rows.size, rowHeightPx)
+
+        Column {
+            rows.forEachIndexed { index, track ->
+                val isCurrent = index == state.currentIndex
+                ReorderableRow(
+                    index = index,
+                    state = reorder,
+                    rowHeight = rowHeight,
+                    onTap = { player.playAt(index) },
+                    onMove = { from, to -> player.move(from, to) },
                 ) {
-                    val art = track.artPath?.let { java.io.File(it) }
-                    if (art != null) {
-                        AsyncImage(
-                            model = art,
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop,
+                    val dragged = reorder.active && reorder.from == index
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(
+                                when {
+                                    dragged || isCurrent -> OnyxWhite.copy(alpha = 0.07f)
+                                    else -> Color.Transparent
+                                },
+                            )
+                            .padding(horizontal = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = (index + 1).toString().padStart(2, '0'),
+                            color = OnyxFaint,
+                            fontSize = 10.sp,
+                            modifier = Modifier.width(24.dp),
+                        )
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(RoundedCornerShape(9.dp))
+                                .background(OnyxWhite.copy(alpha = 0.05f)),
+                        ) {
+                            val art = track.artPath?.let { java.io.File(it) }
+                            if (art != null) {
+                                AsyncImage(
+                                    model = art,
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop,
+                                )
+                            }
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = track.title,
+                                color = OnyxWhite,
+                                fontSize = 13.sp,
+                                fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Medium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                text = track.artist.ifBlank { track.album },
+                                color = OnyxFaint,
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        Text(text = fmt(track.durationMs), color = OnyxFaint, fontSize = 10.sp)
+                        Spacer(Modifier.width(8.dp))
+                        Icon(
+                            Icons.Rounded.Delete,
+                            contentDescription = tr("Удалить из очереди", "Remove from queue"),
+                            tint = if (isCurrent || dragged) Color.Transparent else OnyxFaint,
+                            modifier = Modifier
+                                .size(16.dp)
+                                .then(
+                                    if (isCurrent || dragged) Modifier
+                                    else Modifier.clickable { player.removeAt(index) },
+                                ),
                         )
                     }
                 }
-                Spacer(Modifier.width(10.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = track.title,
-                        color = OnyxWhite,
-                        fontSize = 13.sp,
-                        fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        text = track.artist.ifBlank { track.album },
-                        color = OnyxFaint,
-                        fontSize = 11.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                Spacer(Modifier.width(8.dp))
-                Text(text = fmt(track.durationMs), color = OnyxFaint, fontSize = 10.sp)
-                Spacer(Modifier.width(8.dp))
-                Icon(
-                    Icons.Rounded.Delete,
-                    contentDescription = tr("Удалить из очереди", "Remove from queue"),
-                    tint = if (isCurrent) Color.Transparent else OnyxFaint,
-                    modifier = Modifier
-                        .size(16.dp)
-                        .then(if (isCurrent) Modifier else Modifier.clickable { player.removeAt(index) }),
-                )
             }
         }
         if (state.queue.size > rows.size) {

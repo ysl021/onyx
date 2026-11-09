@@ -19,6 +19,21 @@ fun secret(name: String): String =
         .replace("\\", "\\\\")
         .replace("\"", "\\\"")
 
+// Version is kept in one place: version.properties holds the human version,
+// versionCode follows the git commit count so it never has to be bumped by hand.
+val appVersionName: String = Properties().apply {
+    val f = rootProject.file("version.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}.getProperty("versionName") ?: "0.0.0"
+
+val appVersionCode: Int = run {
+    val result = providers.exec {
+        commandLine("git", "rev-list", "--count", "HEAD")
+        isIgnoreExitValue = true
+    }.standardOutput.asText.get().trim().toIntOrNull() ?: 0
+    1000 + result
+}
+
 android {
     namespace = "app.onyx"
     compileSdk = 35
@@ -27,8 +42,8 @@ android {
         applicationId = "app.onyx"
         minSdk = 31
         targetSdk = 35
-        versionCode = 16
-        versionName = "0.6.9"
+        versionCode = appVersionCode
+        versionName = appVersionName
 
         buildConfigField("String", "SPICY_KEY", "\"${secret("SPICY_KEY")}\"")
     }
@@ -88,9 +103,17 @@ dependencies {
     implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation("androidx.browser:browser:1.8.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("org.jsoup:jsoup:1.18.1")
+    implementation("org.jsoup:jsoup:1.23.2")
     implementation("androidx.media3:media3-exoplayer:1.4.1")
     implementation("androidx.media3:media3-session:1.4.1")
+    // NewPipeExtractor v0.27.0, built locally from the v0.27.0 tag (JitPack
+    // publishes no usable artifacts for 0.25+). Sources: github.com/TeamNewPipe/NewPipeExtractor
+    implementation(files("libs/NewPipeExtractor-0.27.0.jar"))
+    implementation(files("libs/nanojson.jar"))
+    implementation("com.google.protobuf:protobuf-javalite:4.36.2")
+    implementation("org.mozilla:rhino:1.8.1")
+    implementation("org.mozilla:rhino-engine:1.8.1")
+    compileOnly("com.google.code.findbugs:jsr305:3.0.2")
     implementation("androidx.documentfile:documentfile:1.0.1")
     implementation("net.jthink:jaudiotagger:3.0.1")
 

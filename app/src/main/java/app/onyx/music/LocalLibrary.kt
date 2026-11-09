@@ -283,6 +283,24 @@ class LocalLibrary(
         }
     }
 
+    /** Deletes the actual files (via SAF) and drops their cached metadata. */
+    fun deleteTracks(ids: Collection<String>) {
+        if (ids.isEmpty()) return
+        scope.launch {
+            val targets = rawTracks.filter { it.id in ids }
+            targets.forEach { track ->
+                runCatching {
+                    DocumentFile.fromSingleUri(context, Uri.parse(track.uri))?.delete()
+                }
+                overrides = overrides - track.id
+                runCatching { File(artDir, "${track.id}.jpg").delete() }
+                runCatching { File(customArtDir, "${track.id}_custom.jpg").delete() }
+            }
+            writeOverrides()
+            rescan()
+        }
+    }
+
     fun resetTrack(id: String) {
         scope.launch {
             val art = overrides[id]?.artPath

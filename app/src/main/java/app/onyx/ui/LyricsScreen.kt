@@ -107,6 +107,7 @@ fun LyricsScreen(
     controller: AppController,
     onBack: () -> Unit,
     onFullscreenChanged: (Boolean) -> Unit = {},
+    hazeState: HazeState,
     modifier: Modifier = Modifier,
 ) {
     val media by controller.media.state.collectAsStateWithLifecycle()
@@ -124,7 +125,6 @@ fun LyricsScreen(
     var showActions by remember { mutableStateOf(false) }
     var manualTitle by remember { mutableStateOf("") }
     var manualArtist by remember { mutableStateOf("") }
-    val hazeState = remember { HazeState() }
 
     val position = media.positionMs + prefs.lyricOffsetMs
     val doc = (lyrics as? LyricsState.Ready)?.doc

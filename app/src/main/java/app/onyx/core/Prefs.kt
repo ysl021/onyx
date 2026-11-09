@@ -13,6 +13,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 private val Context.dataStore by preferencesDataStore("onyx")
 
@@ -25,6 +27,17 @@ data class LocalFolder(
     val name: String,
 )
 
+/** A file saved by the YouTube tab, kept so it can be deleted later. */
+@Serializable
+data class YouTubeDownloadEntry(
+    val id: String,
+    val uri: String,
+    val title: String,
+    val artist: String,
+    val name: String,
+    val savedAt: Long = 0L,
+)
+
 data class PrefsData(
     val spotifyClientId: String = "",
     val spotifyAccess: String = "",
@@ -32,6 +45,7 @@ data class PrefsData(
     val spotifyExpiresAt: Long = 0L,
     val spotifyUser: String = "",
     val karaoke: Boolean = false,
+    val lyricsToolbarVisible: Boolean = true,
     val translate: Boolean = true,
     val lyricFontSize: Float = 30f,
     val lyricOffsetMs: Long = 0L,
@@ -63,6 +77,10 @@ data class PrefsData(
     val localFolders: List<LocalFolder> = emptyList(),
     val budsAutoConnect: Boolean = true,
     val budsMac: String = "",
+    val youtubeFolderUri: String = "",
+    val youtubeFolderName: String = "",
+    val youtubeHistory: List<String> = emptyList(),
+    val youtubeDownloads: List<YouTubeDownloadEntry> = emptyList(),
 )
 
 class Prefs(private val context: Context) {
@@ -73,6 +91,7 @@ class Prefs(private val context: Context) {
         val expires = longPreferencesKey("spotify_expires")
         val user = stringPreferencesKey("spotify_user")
         val karaoke = booleanPreferencesKey("karaoke")
+        val lyricsToolbarVisible = booleanPreferencesKey("lyrics_toolbar_visible")
         val translate = booleanPreferencesKey("translate")
         val fontSize = floatPreferencesKey("font_size")
         val offset = longPreferencesKey("offset")
@@ -104,6 +123,10 @@ class Prefs(private val context: Context) {
         val localFolders = stringPreferencesKey("local_folders")
         val autoConnect = booleanPreferencesKey("auto_connect")
         val budsMac = stringPreferencesKey("buds_mac")
+        val youtubeFolderUri = stringPreferencesKey("youtube_folder_uri")
+        val youtubeFolderName = stringPreferencesKey("youtube_folder_name")
+        val youtubeHistory = stringPreferencesKey("youtube_history")
+        val youtubeDownloads = stringPreferencesKey("youtube_downloads")
     }
 
     val data: Flow<PrefsData> = context.dataStore.data.map { p -> p.toData() }
@@ -117,6 +140,7 @@ class Prefs(private val context: Context) {
         spotifyExpiresAt = this[K.expires] ?: 0L,
         spotifyUser = this[K.user] ?: "",
         karaoke = this[K.karaoke] ?: false,
+        lyricsToolbarVisible = this[K.lyricsToolbarVisible] ?: true,
         translate = this[K.translate] ?: true,
         lyricFontSize = this[K.fontSize] ?: 30f,
         lyricOffsetMs = this[K.offset] ?: 0L,
@@ -155,6 +179,15 @@ class Prefs(private val context: Context) {
         },
         budsAutoConnect = this[K.autoConnect] ?: true,
         budsMac = this[K.budsMac] ?: "",
+        youtubeFolderUri = this[K.youtubeFolderUri] ?: "",
+        youtubeFolderName = this[K.youtubeFolderName] ?: "",
+        youtubeHistory = (this[K.youtubeHistory] ?: "")
+            .split('\n')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() },
+        youtubeDownloads = runCatching {
+            Json.decodeFromString<List<YouTubeDownloadEntry>>(this[K.youtubeDownloads] ?: "[]")
+        }.getOrDefault(emptyList()),
     )
 
     suspend fun setClientId(v: String) = edit { it[K.clientId] = v.trim() }
@@ -168,6 +201,8 @@ class Prefs(private val context: Context) {
         it.remove(K.access); it.remove(K.refresh); it.remove(K.expires); it.remove(K.user)
     }
     suspend fun setKaraoke(v: Boolean) = edit { it[K.karaoke] = v }
+
+    suspend fun setLyricsToolbarVisible(v: Boolean) = edit { it[K.lyricsToolbarVisible] = v }
     suspend fun setTranslate(v: Boolean) = edit { it[K.translate] = v }
     suspend fun setFontSize(v: Float) = edit { it[K.fontSize] = v }
     suspend fun setOffset(v: Long) = edit { it[K.offset] = v }
@@ -206,6 +241,55 @@ class Prefs(private val context: Context) {
     }
     suspend fun setAutoConnect(v: Boolean) = edit { it[K.autoConnect] = v }
     suspend fun setBudsMac(v: String) = edit { it[K.budsMac] = v }
+    suspend fun setYouTubeFolder(uri: String, name: String) = edit {
+        it[K.youtubeFolderUri] = uri
+        it[K.youtubeFolderName] = name
+    }
+    suspend fun clearYouTubeFolder() = edit {
+        it.remove(K.youtubeFolderUri)
+        it.remove(K.youtubeFolderName)
+    }
+
+    /** Recent YouTube queries, newest first, capped at 12. */
+    suspend fun addYouTubeQuery(query: String) {
+        val clean = query.trim()
+        if (clean.length < 2) return
+        edit { prefs ->
+            val current = (prefs[K.youtubeHistory] ?: "")
+                .split('\n')
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+            val next = (listOf(clean) + current.filterNot { it.equals(clean, ignoreCase = true) })
+                .take(12)
+            prefs[K.youtubeHistory] = next.joinToString("\n")
+        }
+    }
+
+    suspend fun clearYouTubeHistory() = edit { it.remove(K.youtubeHistory) }
+
+    suspend fun addYouTubeDownloads(items: List<YouTubeDownloadEntry>) {
+        if (items.isEmpty()) return
+        edit { prefs ->
+            val current = runCatching {
+                Json.decodeFromString<List<YouTubeDownloadEntry>>(prefs[K.youtubeDownloads] ?: "[]")
+            }.getOrDefault(emptyList())
+            val fresh = items.reversed().map {
+                if (it.savedAt > 0L) it else it.copy(savedAt = System.currentTimeMillis())
+            }
+            val merged = (fresh + current.filterNot { old -> items.any { it.id == old.id } })
+                .take(200)
+            prefs[K.youtubeDownloads] = Json.encodeToString(merged)
+        }
+    }
+
+    suspend fun removeYouTubeDownload(id: String) {
+        edit { prefs ->
+            val current = runCatching {
+                Json.decodeFromString<List<YouTubeDownloadEntry>>(prefs[K.youtubeDownloads] ?: "[]")
+            }.getOrDefault(emptyList())
+            prefs[K.youtubeDownloads] = Json.encodeToString(current.filterNot { it.id == id })
+        }
+    }
 
     private suspend fun edit(block: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
         context.dataStore.edit(block)

@@ -9,11 +9,17 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -72,20 +78,21 @@ class LyricsRepository(
 
     /** Called whenever media metadata changes. Does nothing when the track is unchanged. */
     fun sync(now: NowPlaying, force: Boolean = false) {
-        if (!now.hasTrack) {
-            current = now
+        val target = searchIdentity(now)
+        if (!target.hasTrack) {
+            current = target
             currentKey = null
             job?.cancel()
             _state.value = LyricsState.Idle
             return
         }
-        val key = keyOf(now)
-        current = now
+        val key = keyOf(target)
+        current = target
         if (!force && key == currentKey && _state.value !is LyricsState.Error) return
         if (key != currentKey) _manualActive.value = false
         currentKey = key
         job?.cancel()
-        job = scope.launch { load(now, key) }
+        job = scope.launch { load(target, key) }
     }
 
     fun retry() {
@@ -111,13 +118,15 @@ class LyricsRepository(
     fun searchManual(title: String, artist: String) {
         val t = title.trim()
         if (t.isBlank()) return
-        val now = NowPlaying(
-            packageName = "manual",
-            title = t,
-            artist = artist.trim(),
-            album = "",
-            durationMs = 0L,
-            mediaId = "",
+        val now = searchIdentity(
+            NowPlaying(
+                packageName = "manual",
+                title = t,
+                artist = artist.trim(),
+                album = "",
+                durationMs = 0L,
+                mediaId = "",
+            ),
         )
         val key = keyOf(now)
         current = now
@@ -833,7 +842,7 @@ class LyricsRepository(
     }
 
     private suspend fun translateBatch(lines: List<String>): List<String>? {
-        val out = ArrayList<String>(lines.size)
+        val chunks = ArrayList<List<String>>()
         var i = 0
         while (i < lines.size) {
             val chunk = ArrayList<String>()
@@ -843,30 +852,49 @@ class LyricsRepository(
                 len += lines[i].length + 1
                 i++
             }
-            if (chunk.all { it.isBlank() }) {
-                chunk.forEach { out.add("") }
-                continue
-            }
-            val joined = chunk.joinToString("\n")
-            val res = googleTranslate(joined)
-            if (res == null) {
-                for (l in chunk) out.add(googleTranslate(l) ?: l)
-            } else {
-                val parts = res.split("\n")
-                if (parts.size == chunk.size) {
-                    out.addAll(parts)
-                } else {
-                    for (l in chunk) out.add(googleTranslate(l) ?: l)
-                }
-            }
+            chunks.add(chunk)
         }
+        // Chunks are independent: translating three at a time makes long songs
+        // noticeably faster while still staying under Google's rate limit.
+        val results = coroutineScope {
+            val gate = Semaphore(3)
+            chunks.map { chunk ->
+                async(Dispatchers.IO) {
+                    gate.withPermit { translateChunk(chunk) }
+                }
+            }.awaitAll()
+        }
+        val out = results.flatten()
         return if (out.size == lines.size) out else null
+    }
+
+    private suspend fun translateChunk(chunk: List<String>): List<String> {
+        if (chunk.all { it.isBlank() }) return chunk.map { "" }
+        val joined = chunk.joinToString("\n")
+        googleTranslate(joined)?.let { res ->
+            val parts = res.split("\n")
+            if (parts.size == chunk.size) return parts
+        }
+        return chunk.map { line ->
+            if (line.isBlank()) "" else googleTranslate(line) ?: line
+        }
     }
 
     private suspend fun googleTranslate(text: String): String? {
         if (text.isBlank()) return ""
+        // Google's free endpoint occasionally answers 429/5xx; two short retries
+        // and a second host make the difference between "no translation" and
+        // a translated song.
+        repeat(2) { attempt ->
+            translateOnce(text)?.let { return it }
+            delay(220L * (attempt + 1))
+        }
+        return translateOnceFallback(text)
+    }
+
+    private suspend fun translateOnce(text: String): String? {
         val url = "https://translate.googleapis.com/translate_a/single" +
-            "?client=gtx&sl=auto&tl=ru&dt=t&q=" + enc(text)
+            "?client=gtx&sl=auto&tl=ru&hl=ru&dt=t&q=" + enc(text)
         val req = Request.Builder()
             .url(url)
             .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
@@ -881,6 +909,27 @@ class LyricsRepository(
             arr.firstOrNull()?.str()?.let { sb.append(it) }
         }
         return sb.toString().ifBlank { null }
+    }
+
+    /** Second host with a different response shape, used when the first fails. */
+    private suspend fun translateOnceFallback(text: String): String? {
+        val url = "https://clients5.google.com/translate_a/t" +
+            "?client=dict-chrome-ex&sl=auto&tl=ru&q=" + enc(text)
+        val req = Request.Builder()
+            .url(url)
+            .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
+            .build()
+        val body = get(req) ?: return null
+        val root = runCatching { json.parseToJsonElement(body) }.getOrNull() ?: return null
+        return when (root) {
+            is JsonArray -> root.joinToString("") { it.str().orEmpty() }.ifBlank { null }
+            is kotlinx.serialization.json.JsonObject ->
+                root["sentences"]?.jsonArray
+                    ?.joinToString("") { it.jsonObject["trans"]?.str().orEmpty() }
+                    ?.ifBlank { null }
+            else -> null
+        }
     }
 
     // ---------------------------------------------------------------------- Utils
@@ -953,11 +1002,36 @@ class LyricsRepository(
         return t.replace(Regex("""\s{2,}"""), " ").trim().ifBlank { raw }
     }
 
-    private fun cleanArtist(raw: String): String =
-        Regex("""\s*[-–—]\s*topic$""", RegexOption.IGNORE_CASE)
-            .replace(raw.trim(), "")
-            .trim()
-            .ifBlank { raw.trim() }
+    private fun cleanArtist(raw: String): String {
+        var value = raw.trim()
+        // YouTube auto-generated channels: "Artist - Topic", "Artist Topic",
+        // "ArtistVEVO". These never match a lyrics catalogue as-is.
+        value = Regex("""\s*[-–—]?\s*topic$""", RegexOption.IGNORE_CASE).replace(value, "")
+        value = Regex("""\s*[-–—]?\s*vevo$""", RegexOption.IGNORE_CASE).replace(value, "")
+        value = Regex("""\s*[-–—]\s*official$""", RegexOption.IGNORE_CASE).replace(value, "")
+        return value.trim().ifBlank { raw.trim() }
+    }
+
+    /**
+     * Builds the title/artist actually sent to the providers. Downloaded
+     * YouTube files often keep the channel as the artist ("... - Topic") and
+     * the whole "Artist - Track" string as the title; both break matching.
+     */
+    private fun searchIdentity(now: NowPlaying): NowPlaying {
+        var title = now.title.trim()
+        var artist = cleanArtist(now.artist)
+        val dash = title.indexOf(" - ")
+        if (dash > 0) {
+            val left = title.substring(0, dash).trim()
+            val right = title.substring(dash + 3).trim()
+            val sameArtist = artist.isBlank() || normalize(artist) == normalize(left)
+            if (sameArtist && left.isNotBlank() && right.isNotBlank()) {
+                artist = left
+                title = right
+            }
+        }
+        return now.copy(title = title, artist = artist)
+    }
 
     private fun enc(s: String): String = URLEncoder.encode(s, "UTF-8")
 

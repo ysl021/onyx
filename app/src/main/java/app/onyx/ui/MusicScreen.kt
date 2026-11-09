@@ -5,6 +5,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
@@ -24,6 +25,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.FolderOpen
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Refresh
@@ -39,14 +41,19 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -67,6 +74,7 @@ import app.onyx.ui.components.SectionLabel
 import dev.chrisbanes.haze.HazeState
 import app.onyx.ui.theme.OnyxDim
 import app.onyx.ui.theme.OnyxFaint
+import app.onyx.ui.theme.OnyxBlack
 import app.onyx.ui.theme.OnyxLine
 import app.onyx.ui.theme.OnyxSurface
 import app.onyx.ui.theme.OnyxWhite
@@ -84,6 +92,12 @@ fun MusicScreen(
     var query by remember { mutableStateOf("") }
     var selectedFolder by remember { mutableStateOf<String?>(null) }
     var editingTrack by remember { mutableStateOf<LocalTrack?>(null) }
+    // Multi-select: long-press a track then drag across rows to select several.
+    var selectMode by remember { mutableStateOf(false) }
+    var selectedIds by remember { mutableStateOf(setOf<String>()) }
+    val rowRects = remember { mutableStateMapOf<String, Rect>() }
+    var showAddToPlaylist by remember { mutableStateOf(false) }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
     val folders = library.folders
     val filtered = remember(library.tracks, query, selectedFolder) {
@@ -250,19 +264,99 @@ fun MusicScreen(
             ),
         )
 
+        if (selectMode) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 18.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    tr("Выбрано: ${selectedIds.size}", "Selected: ${selectedIds.size}"),
+                    color = OnyxWhite,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f),
+                )
+                GlassPill(
+                    text = tr("В плейлист", "To playlist"),
+                    selected = true,
+                    enabled = selectedIds.isNotEmpty(),
+                    onClick = { showAddToPlaylist = true },
+                )
+                Spacer(Modifier.width(8.dp))
+                GlassPill(
+                    text = tr("Удалить", "Delete"),
+                    selected = false,
+                    enabled = selectedIds.isNotEmpty(),
+                    onClick = { showDeleteConfirm = true },
+                )
+                Spacer(Modifier.width(8.dp))
+                GlassPill(
+                    text = tr("Готово", "Done"),
+                    selected = false,
+                    onClick = {
+                        selectMode = false
+                        selectedIds = emptySet()
+                    },
+                )
+            }
+        }
+
         LazyColumn(
             modifier = Modifier.weight(1f),
             contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 4.dp, bottom = 132.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             items(filtered, key = { it.id }) { track ->
-                TrackRow(
-                    track = track,
-                    active = playback.current?.id == track.id,
-                    playing = playback.current?.id == track.id && playback.isPlaying,
-                    onClick = { controller.localPlayer.play(track, filtered) },
-                    onEdit = { editingTrack = track },
-                )
+                val isSelected = track.id in selectedIds
+                Box(
+                    modifier = Modifier
+                        .onGloballyPositioned { rowRects[track.id] = it.boundsInRoot() }
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(
+                            if (isSelected) OnyxWhite.copy(alpha = 0.10f) else Color.Transparent,
+                        )
+                        .pointerInput(filtered) {
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = {
+                                    selectMode = true
+                                    selectedIds = setOf(track.id)
+                                },
+                                onDrag = { change, _ ->
+                                    change.consume()
+                                    if (!selectMode) return@detectDragGesturesAfterLongPress
+                                    val bounds = rowRects[track.id]
+                                        ?: return@detectDragGesturesAfterLongPress
+                                    val globalY = bounds.top + change.position.y
+                                    val hit = filtered.mapNotNull { t ->
+                                        val r = rowRects[t.id] ?: return@mapNotNull null
+                                        if (globalY >= r.top && globalY <= r.bottom) t.id else null
+                                    }
+                                    if (hit.isNotEmpty()) selectedIds = selectedIds.union(hit)
+                                },
+                                onDragEnd = {},
+                                onDragCancel = {},
+                            )
+                        },
+                ) {
+                    TrackRow(
+                        track = track,
+                        active = playback.current?.id == track.id,
+                        playing = playback.current?.id == track.id && playback.isPlaying,
+                        selectMode = selectMode,
+                        selected = isSelected,
+                        onClick = {
+                            if (selectMode) {
+                                selectedIds =
+                                    if (isSelected) selectedIds - track.id else selectedIds + track.id
+                            } else {
+                                controller.localPlayer.play(track, filtered)
+                            }
+                        },
+                        onEdit = { editingTrack = track },
+                    )
+                }
             }
             if (!library.scanning && filtered.isEmpty()) {
                 item {
@@ -328,6 +422,52 @@ fun MusicScreen(
                 },
             )
         }
+
+        if (showAddToPlaylist) {
+            AddToPlaylistDialog(
+                controller = controller,
+                trackIds = selectedIds.toList(),
+                onDismiss = {
+                    showAddToPlaylist = false
+                    selectMode = false
+                    selectedIds = emptySet()
+                },
+            )
+        }
+
+        if (showDeleteConfirm) {
+            AlertDialog(
+                onDismissRequest = { showDeleteConfirm = false },
+                title = { Text(tr("Удалить треки?", "Delete tracks?"), color = OnyxWhite) },
+                text = {
+                    Text(
+                        tr(
+                            "Будет удалено файлов: ${selectedIds.size}. Они исчезнут с телефона.",
+                            "Files to delete: ${selectedIds.size}. They will be removed from the phone.",
+                        ),
+                        color = OnyxDim,
+                    )
+                },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            controller.localLibrary.deleteTracks(selectedIds)
+                            showDeleteConfirm = false
+                            selectMode = false
+                            selectedIds = emptySet()
+                        },
+                    ) {
+                        Text(tr("Удалить", "Delete"), color = OnyxWhite)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showDeleteConfirm = false }) {
+                        Text(tr("Отмена", "Cancel"), color = OnyxFaint)
+                    }
+                },
+                containerColor = OnyxBlack,
+            )
+        }
     }
 }
 
@@ -338,6 +478,8 @@ private fun TrackRow(
     playing: Boolean,
     onClick: () -> Unit,
     onEdit: () -> Unit,
+    selectMode: Boolean = false,
+    selected: Boolean = false,
 ) {
     Row(
         modifier = Modifier
@@ -348,6 +490,27 @@ private fun TrackRow(
             .padding(6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        if (selectMode) {
+            Box(
+                modifier = Modifier
+                    .size(20.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(
+                        if (selected) OnyxWhite else OnyxWhite.copy(alpha = 0.08f),
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (selected) {
+                    Icon(
+                        Icons.Rounded.Check,
+                        contentDescription = null,
+                        tint = Color(0xFF08080A),
+                        modifier = Modifier.size(14.dp),
+                    )
+                }
+            }
+            Spacer(Modifier.width(10.dp))
+        }
         AsyncArt(
             model = track.artPath?.let { File(it) },
             modifier = Modifier
@@ -599,4 +762,140 @@ private fun fmtLocal(ms: Long): String {
     if (ms <= 0) return ""
     val total = ms / 1000
     return "%d:%02d".format(total / 60, total % 60)
+}
+
+/**
+ * Picker that adds the given track ids to an existing local playlist or creates
+ * a new one. Used by the Music tab multi-select flow.
+ */
+@Composable
+private fun AddToPlaylistDialog(
+    controller: AppController,
+    trackIds: List<String>,
+    onDismiss: () -> Unit,
+) {
+    val playlistsState by controller.localPlaylists.state.collectAsStateWithLifecycle()
+    var newMode by remember { mutableStateOf(false) }
+    var newName by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                tr("Добавить в плейлист", "Add to playlist") + " (${trackIds.size})",
+                color = OnyxWhite,
+                fontSize = 16.sp,
+            )
+        },
+        text = {
+            Column {
+                if (playlistsState.playlists.isEmpty() && !newMode) {
+                    Text(
+                        tr("Плейлистов пока нет — создай первый.", "No playlists yet — create the first one."),
+                        color = OnyxFaint,
+                        fontSize = 12.sp,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(240.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        items(
+                            playlistsState.playlists.size,
+                            key = { playlistsState.playlists[it].id },
+                        ) { index ->
+                            val playlist = playlistsState.playlists[index]
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable {
+                                        controller.localPlaylists.addTracks(playlist.id, trackIds)
+                                        controller.toast(
+                                            tr("Добавлено в «${playlist.name}»", "Added to «${playlist.name}»"),
+                                        )
+                                        onDismiss()
+                                    }
+                                    .padding(vertical = 6.dp, horizontal = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                AsyncArt(
+                                    model = playlist.coverPath,
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .clip(RoundedCornerShape(9.dp)),
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        playlist.name,
+                                        color = OnyxWhite,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Text(
+                                        "${playlist.trackIds.size} " + tr("треков", "tracks"),
+                                        color = OnyxFaint,
+                                        fontSize = 10.sp,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+                if (newMode) {
+                    OutlinedTextField(
+                        value = newName,
+                        onValueChange = { newName = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        placeholder = {
+                            Text(tr("Название плейлиста", "Playlist name"), color = OnyxFaint, fontSize = 12.sp)
+                        },
+                        textStyle = androidx.compose.ui.text.TextStyle(color = OnyxWhite, fontSize = 13.sp),
+                        shape = RoundedCornerShape(14.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = OnyxLine,
+                            unfocusedBorderColor = OnyxLine,
+                            focusedContainerColor = Color.Transparent,
+                            unfocusedContainerColor = Color.Transparent,
+                            cursorColor = OnyxWhite,
+                        ),
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    GlassPill(
+                        text = tr("Создать и добавить", "Create and add"),
+                        selected = true,
+                        enabled = newName.isNotBlank(),
+                        onClick = {
+                            controller.localPlaylists.create(newName.trim(), trackIds = trackIds) { id ->
+                                controller.toast(
+                                    tr("Плейлист «${newName.trim()}» создан", "Playlist «${newName.trim()}» created"),
+                                )
+                            }
+                            onDismiss()
+                        },
+                    )
+                } else {
+                    GlassPill(
+                        text = tr("+ Новый плейлист", "+ New playlist"),
+                        selected = false,
+                        onClick = { newMode = true },
+                    )
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(tr("Закрыть", "Close"), color = OnyxWhite)
+            }
+        },
+    )
 }

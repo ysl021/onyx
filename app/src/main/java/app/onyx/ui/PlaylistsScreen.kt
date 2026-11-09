@@ -31,6 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -69,6 +70,12 @@ fun PlaylistsScreen(
     var tracks by remember { mutableStateOf<List<SpotifyTrack>>(emptyList()) }
     var detailLoading by remember { mutableStateOf(false) }
     var version by remember { mutableStateOf(0) }
+    var source by rememberSaveable { mutableStateOf("my") }
+    val spotifyConnected = prefs.spotifyRefresh.isNotBlank()
+
+    LaunchedEffect(spotifyConnected) {
+        if (!spotifyConnected && source == "spotify") source = "my"
+    }
 
     LaunchedEffect(prefs.language, version) {
         loading = true
@@ -88,6 +95,33 @@ fun PlaylistsScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(start = 18.dp, end = 18.dp, top = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            GlassPill(
+                text = tr("Мои", "My"),
+                selected = source == "my",
+                onClick = { source = "my" },
+            )
+            if (spotifyConnected) {
+                GlassPill(
+                    text = "Spotify",
+                    selected = source == "spotify",
+                    onClick = { source = "spotify" },
+                )
+            }
+        }
+
+        if (source == "my") {
+            MyPlaylistsContent(
+                controller = controller,
+                onBack = onBack,
+                modifier = Modifier.weight(1f),
+            )
+        } else {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 18.dp, end = 18.dp, top = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             CircleButton(
@@ -298,6 +332,7 @@ fun PlaylistsScreen(
                     }
                 }
             }
+        }
         }
     }
 }

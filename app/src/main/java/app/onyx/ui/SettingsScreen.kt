@@ -220,7 +220,7 @@ fun SettingsScreen(
                     letterSpacing = (-0.5).sp,
                 )
                 Text(
-                    text = "ONYX · v0.6.8",
+                    text = "ONYX · v" + app.onyx.BuildConfig.VERSION_NAME,
                     color = OnyxFaint,
                     fontSize = 10.sp,
                     letterSpacing = 1.4.sp,
@@ -538,33 +538,16 @@ fun SettingsScreen(
         }
 
         GlassCard(modifier = Modifier.fillMaxWidth()) {
-            SectionLabel("YouTube")
+            SectionLabel(tr("Локальная музыка", "Local music"))
             Spacer(Modifier.height(10.dp))
             Text(
                 tr(
-                    "Импорт миксов по таймкодам из описания видео. Скачивание не поддерживается — " +
-                        "ONYX открывает видео на нужной секунде, а локальные файлы можно добавить в «Музыку».",
-                    "Import timestamped mixes from a video description. Downloading is not supported — " +
-                        "ONYX opens the video at the right second; local files can be added to Music.",
+                    "Папки, плейлисты и нарезка YouTube-миксов теперь живут на вкладке «YouTube».",
+                    "Folders, playlists and YouTube mix splitting now live on the YouTube tab.",
                 ),
                 color = OnyxDim,
                 fontSize = 12.sp,
                 lineHeight = 17.sp,
-            )
-            Spacer(Modifier.height(12.dp))
-            GlassPill(
-                text = tr("Открыть YouTube", "Open YouTube"),
-                selected = false,
-                onClick = {
-                    runCatching {
-                        context.startActivity(
-                            Intent(
-                                Intent.ACTION_VIEW,
-                                android.net.Uri.parse("https://www.youtube.com"),
-                            ),
-                        )
-                    }
-                },
             )
         }
         }
@@ -801,6 +784,16 @@ fun SettingsScreen(
                 fontSize = 12.sp,
                 lineHeight = 17.sp,
             )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = tr(
+                    "Версия ${app.onyx.BuildConfig.VERSION_NAME} (сборка ${app.onyx.BuildConfig.VERSION_CODE})",
+                    "Version ${app.onyx.BuildConfig.VERSION_NAME} (build ${app.onyx.BuildConfig.VERSION_CODE})",
+                ),
+                color = OnyxFaint,
+                fontSize = 10.sp,
+                letterSpacing = 0.6.sp,
+            )
         }
         } else if (section == 1) {
             AppearanceSection(
@@ -828,7 +821,7 @@ fun SettingsScreen(
                 onApply = {
                     scope.launch {
                         val pages = if (previewAll) {
-                            listOf("player", "lyrics", "queue", "music", "visualizer", "settings")
+                            listOf("player", "lyrics", "queue", "music", "youtube", "visualizer", "settings")
                         } else {
                             listOf(previewPage)
                         }
@@ -1344,6 +1337,7 @@ private fun AppearanceSection(
             "queue" to tr("Очередь", "Queue"),
             "playlists" to tr("Плейлисты", "Playlists"),
             "music" to tr("Музыка", "Music"),
+            "youtube" to tr("YouTube", "YouTube"),
             "visualizer" to tr("Визуал", "Visual"),
             "settings" to tr("Настройки", "Settings"),
         )
@@ -1371,6 +1365,7 @@ private fun AppearanceSection(
             "queue" to tr("Очередь", "Queue"),
             "playlists" to tr("Плейлисты", "Playlists"),
             "music" to tr("Музыка", "Music"),
+            "youtube" to tr("YouTube", "YouTube"),
             "visualizer" to tr("Визуал", "Visual"),
             "settings" to tr("Настройки", "Settings"),
         )

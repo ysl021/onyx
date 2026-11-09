@@ -10,6 +10,7 @@ import app.onyx.buds.BudsService
 import app.onyx.audio.SoundEffects
 import app.onyx.audio.VolumeController
 import app.onyx.core.Prefs
+import app.onyx.core.YouTubeDownloadEntry
 import app.onyx.lyrics.LyricsRepository
 import app.onyx.media.MediaRepository
 import app.onyx.media.NowPlaying
@@ -17,24 +18,35 @@ import app.onyx.media.OutputRouter
 import app.onyx.media.HeadphonesRepository
 import app.onyx.music.LocalLibrary
 import app.onyx.music.LocalPlaybackController
+import app.onyx.music.LocalPlaylists
 import app.onyx.music.LocalTrack
 import app.onyx.spotify.SpotifyClient
 import app.onyx.spotify.QueueData
 import app.onyx.spotify.DiscordBridge
+import app.onyx.ui.tr
+import app.onyx.youtube.DownloadService
+import app.onyx.youtube.YtSection
+import app.onyx.youtube.YtVideo
+import app.onyx.youtube.YouTubeDownloads
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class AppController private constructor(context: Context) {
 
@@ -48,6 +60,7 @@ class AppController private constructor(context: Context) {
     val volume = VolumeController(appContext)
     val localLibrary = LocalLibrary(appContext, prefs)
     val localPlayer = LocalPlaybackController(appContext, localLibrary)
+    val localPlaylists = LocalPlaylists(appContext)
     val lyrics = LyricsRepository(appContext, prefs) { spotify.token() }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -68,6 +81,134 @@ class AppController private constructor(context: Context) {
     val queue = MutableStateFlow<QueueData?>(null)
     private var queueFetchedAt = 0L
     val discordBridge = DiscordBridge(prefs, nowPlaying)
+
+    // Sleep timer: counts down and pauses playback when it hits zero.
+    private val _sleepRemainingMs = MutableStateFlow(0L)
+    val sleepRemainingMs: StateFlow<Long> = _sleepRemainingMs.asStateFlow()
+    private var sleepJob: Job? = null
+
+    fun startSleepTimer(minutes: Int) {
+        cancelSleepTimer()
+        if (minutes <= 0) return
+        _sleepRemainingMs.value = minutes * 60_000L
+        sleepJob = scope.launch {
+            while (_sleepRemainingMs.value > 0L && isActive) {
+                delay(1000)
+                _sleepRemainingMs.value = (_sleepRemainingMs.value - 1000).coerceAtLeast(0L)
+            }
+            if (_sleepRemainingMs.value <= 0L) pauseAllForSleep()
+        }
+    }
+
+    fun cancelSleepTimer() {
+        sleepJob?.cancel()
+        sleepJob = null
+        _sleepRemainingMs.value = 0L
+    }
+
+    private fun pauseAllForSleep() {
+        localPlayer.pause()
+        media.pause()
+    }
+
+    /**
+     * Downloads the chosen chapters, then rescans the library and files them
+     * into a playlist named after the video.
+     */
+    fun startYouTubeImport(
+        video: YtVideo,
+        sections: List<YtSection>,
+        folderUri: String,
+        album: String,
+    ) {
+        if (sections.isEmpty()) return
+        if (folderUri.isBlank()) {
+            toast(tr("Сначала выбери папку для сохранения", "Pick a folder to save into first"))
+            return
+        }
+        // The queue already has a worker: it will pick this batch up itself, and
+        // starting the service again would stop it once the second start returns.
+        val serviceRunning = YouTubeDownloads.isProcessing()
+        YouTubeDownloads.enqueue(video, sections, folderUri, album) { saved ->
+            localLibrary.rescan()
+            if (saved.isNotEmpty()) {
+                localPlaylists.create(album.take(80), trackIds = saved.map { it.id }) {
+                    toast(
+                        tr(
+                            "Готово: ${saved.size} треков в «${album.take(40)}»",
+                            "Done: ${saved.size} tracks in «${album.take(40)}»",
+                        ),
+                    )
+                }
+                scope.launch {
+                    prefs.addYouTubeDownloads(
+                        saved.map {
+                            YouTubeDownloadEntry(it.id, it.uri, it.title, it.artist, it.name, it.savedAt)
+                        },
+                    )
+                }
+            } else {
+                toast(tr("Не удалось сохранить треки", "Could not save the tracks"))
+            }
+            scope.launch {
+                delay(600)
+                localLibrary.rescan()
+            }
+        }
+        startQueueIfNeeded(serviceRunning)
+    }
+
+    /** Saves the whole mix as one file, no chapter splitting. */
+    fun startYouTubeWhole(video: YtVideo, folderUri: String) {
+        if (folderUri.isBlank()) {
+            toast(tr("Сначала выбери папку для сохранения", "Pick a folder to save into first"))
+            return
+        }
+        val serviceRunning = YouTubeDownloads.isProcessing()
+        YouTubeDownloads.enqueueWhole(video, folderUri) { saved ->
+            localLibrary.rescan()
+            if (saved.isNotEmpty()) {
+                toast(tr("Скачано: ${video.title.take(48)}", "Saved: ${video.title.take(48)}"))
+                scope.launch {
+                    prefs.addYouTubeDownloads(
+                        saved.map {
+                            YouTubeDownloadEntry(it.id, it.uri, it.title, it.artist, it.name, it.savedAt)
+                        },
+                    )
+                }
+            } else {
+                toast(tr("Не удалось сохранить файл", "Could not save the file"))
+            }
+            scope.launch {
+                delay(600)
+                localLibrary.rescan()
+            }
+        }
+        startQueueIfNeeded(serviceRunning)
+    }
+
+    private fun startQueueIfNeeded(serviceRunning: Boolean) {
+        if (serviceRunning) return
+        val started = DownloadService.start(appContext)
+        if (!started) {
+            // Foreground service refused (rare, e.g. background restriction):
+            // finish the queue inside the app process instead of losing it.
+            scope.launch(Dispatchers.IO) {
+                YouTubeDownloads.processQueue(appContext)
+            }
+        } else {
+            // Watchdog: if the service died before starting a worker, do the
+            // work in-process so the queue can never hang in "Downloading".
+            scope.launch {
+                delay(2_500)
+                if (YouTubeDownloads.state.value.busy && !YouTubeDownloads.isProcessing()) {
+                    withContext(Dispatchers.IO) {
+                        YouTubeDownloads.processQueue(appContext)
+                    }
+                }
+            }
+        }
+    }
 
     @Volatile
     var lastTab: String = "Player"
@@ -153,11 +294,13 @@ class AppController private constructor(context: Context) {
     fun close() {
         watcher?.cancel()
         watcher = null
+        cancelSleepTimer()
         lyrics.close()
         sound.close()
         volume.close()
         discordBridge.close()
         localPlayer.close()
+        localPlaylists.close()
         localLibrary.close()
         media.close()
     }

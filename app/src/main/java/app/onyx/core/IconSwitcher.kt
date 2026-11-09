@@ -16,6 +16,17 @@ object IconSwitcher {
     fun component(context: Context, index: Int): ComponentName =
         ComponentName(context, "app.onyx.Icon%02d".format(index.coerceIn(1, COUNT)))
 
+    /** Which alias is currently the launcher entry (used by the splash). */
+    fun current(context: Context): Int {
+        val pm = context.packageManager
+        for (i in 1..COUNT) {
+            val state = runCatching { pm.getComponentEnabledSetting(component(context, i)) }
+                .getOrDefault(PackageManager.COMPONENT_ENABLED_STATE_DEFAULT)
+            if (state == PackageManager.COMPONENT_ENABLED_STATE_ENABLED) return i
+        }
+        return 1
+    }
+
     fun apply(context: Context, index: Int, killApp: Boolean = false) {
         val target = index.coerceIn(1, COUNT)
         val pm = context.packageManager

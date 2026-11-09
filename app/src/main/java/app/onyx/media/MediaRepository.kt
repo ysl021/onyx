@@ -166,6 +166,16 @@ class MediaRepository private constructor(private val appContext: Context) {
         handler.postDelayed({ publish() }, 180)
     }
 
+    /** Pause only (never resume) — used by the sleep timer. */
+    fun pause() {
+        val c = controller ?: return
+        try {
+            if (c.playbackState?.state == PlaybackState.STATE_PLAYING) c.transportControls.pause()
+        } catch (_: Exception) {
+        }
+        handler.postDelayed({ publish() }, 180)
+    }
+
     fun next() {
         try {
             controller?.transportControls?.skipToNext()

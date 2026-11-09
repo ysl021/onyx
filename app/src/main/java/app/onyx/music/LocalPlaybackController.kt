@@ -122,6 +122,12 @@ class LocalPlaybackController(
         if (c.isPlaying) c.pause() else c.play()
     }
 
+    /** Pause without toggling — used by the sleep timer. */
+    fun pause() {
+        val c = controller ?: return
+        if (c.isPlaying) c.pause()
+    }
+
     fun next() {
         controller?.seekToNextMediaItem()
     }
