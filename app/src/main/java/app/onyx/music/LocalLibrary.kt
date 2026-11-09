@@ -169,13 +169,17 @@ class LocalLibrary(
                 while (cursor.moveToNext()) {
                     val relative = if (pathIndex >= 0) cursor.getString(pathIndex)?.trim().orEmpty() else ""
                     val bucket = if (bucketIndex >= 0) cursor.getString(bucketIndex)?.trim().orEmpty() else ""
-                    val key = relative.ifBlank { bucket }
-                    if (key.isBlank()) continue
-                    val uri = MEDIA_PREFIX + URLEncoder.encode(key, "UTF-8")
+                    // Group by the top-level folder (Music/, Download/, ...) so
+                    // the library shows one pill per library root, not per album.
+                    val root = if (relative.isNotBlank()) {
+                        relative.substringBefore('/').trimEnd('/') + "/"
+                    } else {
+                        bucket
+                    }
+                    if (root.isBlank()) continue
+                    val uri = MEDIA_PREFIX + URLEncoder.encode(root, "UTF-8")
                     if (found.containsKey(uri)) continue
-                    val name = relative.trimEnd('/').substringAfterLast('/')
-                        .ifBlank { bucket }
-                        .ifBlank { "Music" }
+                    val name = root.trimEnd('/').ifBlank { bucket }.ifBlank { "Music" }
                     found[uri] = LocalFolder(uri, name)
                 }
             }
@@ -342,18 +346,19 @@ class LocalLibrary(
             MediaStore.Audio.Media.BUCKET_DISPLAY_NAME,
         )
         val hasPath = key.contains('/')
-        val selection = if (hasPath) {
-            "${MediaStore.Audio.Media.RELATIVE_PATH} = ?"
-        } else {
-            "${MediaStore.Audio.Media.BUCKET_DISPLAY_NAME} = ?"
+        val selection = when {
+            key.endsWith("/") -> "${MediaStore.Audio.Media.RELATIVE_PATH} LIKE ?"
+            hasPath -> "${MediaStore.Audio.Media.RELATIVE_PATH} = ?"
+            else -> "${MediaStore.Audio.Media.BUCKET_DISPLAY_NAME} = ?"
         }
+        val argument = if (key.endsWith("/")) "$key%" else key
         val out = ArrayList<LocalTrack>()
         runCatching {
             context.contentResolver.query(
                 MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
                 projection,
                 selection,
-                arrayOf(key),
+                arrayOf(argument),
                 "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC",
             )?.use { cursor ->
                 val idIndex = cursor.getColumnIndex(MediaStore.Audio.Media._ID)
