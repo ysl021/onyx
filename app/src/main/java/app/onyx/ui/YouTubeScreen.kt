@@ -303,18 +303,7 @@ fun YouTubeScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 18.dp)
-                .clip(RoundedCornerShape(22.dp))
-                .background(
-                    Brush.verticalGradient(
-                        listOf(
-                            OnyxWhite.copy(alpha = 0.07f),
-                            OnyxWhite.copy(alpha = 0.02f),
-                        ),
-                    ),
-                )
-                .border(1.dp, OnyxWhite.copy(alpha = 0.09f), RoundedCornerShape(22.dp))
-                .padding(horizontal = 12.dp, vertical = 8.dp),
+                .padding(horizontal = 18.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
