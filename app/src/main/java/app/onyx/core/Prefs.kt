@@ -267,6 +267,18 @@ class Prefs(private val context: Context) {
 
     suspend fun clearYouTubeHistory() = edit { it.remove(K.youtubeHistory) }
 
+    suspend fun removeYouTubeQuery(query: String) {
+        edit { prefs ->
+            val current = (prefs[K.youtubeHistory] ?: "")
+                .split('\n')
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+            prefs[K.youtubeHistory] = current
+                .filterNot { it.equals(query.trim(), ignoreCase = true) }
+                .joinToString("\n")
+        }
+    }
+
     suspend fun addYouTubeDownloads(items: List<YouTubeDownloadEntry>) {
         if (items.isEmpty()) return
         edit { prefs ->

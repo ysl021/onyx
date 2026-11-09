@@ -141,9 +141,10 @@ fun GlassCard(
     shape: Shape = RoundedCornerShape(28.dp),
     strong: Boolean = false,
     padding: Dp = 18.dp,
+    hazeState: HazeState? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    GlassSurface(modifier = modifier, shape = shape, strong = strong) {
+    GlassSurface(modifier = modifier, shape = shape, strong = strong, hazeState = hazeState) {
         Column(modifier = Modifier.padding(padding), content = content)
     }
 }

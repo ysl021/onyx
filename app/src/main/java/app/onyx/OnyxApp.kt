@@ -3,6 +3,7 @@ package app.onyx
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -120,7 +121,17 @@ fun OnyxApp() {
     // AmbientBackdrop for a frame — that was the visible flash.
     val rawArt = nowPlaying.art ?: nowPlaying.artUri
     var stickyArt by remember { mutableStateOf<Any?>(rawArt) }
-    LaunchedEffect(rawArt) { if (rawArt != null) stickyArt = rawArt }
+    LaunchedEffect(rawArt) {
+        // Copy the bitmap: players recycle their metadata bitmaps on pause and
+        // between tracks, which made the blurred background go black for a frame.
+        stickyArt = when (val art = rawArt) {
+            is android.graphics.Bitmap -> runCatching {
+                art.copy(art.config ?: android.graphics.Bitmap.Config.ARGB_8888, false)
+            }.getOrDefault(art)
+            null -> stickyArt
+            else -> art
+        }
+    }
     val localPlayback by controller.localPlayer.state.collectAsStateWithLifecycle()
     val view = LocalView.current
     val panelScope = rememberCoroutineScope()
@@ -253,15 +264,28 @@ fun OnyxApp() {
                     )
                     if (customBg != null) {
                         CustomBackdrop(art = customBg, blurPercent = blurMap[pageKey] ?: 0)
-                    } else if (prefs.coverBackdrop && pageCover && (stickyArt) != null) {
+                    } else if (prefs.coverBackdrop && pageCover) {
                         val f = (prefs.coverIntensity / 100f).coerceIn(0f, 1f)
-                        BlurredBackdrop(
-                            art = stickyArt,
-                            artAlpha = 0.22f + 0.68f * f,
-                            scrimTop = 0.78f - 0.42f * f,
-                            scrimMid = 0.62f - 0.32f * f,
-                            scrimBottom = 0.42f - 0.28f * f,
-                        )
+                        // Crossfade instead of swapping the image: the old cover
+                        // stays visible while the new one decodes, so switching
+                        // tracks (and pausing) no longer flashes black.
+                        Crossfade(
+                            targetState = stickyArt,
+                            animationSpec = tween(650),
+                            label = "backdrop",
+                        ) { art ->
+                            if (art != null) {
+                                BlurredBackdrop(
+                                    art = art,
+                                    artAlpha = 0.22f + 0.68f * f,
+                                    scrimTop = 0.78f - 0.42f * f,
+                                    scrimMid = 0.62f - 0.32f * f,
+                                    scrimBottom = 0.42f - 0.28f * f,
+                                )
+                            } else {
+                                AmbientBackdrop()
+                            }
+                        }
                     } else {
                         AmbientBackdrop()
                     }
@@ -307,6 +331,7 @@ fun OnyxApp() {
                                 Tab.YouTube -> YouTubeScreen(
                                     controller = controller,
                                     onBack = { tab = Tab.Player },
+                                    hazeState = hazeState,
                                 )
                                 Tab.Visualizer -> VisualizerScreen(controller = controller)
                                 Tab.Settings -> SettingsScreen(

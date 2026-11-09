@@ -13,11 +13,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
@@ -37,6 +40,9 @@ data class LocalTrack(
     val folderUri: String = "",
     val folderName: String = "",
     val custom: Boolean = false,
+    /** Last-modified time and size, used to skip unchanged files on rescans. */
+    val modified: Long = 0L,
+    val size: Long = 0L,
 )
 
 @Serializable
@@ -171,14 +177,34 @@ class LocalLibrary(
                 collect(root, folder, files)
             }
             val tracks = ArrayList<LocalTrack>(files.size)
-            files.forEachIndexed { index, pending ->
-                readTrack(pending.file, pending.folder)?.let { tracks += it }
-                if (index % 20 == 0) {
-                    _state.value = _state.value.copy(
-                        progress = if (files.isEmpty()) 0 else index * 100 / files.size,
-                    )
-                    yield()
+            val cachedByUri = rawTracks.associateBy { it.uri }
+            var processed = 0
+            // Metadata reading is the slow part; run a few files in parallel and
+            // reuse cached entries whose size and mtime did not change.
+            for (batch in files.chunked(24)) {
+                val results = withContext(Dispatchers.IO) {
+                    batch.map { pending ->
+                        async {
+                            val uri = pending.file.uri.toString()
+                            val cached = cachedByUri[uri]
+                            val modified = pending.file.lastModified()
+                            val size = pending.file.length()
+                            if (cached != null && cached.modified > 0L &&
+                                cached.modified == modified && cached.size == size
+                            ) {
+                                cached
+                            } else {
+                                readTrack(pending.file, pending.folder, modified, size)
+                            }
+                        }
+                    }.awaitAll()
                 }
+                results.filterNotNull().forEach { tracks += it }
+                processed += batch.size
+                _state.value = _state.value.copy(
+                    progress = if (files.isEmpty()) 0 else processed * 100 / files.size,
+                )
+                yield()
             }
             val sorted = tracks
                 .distinctBy { it.id }
@@ -215,7 +241,12 @@ class LocalLibrary(
         }
     }
 
-    private fun readTrack(file: DocumentFile, folder: LocalFolder): LocalTrack? {
+    private fun readTrack(
+        file: DocumentFile,
+        folder: LocalFolder,
+        modified: Long = file.lastModified(),
+        size: Long = file.length(),
+    ): LocalTrack? {
         val uri = file.uri
         val fallback = file.name?.substringBeforeLast('.') ?: return null
         val retriever = MediaMetadataRetriever()
@@ -253,6 +284,8 @@ class LocalLibrary(
                 artPath = art,
                 folderUri = folder.uri,
                 folderName = folder.name,
+                modified = modified,
+                size = size,
             )
         } catch (_: Exception) {
             null

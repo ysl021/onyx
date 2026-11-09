@@ -38,11 +38,15 @@ import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.VideoLibrary
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -62,6 +66,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.chrisbanes.haze.HazeState
+import dev.chrisbanes.haze.HazeStyle
+import dev.chrisbanes.haze.hazeChild
 import app.onyx.AppController
 import app.onyx.core.PrefsData
 import app.onyx.ui.components.AsyncArt
@@ -95,6 +102,7 @@ private const val MODE_LINK = "link"
 fun YouTubeScreen(
     controller: AppController,
     onBack: () -> Unit,
+    hazeState: dev.chrisbanes.haze.HazeState? = null,
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -122,6 +130,22 @@ fun YouTubeScreen(
     var manualText by YouTubeSession.manualText
     var queueOpen by rememberSaveable { mutableStateOf(false) }
     var historyOpen by rememberSaveable { mutableStateOf(false) }
+
+    // The mode strip used to sit on the raw backdrop while every other panel
+    // was blurred. Give it the same haze treatment as the rest of ONYX.
+    val modeHaze = if (hazeState != null) {
+        Modifier.hazeChild(
+            state = hazeState,
+            shape = RoundedCornerShape(22.dp),
+            style = HazeStyle(
+                tint = Color.Black.copy(alpha = 0.10f),
+                blurRadius = 36.dp,
+                noiseFactor = 0.02f,
+            ),
+        )
+    } else {
+        Modifier
+    }
 
     fun deleteSaved(entry: app.onyx.core.YouTubeDownloadEntry) {
         scope.launch {
@@ -295,7 +319,9 @@ fun YouTubeScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 10.dp),
+                .padding(horizontal = 18.dp)
+                .then(modeHaze)
+                .padding(horizontal = 12.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -336,6 +362,7 @@ fun YouTubeScreen(
             DownloadsCard(
                 jobs = downloads.jobs,
                 busy = downloads.busy,
+                hazeState = hazeState,
                 modifier = Modifier.padding(horizontal = 18.dp, vertical = 4.dp),
                 onClear = { YouTubeDownloads.clearFinished() },
             )
@@ -389,6 +416,7 @@ fun YouTubeScreen(
                     controller.startYouTubeWhole(currentPreview, prefs.youtubeFolderUri)
                 },
                 onPickFolder = { folderPicker.launch(null) },
+                hazeState = hazeState,
                 modifier = Modifier.weight(1f),
             )
         } else {
@@ -533,7 +561,13 @@ fun YouTubeScreen(
                                 }
                             }
                             items(prefs.youtubeHistory) { entry ->
-                                HistoryRow(text = entry, onClick = { query = entry })
+                                HistoryRow(
+                                    text = entry,
+                                    onDelete = {
+                                        scope.launch { controller.prefs.removeYouTubeQuery(entry) }
+                                    },
+                                    onClick = { query = entry },
+                                )
                             }
                             item { Spacer(Modifier.height(6.dp)) }
                         }
@@ -595,7 +629,7 @@ fun YouTubeScreen(
                     }
                 } else {
                     Spacer(Modifier.height(16.dp))
-                    EmptyLinkHint()
+                    EmptyLinkHint(hazeState = hazeState)
                 }
             }
         }
@@ -622,8 +656,8 @@ fun YouTubeScreen(
 }
 
 @Composable
-private fun EmptyLinkHint() {
-    GlassCard(modifier = Modifier.fillMaxWidth()) {
+private fun EmptyLinkHint(hazeState: dev.chrisbanes.haze.HazeState? = null) {
+    GlassCard(modifier = Modifier.fillMaxWidth(), hazeState = hazeState) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(
                 Icons.Rounded.VideoLibrary,
@@ -682,31 +716,66 @@ private fun StepRow(number: Int, text: String) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun HistoryRow(text: String, onClick: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .clickable { onClick() }
-            .padding(horizontal = 6.dp, vertical = 9.dp),
-        verticalAlignment = Alignment.CenterVertically,
+private fun HistoryRow(text: String, onDelete: () -> Unit, onClick: () -> Unit) {
+    val dismiss = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            if (value == SwipeToDismissBoxValue.EndToStart) {
+                onDelete()
+                true
+            } else {
+                false
+            }
+        },
+    )
+    SwipeToDismissBox(
+        state = dismiss,
+        enableDismissFromStartToEnd = false,
+        backgroundContent = {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color(0xFF2A1013)),
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                Icon(
+                    Icons.Rounded.Delete,
+                    contentDescription = tr("Удалить запрос", "Delete query"),
+                    tint = OnyxWhite.copy(alpha = 0.8f),
+                    modifier = Modifier
+                        .padding(end = 20.dp)
+                        .size(18.dp),
+                )
+            }
+        },
     ) {
-        Icon(
-            Icons.Rounded.History,
-            contentDescription = null,
-            tint = OnyxFaint,
-            modifier = Modifier.size(16.dp),
-        )
-        Spacer(Modifier.width(10.dp))
-        Text(
-            text = text,
-            color = OnyxWhite.copy(alpha = 0.85f),
-            fontSize = 13.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(Color(0xF508080A))
+                .clickable { onClick() }
+                .padding(horizontal = 6.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Rounded.History,
+                contentDescription = null,
+                tint = OnyxFaint,
+                modifier = Modifier.size(16.dp),
+            )
+            Spacer(Modifier.width(10.dp))
+            Text(
+                text = text,
+                color = OnyxWhite.copy(alpha = 0.85f),
+                fontSize = 13.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+        }
     }
 }
 
@@ -779,6 +848,7 @@ private fun PreviewPanel(
     onDownload: () -> Unit,
     onDownloadWhole: () -> Unit,
     onPickFolder: () -> Unit,
+    hazeState: dev.chrisbanes.haze.HazeState? = null,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier.fillMaxWidth()) {
@@ -786,6 +856,7 @@ private fun PreviewPanel(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 18.dp),
+            hazeState = hazeState,
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 AsyncArt(
@@ -983,58 +1054,57 @@ private fun PreviewPanel(
                     )
                 }
             }
-            item { Spacer(Modifier.height(96.dp)) }
+            item { Spacer(Modifier.height(8.dp)) }
         }
 
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 18.dp)
                 .padding(top = 8.dp, bottom = 104.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Column(Modifier.weight(1f)) {
-                Text(
-                    tr("Выбрано: ${selected.size}", "Selected: ${selected.size}"),
-                    color = OnyxWhite,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                Text(
-                    if (folderReady) {
-                        tr("Шаг 3 · папка выбрана", "Step 3 · folder ready")
-                    } else {
-                        tr("Шаг 3 · выбери папку", "Step 3 · pick a folder")
-                    },
-                    color = OnyxFaint,
-                    fontSize = 10.sp,
-                )
-            }
-            GlassPill(
-                text = tr("Целиком", "Whole"),
-                selected = false,
-                enabled = folderReady && !busy,
-                onClick = onDownloadWhole,
+            Text(
+                text = tr(
+                    "Выбрано: ${selected.size} · " +
+                        if (folderReady) "папка выбрана" else "выбери папку",
+                    "Selected: ${selected.size} · " +
+                        if (folderReady) "folder ready" else "pick a folder",
+                ),
+                color = OnyxWhite.copy(alpha = 0.9f),
+                fontSize = 11.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
-            if (!folderReady) {
+            Spacer(Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 GlassPill(
-                    text = tr("Папка", "Folder"),
+                    text = tr("Целиком", "Whole"),
                     selected = false,
-                    onClick = onPickFolder,
+                    modifier = Modifier.weight(1f),
+                    enabled = folderReady && !busy,
+                    onClick = onDownloadWhole,
+                )
+                if (!folderReady) {
+                    GlassPill(
+                        text = tr("Папка", "Folder"),
+                        selected = false,
+                        modifier = Modifier.weight(1f),
+                        onClick = onPickFolder,
+                    )
+                }
+                GlassPill(
+                    text = tr("Скачать", "Download"),
+                    selected = true,
+                    modifier = Modifier.weight(1f),
+                    icon = Icons.Rounded.Download,
+                    enabled = selected.isNotEmpty() && folderReady && !busy,
+                    onClick = onDownload,
                 )
             }
-            GlassPill(
-                text = if (selected.isEmpty()) {
-                    tr("Скачать", "Download")
-                } else {
-                    tr("Скачать ${selected.size}", "Download ${selected.size}")
-                },
-                selected = true,
-                icon = Icons.Rounded.Download,
-                enabled = selected.isNotEmpty() && folderReady && !busy,
-                onClick = onDownload,
-            )
         }
     }
 }
@@ -1044,6 +1114,7 @@ private fun DownloadsCard(
     jobs: List<DownloadJob>,
     busy: Boolean,
     modifier: Modifier = Modifier,
+    hazeState: dev.chrisbanes.haze.HazeState? = null,
     onClear: () -> Unit,
 ) {
     val active = jobs.filter { it.status != JobStatus.Done && it.status != JobStatus.Error }
@@ -1057,7 +1128,7 @@ private fun DownloadsCard(
             .toFloat()
     }
 
-    GlassCard(modifier = modifier.fillMaxWidth(), padding = 14.dp) {
+    GlassCard(modifier = modifier.fillMaxWidth(), padding = 14.dp, hazeState = hazeState) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             SectionLabel(
                 if (busy) {

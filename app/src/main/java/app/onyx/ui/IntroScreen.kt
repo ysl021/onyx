@@ -135,7 +135,6 @@ private fun IconStage(index: Int, progress: Float) {
     ) {
         Canvas(Modifier.fillMaxSize()) {
             drawParticles(progress, size.width, size.height)
-            drawHalo(progress, size.width, size.height)
         }
         Canvas(Modifier.fillMaxSize()) {
             drawDecor(index, progress, size.width, size.height)

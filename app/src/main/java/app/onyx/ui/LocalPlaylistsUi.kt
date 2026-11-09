@@ -174,7 +174,7 @@ fun MyPlaylistsContent(
             )
             Spacer(Modifier.width(8.dp))
             GlassPill(
-                text = tr("+ Плейлист", "+ Playlist"),
+                text = tr("Плейлист", "Playlist"),
                 selected = true,
                 icon = Icons.Rounded.Add,
                 onClick = {
