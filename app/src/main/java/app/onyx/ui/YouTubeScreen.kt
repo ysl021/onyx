@@ -522,7 +522,7 @@ fun YouTubeScreen(
                     LazyColumn(
                         modifier = Modifier
                             .weight(1f)
-                            .topFade(pageBlack),
+                            .edgeFade(pageBlack),
                         contentPadding = PaddingValues(top = 12.dp, bottom = 132.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
@@ -983,7 +983,7 @@ private fun PreviewPanel(
         LazyColumn(
             modifier = Modifier
                 .weight(1f)
-                .topFade(pageBlack),
+                .edgeFade(pageBlack),
             contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 4.dp, bottom = 12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
@@ -1484,25 +1484,43 @@ private fun statusLabel(status: JobStatus): String = when (status) {
 }
 
 /**
- * Softens the top edge of a scrolling list: content fades into the page colour
- * instead of being cut off abruptly under the header.
+ * Softens both edges of a scrolling list: content fades into the page colour
+ * instead of being cut off abruptly under the header or above the bottom bar.
  */
-private fun Modifier.topFade(color: Color, height: Dp = 72.dp): Modifier =
-    drawWithContent {
-        drawContent()
-        drawRect(
-            brush = Brush.verticalGradient(
-                colors = listOf(
-                    color.copy(alpha = 0.97f),
-                    color.copy(alpha = 0.55f),
-                    Color.Transparent,
-                ),
-                startY = 0f,
-                endY = height.toPx(),
+private fun Modifier.edgeFade(
+    color: Color,
+    top: Dp = 72.dp,
+    bottom: Dp = 64.dp,
+): Modifier = drawWithContent {
+    drawContent()
+    val topPx = top.toPx()
+    val bottomPx = bottom.toPx()
+    drawRect(
+        brush = Brush.verticalGradient(
+            colors = listOf(
+                color.copy(alpha = 0.97f),
+                color.copy(alpha = 0.55f),
+                Color.Transparent,
             ),
-            size = Size(size.width, height.toPx()),
-        )
-    }
+            startY = 0f,
+            endY = topPx,
+        ),
+        size = Size(size.width, topPx),
+    )
+    drawRect(
+        brush = Brush.verticalGradient(
+            colors = listOf(
+                Color.Transparent,
+                color.copy(alpha = 0.55f),
+                color.copy(alpha = 0.97f),
+            ),
+            startY = size.height - bottomPx,
+            endY = size.height,
+        ),
+        topLeft = androidx.compose.ui.geometry.Offset(0f, size.height - bottomPx),
+        size = Size(size.width, bottomPx),
+    )
+}
 
 /** mm:ss for short clips, h:mm:ss for long mixes. */
 internal fun fmtTime(ms: Long): String {
