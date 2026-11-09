@@ -42,10 +42,17 @@ In ONYX: **Settings → Discord**:
 
 - app name **ONYX**, header **Listening to ONYX**;
 - track title, `artist • album`;
-- cover art for Spotify tracks (via oEmbed), otherwise the `onyx_large` asset;
+- **cover art**: Spotify oEmbed for Spotify tracks, otherwise a Deezer/iTunes
+  lookup by artist and title (the phone's local artwork cannot be used because
+  Discord fetches images server-side and cannot reach a LAN address);
 - **progress bar** with elapsed/remaining time (built from `start` + `end`);
 - `playing`/`pause` badge;
 - one button: **Открыть в Spotify** or **ONYX — GitHub**.
+
+Updates are sent every 5 seconds while playing, so the bar stays smooth, and
+immediately when the track, play state or position changes. Bursts are
+coalesced in the bridge and the newest state always wins, which keeps the title
+and duration from sticking to the previous track.
 
 The progress bar needs both timestamps. The app sends `positionMs` together
 with `durationMs`; the bridge turns them into `start = now − position` and

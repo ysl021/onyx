@@ -117,8 +117,8 @@ class DiscordBridge(
     }
 
     private companion object {
-        /** Discord accepts ~5 presence updates per 20 s; this stays well under it. */
-        const val HEARTBEAT_MS = 15_000L
+        /** Discord accepts ~5 presence updates per 20 s; 5 s keeps the bar smooth. */
+        const val HEARTBEAT_MS = 5_000L
 
         /** A failed POST is retried quickly in case the PC bridge was just started. */
         const val RETRY_MS = 5_000L
