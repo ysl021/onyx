@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <base-config cleartextTrafficPermitted="false" />
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">127.0.0.1</domain>
-        <domain includeSubdomains="false">localhost</domain>
-    </domain-config>
+    <!--
+      The Discord PC bridge lives on the user's LAN and speaks plain HTTP to a
+      user-entered IP address, so cleartext has to be allowed here. Everything
+      else in the app (Spotify, YouTube, lyrics) already uses HTTPS.
+    -->
+    <base-config cleartextTrafficPermitted="true" />
 </network-security-config>
