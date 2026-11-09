@@ -1490,7 +1490,7 @@ private fun statusLabel(status: JobStatus): String = when (status) {
 private fun Modifier.edgeFade(
     color: Color,
     top: Dp = 72.dp,
-    bottom: Dp = 64.dp,
+    bottom: Dp = 44.dp,
 ): Modifier = drawWithContent {
     drawContent()
     val topPx = top.toPx()
@@ -1511,8 +1511,8 @@ private fun Modifier.edgeFade(
         brush = Brush.verticalGradient(
             colors = listOf(
                 Color.Transparent,
-                color.copy(alpha = 0.55f),
-                color.copy(alpha = 0.97f),
+                color.copy(alpha = 0.35f),
+                color.copy(alpha = 0.82f),
             ),
             startY = size.height - bottomPx,
             endY = size.height,
