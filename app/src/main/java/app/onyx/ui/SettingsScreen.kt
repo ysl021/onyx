@@ -520,22 +520,9 @@ fun SettingsScreen(
             Spacer(Modifier.height(8.dp))
             Text(
                 tr(
-                    "Для кастомного presence создай Discord Application и пришли Application ID — добавлю его в сборку.",
-                    "For custom presence create a Discord Application and send its Application ID.",
+                    "Rich Presence оформляется на компьютере. Включи мост ниже и укажи IP компьютера.",
+                    "Rich Presence is rendered on the PC. Enable the bridge below and enter the PC IP.",
                 ),
-                color = OnyxFaint,
-                fontSize = 10.sp,
-                lineHeight = 14.sp,
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = "Application ID: ${DiscordConfig.APPLICATION_ID}",
-                color = OnyxFaint,
-                fontSize = 10.sp,
-            )
-            Text(
-                text = "Assets: ${DiscordConfig.LARGE_IMAGE} · ${DiscordConfig.SMALL_IMAGE} · " +
-                    "${DiscordConfig.PLAYING_IMAGE} · ${DiscordConfig.PLAY_IMAGE} · ${DiscordConfig.PAUSE_IMAGE}",
                 color = OnyxFaint,
                 fontSize = 10.sp,
                 lineHeight = 14.sp,
