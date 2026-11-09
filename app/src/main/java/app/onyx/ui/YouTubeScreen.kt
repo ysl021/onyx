@@ -415,9 +415,11 @@ fun YouTubeScreen(
                 onPickFolder = { folderPicker.launch(null) },
                 onListen = {
                     controller.youtubeRadio.start(currentPreview, withRadio = false)
+                    onBack()
                 },
                 onRadio = {
                     controller.youtubeRadio.start(currentPreview, withRadio = true)
+                    onBack()
                 },
                 modifier = Modifier.weight(1f),
             )
