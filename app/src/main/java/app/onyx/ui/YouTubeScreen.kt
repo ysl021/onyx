@@ -59,6 +59,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -66,6 +68,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.Dp
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.chrisbanes.haze.HazeState
@@ -129,6 +132,7 @@ fun YouTubeScreen(
     var manualText by YouTubeSession.manualText
     var queueOpen by rememberSaveable { mutableStateOf(false) }
     var historyOpen by rememberSaveable { mutableStateOf(false) }
+    val pageBlack = app.onyx.ui.theme.LocalOnyx.current.black
 
     fun deleteSaved(entry: app.onyx.core.YouTubeDownloadEntry) {
         scope.launch {
@@ -516,7 +520,9 @@ fun YouTubeScreen(
                         )
                     }
                     LazyColumn(
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .topFade(pageBlack),
                         contentPadding = PaddingValues(top = 12.dp, bottom = 132.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
@@ -829,6 +835,7 @@ private fun PreviewPanel(
     onPickFolder: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val pageBlack = app.onyx.ui.theme.LocalOnyx.current.black
     Column(modifier.fillMaxWidth()) {
         GlassCard(
             modifier = Modifier
@@ -974,7 +981,9 @@ private fun PreviewPanel(
         Spacer(Modifier.height(10.dp))
 
         LazyColumn(
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .topFade(pageBlack),
             contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 4.dp, bottom = 12.dp),
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
@@ -1473,6 +1482,27 @@ private fun statusLabel(status: JobStatus): String = when (status) {
     JobStatus.Done -> tr("готово", "done")
     JobStatus.Error -> tr("ошибка", "error")
 }
+
+/**
+ * Softens the top edge of a scrolling list: content fades into the page colour
+ * instead of being cut off abruptly under the header.
+ */
+private fun Modifier.topFade(color: Color, height: Dp = 72.dp): Modifier =
+    drawWithContent {
+        drawContent()
+        drawRect(
+            brush = Brush.verticalGradient(
+                colors = listOf(
+                    color.copy(alpha = 0.97f),
+                    color.copy(alpha = 0.55f),
+                    Color.Transparent,
+                ),
+                startY = 0f,
+                endY = height.toPx(),
+            ),
+            size = Size(size.width, height.toPx()),
+        )
+    }
 
 /** mm:ss for short clips, h:mm:ss for long mixes. */
 internal fun fmtTime(ms: Long): String {
