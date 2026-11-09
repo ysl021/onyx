@@ -11,6 +11,8 @@ data class NowPlaying(
     val art: Bitmap? = null,
     val mediaId: String = "",
     val durationMs: Long = 0L,
+    /** Playback position, used by the Discord bridge for the progress bar. */
+    val positionMs: Long = 0L,
     val isPlaying: Boolean = false,
     val canSeek: Boolean = false,
     val canSkip: Boolean = false,

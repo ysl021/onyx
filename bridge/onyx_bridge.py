@@ -10,84 +10,189 @@ Install:
 Run:
     python bridge/onyx_bridge.py
 
-Then in ONYX: Settings -> Integrations -> Discord -> enable PC bridge and enter
-this computer's LAN IP (for example 192.168.1.42) and port 8787.
+Then in ONYX: Settings -> Discord -> enable the PC bridge and enter this
+computer's LAN IP (for example 192.168.1.42) and port 8787.
+
+The Android app sends the playback position too, so Discord gets both
+`start` and `end` timestamps and draws the real progress bar.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
+import threading
 import time
+import urllib.parse
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 try:
     from pypresence import Presence
+    from pypresence.types import ActivityType
 except ImportError:
     raise SystemExit("Install pypresence first: pip install pypresence")
 
 APP_ID = "1568847197397717073"
 GITHUB = "https://github.com/ysl021/onyx"
-PORT = 8787
+DEFAULT_PORT = 8787
+
 IDLE_CLEAR_SECONDS = 90
+RECONNECT_SECONDS = 10
+MIN_UPDATE_SECONDS = 4.0
 
 presence = Presence(APP_ID)
+ipc_lock = threading.Lock()
+state_lock = threading.Lock()
+
 connected = False
 last_update = 0.0
-last_state = None
+last_signature: tuple | None = None
+last_track: dict | None = None
+art_cache: dict[str, str | None] = {}
+
+
+def log(message: str) -> None:
+    print(time.strftime("[%H:%M:%S] ") + message, flush=True)
 
 
 def ensure_connected() -> bool:
     global connected
-    if connected:
-        return True
-    try:
-        presence.connect()
-        connected = True
-        print("Connected to Discord IPC")
-        return True
-    except Exception as exc:  # Discord is not running
-        print(f"Discord IPC unavailable: {exc}")
+    with ipc_lock:
+        if connected:
+            return True
+        try:
+            presence.connect()
+            connected = True
+            log("connected to Discord IPC")
+        except Exception as exc:  # Discord is not running yet
+            connected = False
+            log(f"Discord IPC unavailable: {exc}")
+        return connected
+
+
+def drop_connection(reason: str) -> None:
+    global connected
+    with ipc_lock:
         connected = False
-        return False
+    log(f"Discord IPC lost: {reason}")
 
 
-def update(data: dict) -> None:
-    global last_update, last_state
-    last_update = time.time()
-    last_state = data
-    if not ensure_connected():
+def spotify_cover(url: str) -> str | None:
+    """Spotify's public oEmbed endpoint gives a ready https cover URL."""
+    if url in art_cache:
+        return art_cache[url]
+    cover = None
+    try:
+        endpoint = "https://open.spotify.com/oembed?url=" + urllib.parse.quote(url, safe="")
+        request = urllib.request.Request(endpoint, headers={"User-Agent": "ONYX/1.0"})
+        with urllib.request.urlopen(request, timeout=3) as response:
+            cover = json.load(response).get("thumbnail_url")
+    except Exception:
+        cover = None
+    art_cache[url] = cover
+    return cover
+
+
+def clear_presence() -> None:
+    global connected, last_signature, last_update, last_track
+    with ipc_lock:
+        if connected:
+            try:
+                presence.clear()
+            except Exception as exc:
+                connected = False
+                log(f"clear failed: {exc}")
+    with state_lock:
+        last_signature = None
+        last_update = 0.0
+        last_track = None
+
+
+def apply_presence(data: dict) -> None:
+    global last_signature, last_update, last_track
+
+    if data.get("clear"):
+        log("clear")
+        clear_presence()
         return
 
     title = (data.get("title") or "").strip()
     artist = (data.get("artist") or "").strip()
+    album = (data.get("album") or "").strip()
     playing = bool(data.get("playing"))
-    duration = int(data.get("durationMs") or 0)
-
+    duration = max(0, int(data.get("durationMs") or 0))
+    position = max(0, int(data.get("positionMs") or 0))
+    if duration:
+        position = min(position, duration)
     link = (data.get("url") or GITHUB).strip()
-    label = "Открыть трек" if link.startswith("https://open.spotify.com/") else "ONYX на GitHub"
+
+    if not title:
+        clear_presence()
+        return
+
+    signature = (title, artist, album, playing, duration)
+    now = time.time()
+    with state_lock:
+        if signature == last_signature and now - last_update < MIN_UPDATE_SECONDS:
+            # Same track: Discord keeps its own timer, no need to talk to it again.
+            return
+        last_signature = signature
+        last_update = now
+        last_track = {
+            "title": title,
+            "artist": artist,
+            "album": album,
+            "playing": playing,
+            "positionMs": position,
+            "durationMs": duration,
+            "url": link,
+        }
+
+    if not ensure_connected():
+        return
+
+    state_line = " • ".join(part for part in (artist, album) if part)[:128]
+    cover = spotify_cover(link) if "open.spotify.com" in link else None
+    is_spotify = "open.spotify.com" in link
 
     args = dict(
-        details=title[:128] or "ONYX",
-        state=(artist[:128] if artist else "music control center"),
-        large_image="onyx_large",
-        large_text="ONYX",
+        activity_type=ActivityType.LISTENING,
+        details=title[:128],
+        state=state_line or "ONYX",
+        large_image=cover or "onyx_large",
+        large_text=(album or "ONYX")[:128],
         small_image="playing" if playing else "pause",
         small_text="ONYX",
-        buttons=[{"label": label, "url": link}],
+        buttons=[{
+            "label": "Открыть в Spotify" if is_spotify else "ONYX — GitHub",
+            "url": link,
+        }],
     )
-    if playing and duration > 0:
-        args["start"] = int(time.time())
-    try:
-        presence.update(**args)
-        print(f"Presence: {title} — {artist} ({'playing' if playing else 'paused'})")
-    except Exception as exc:
-        print(f"Update failed: {exc}")
-        global connected
-        connected = False
+
+    # Both timestamps are what make Discord draw the progress bar.
+    if playing:
+        start = int(now - position / 1000)
+        args["start"] = start
+        if duration > 0:
+            args["end"] = int(start + duration / 1000)
+
+    with ipc_lock:
+        if not connected:
+            return
+        try:
+            presence.update(**args)
+            log(
+                f"{title} — {artist or '?'} "
+                f"({'playing' if playing else 'paused'}, "
+                f"{position // 1000}s/{duration // 1000}s)"
+            )
+        except Exception as exc:
+            drop_connection(str(exc))
 
 
 class Handler(BaseHTTPRequestHandler):
-    def do_POST(self):
+    def do_POST(self) -> None:
         if self.path != "/presence":
             self.send_error(404)
             return
@@ -98,42 +203,82 @@ class Handler(BaseHTTPRequestHandler):
         except Exception:
             self.send_error(400)
             return
-        update(data)
+        threading.Thread(target=apply_presence, args=(data,), daemon=True).start()
         self.send_response(204)
         self.end_headers()
 
-    def do_GET(self):
+    def do_GET(self) -> None:
+        if self.path.startswith("/health"):
+            with state_lock:
+                payload = {
+                    "connected": connected,
+                    "track": last_track,
+                }
+            body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        body = b"ONYX bridge is running"
         self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(b"ONYX bridge is running")
+        self.wfile.write(body)
 
-    def log_message(self, fmt, *args):
+    def log_message(self, fmt, *args) -> None:
         pass
 
 
-if __name__ == "__main__":
-    print(f"ONYX bridge listening on 0.0.0.0:{PORT}")
-    print("Phone and PC must be on the same Wi-Fi network.")
-    server = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
+def reconnect_loop() -> None:
+    while True:
+        if not connected:
+            if ensure_connected():
+                with state_lock:
+                    track = last_track
+                    last_signature = None
+                if track:
+                    apply_presence(track)
+        time.sleep(RECONNECT_SECONDS)
 
-    def idle_loop():
-        while True:
-            time.sleep(5)
-            if connected and last_update and time.time() - last_update > IDLE_CLEAR_SECONDS:
-                try:
-                    presence.clear()
-                except Exception:
-                    pass
 
-    import threading
+def idle_loop() -> None:
+    while True:
+        time.sleep(5)
+        with state_lock:
+            stale = last_update and time.time() - last_update > IDLE_CLEAR_SECONDS
+        if stale:
+            log("phone went quiet, clearing presence")
+            clear_presence()
 
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="ONYX Discord Rich Presence bridge")
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    parser.add_argument("--host", default="0.0.0.0")
+    args = parser.parse_args()
+
+    threading.Thread(target=reconnect_loop, daemon=True).start()
     threading.Thread(target=idle_loop, daemon=True).start()
+
+    server = ThreadingHTTPServer((args.host, args.port), Handler)
+    log(f"ONYX bridge listening on {args.host}:{args.port}")
+    log("Phone and PC must be on the same Wi-Fi network.")
+    log("Discord desktop must be running.")
+
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        pass
+        log("stopping")
     finally:
-        try:
-            presence.close()
-        except Exception:
-            pass
+        server.server_close()
+        with ipc_lock:
+            try:
+                presence.close()
+            except Exception:
+                pass
+
+
+if __name__ == "__main__":
+    main()

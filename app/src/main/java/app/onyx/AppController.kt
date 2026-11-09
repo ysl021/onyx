@@ -78,9 +78,18 @@ class AppController private constructor(context: Context) {
         if (track != null && localState.isPlaying) track.toNowPlaying() else mediaState.now
     }.stateIn(scope, SharingStarted.Eagerly, media.state.value.now)
 
+    /**
+     * Live playback position for the Discord bridge. Kept apart from [nowPlaying]
+     * so the UI does not recompose three times a second.
+     */
+    val playbackPosition = combine(media.state, localPlayer.state) { mediaState, localState ->
+        if (localState.current != null && localState.isPlaying) localState.positionMs
+        else mediaState.positionMs
+    }.stateIn(scope, SharingStarted.Eagerly, 0L)
+
     val queue = MutableStateFlow<QueueData?>(null)
     private var queueFetchedAt = 0L
-    val discordBridge = DiscordBridge(prefs, nowPlaying)
+    val discordBridge = DiscordBridge(prefs, nowPlaying, playbackPosition)
 
     // Sleep timer: counts down and pauses playback when it hits zero.
     private val _sleepRemainingMs = MutableStateFlow(0L)

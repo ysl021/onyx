@@ -74,6 +74,7 @@ import app.onyx.buds.BudsService
 import app.onyx.core.CustomTheme
 import app.onyx.core.CustomThemeCodec
 import app.onyx.core.DiscordConfig
+import app.onyx.core.Http
 import app.onyx.core.IconSwitcher
 import app.onyx.ui.components.CircleButton
 import app.onyx.ui.components.CustomBackdrop
@@ -89,7 +90,9 @@ import app.onyx.ui.theme.OnyxLine
 import app.onyx.ui.theme.OnyxSurface
 import app.onyx.ui.theme.OnyxWhite
 import app.onyx.ui.theme.toOnyxColors
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private const val REDIRECT = "http://127.0.0.1:8899/callback"
 
@@ -110,6 +113,7 @@ fun SettingsScreen(
     var bridgePort by remember(prefs.discordBridgePort) {
         mutableStateOf(prefs.discordBridgePort.toString())
     }
+    var bridgeStatus by remember { mutableStateOf("") }
     var showEq by rememberSaveable { mutableStateOf(false) }
     var pendingBgPage by remember { mutableStateOf<String?>(null) }
     var previewBgPage by remember { mutableStateOf<String?>(null) }
@@ -429,10 +433,10 @@ fun SettingsScreen(
             Spacer(Modifier.height(10.dp))
             Text(
                 tr(
-                    "На ПК ONYX 1.0 подключит настоящий Rich Presence: название ONYX, трек и кнопку на GitHub. " +
-                        "На Android Discord не даёт локальный RPC, поэтому доступны Spotify presence и «Поделиться».",
-                    "ONYX 1.0 on desktop will use real Rich Presence: ONYX, track and a GitHub button. " +
-                        "Android Discord does not expose local RPC, so Spotify presence and Share are available.",
+                    "Мост на ПК ставит настоящий Rich Presence: трек, артист, обложка и полоса прогресса. " +
+                        "Запусти bridge/onyx_bridge.py и включи мост ниже.",
+                    "The PC bridge sets real Rich Presence: track, artist, cover and a progress bar. " +
+                        "Run bridge/onyx_bridge.py and enable the bridge below.",
                 ),
                 color = OnyxDim,
                 fontSize = 12.sp,
@@ -535,6 +539,36 @@ fun SettingsScreen(
                 fontSize = 10.sp,
                 lineHeight = 14.sp,
             )
+            Spacer(Modifier.height(10.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                GlassPill(
+                    text = tr("Проверить связь", "Test connection"),
+                    selected = false,
+                    onClick = {
+                        val host = bridgeHost.trim()
+                        val port = bridgePort.toIntOrNull() ?: 8787
+                        if (host.isBlank()) {
+                            bridgeStatus = tr("Сначала укажи IP компьютера", "Enter the PC IP first")
+                        } else {
+                            scope.launch {
+                                bridgeStatus = tr("Проверяю…", "Checking…")
+                                bridgeStatus = withContext(Dispatchers.IO) { pingBridge(host, port) }
+                            }
+                        }
+                    },
+                )
+                if (bridgeStatus.isNotBlank()) {
+                    Text(
+                        text = bridgeStatus,
+                        color = OnyxFaint,
+                        fontSize = 10.sp,
+                        lineHeight = 14.sp,
+                    )
+                }
+            }
         }
 
         GlassCard(modifier = Modifier.fillMaxWidth()) {
@@ -1810,3 +1844,31 @@ private fun decodeBackgrounds(raw: String): Map<String, String> {
 
 private fun encodeBackgrounds(map: Map<String, String>): String =
     map.entries.joinToString("\u001E") { it.key + "\u001F" + it.value }
+
+/**
+ * Short-timeout health check for the LAN bridge behind the Discord card.
+ * Uses its own client so a wrong IP fails in ~2 s instead of the global 12 s.
+ */
+private fun pingBridge(host: String, port: Int): String {
+    val client = okhttp3.OkHttpClient.Builder()
+        .connectTimeout(2, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
+    val url = "http://$host:${port.coerceIn(1, 65535)}/health"
+    return runCatching {
+        val request = okhttp3.Request.Builder().url(url).build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                return@use tr("Мост ответил ошибкой ${response.code}", "Bridge replied ${response.code}")
+            }
+            val body = org.json.JSONObject(response.body?.string().orEmpty())
+            if (body.optBoolean("connected")) {
+                tr("Мост на связи, Discord подключён", "Bridge online, Discord connected")
+            } else {
+                tr("Мост работает, но Discord не запущен", "Bridge online, Discord is not running")
+            }
+        }
+    }.getOrElse {
+        tr("Мост не отвечает — проверь IP, порт и фаервол", "No response — check IP, port and firewall")
+    }
+}
