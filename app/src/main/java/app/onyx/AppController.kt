@@ -334,7 +334,13 @@ private fun LocalTrack.toNowPlaying(): NowPlaying = NowPlaying(
     title = title,
     artist = artist,
     album = album,
-    artUri = artPath?.let { android.net.Uri.fromFile(java.io.File(it)).toString() },
+    artUri = artPath?.let {
+        if (it.startsWith("http://", true) || it.startsWith("https://", true)) {
+            it
+        } else {
+            android.net.Uri.fromFile(java.io.File(it)).toString()
+        }
+    },
     mediaId = id,
     durationMs = durationMs,
     isPlaying = true,

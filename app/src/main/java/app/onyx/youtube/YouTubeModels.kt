@@ -16,6 +16,28 @@ data class YtSearchPage(
     val next: String?,
 )
 
+data class YtArtist(
+    val name: String,
+    val browseId: String,
+    val thumbnailUrl: String?,
+)
+
+data class YtAlbum(
+    val title: String,
+    val browseId: String,
+    val params: String?,
+    val thumbnailUrl: String?,
+    val subtitle: String,
+)
+
+data class YtArtistPage(
+    val artist: YtArtist,
+    val songs: List<YtSearchResult>,
+    val albums: List<YtAlbum>,
+    val singles: List<YtAlbum>,
+    val videos: List<YtSearchResult>,
+)
+
 /** Fully resolved video plus the audio stream that will be downloaded. */
 data class YtVideo(
     val id: String,

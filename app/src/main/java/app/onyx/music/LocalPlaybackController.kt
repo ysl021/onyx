@@ -160,7 +160,15 @@ class LocalPlaybackController(
     fun appendToQueue(tracks: List<LocalTrack>) {
         val c = controller ?: return
         if (tracks.isEmpty()) return
+        val startIndex = c.mediaItemCount
+        val ended = c.playbackState == Player.STATE_ENDED
         c.addMediaItems(tracks.map { it.toMediaItem() })
+        // The radio batch can arrive after the last item ended; continue with
+        // the first appended track instead of leaving the player stopped.
+        if (ended && startIndex > 0) {
+            c.seekToDefaultPosition(startIndex)
+            c.play()
+        }
     }
 
     fun removeAt(index: Int) {
@@ -197,6 +205,7 @@ class LocalPlaybackController(
                     title = media.mediaMetadata.title?.toString().orEmpty(),
                     artist = media.mediaMetadata.artist?.toString().orEmpty(),
                     album = media.mediaMetadata.albumTitle?.toString().orEmpty(),
+                    durationMs = media.mediaMetadata.extras?.getLong("durationMs") ?: 0L,
                     artPath = media.mediaMetadata.artworkUri?.let {
                         if (it.scheme == "file") it.path else it.toString()
                     },
@@ -214,6 +223,7 @@ class LocalPlaybackController(
                         title = media.mediaMetadata.title?.toString().orEmpty(),
                         artist = media.mediaMetadata.artist?.toString().orEmpty(),
                         album = media.mediaMetadata.albumTitle?.toString().orEmpty(),
+                        durationMs = media.mediaMetadata.extras?.getLong("durationMs") ?: 0L,
                         artPath = media.mediaMetadata.artworkUri?.let {
                             if (it.scheme == "file") it.path else it.toString()
                         },
@@ -229,7 +239,10 @@ class LocalPlaybackController(
         )
         val index = c.currentMediaItemIndex
         val currentId = c.currentMediaItem?.mediaId.orEmpty()
+        // Repeat ALL/ONE means the album or playlist loops; do not mix radio
+        // recommendations into it. Only a one-way queue needs more tracks.
         if (currentId.startsWith("yt:") && c.mediaItemCount > 0 &&
+            c.repeatMode == Player.REPEAT_MODE_OFF &&
             index >= c.mediaItemCount - 2
         ) {
             onQueueNearEnd?.invoke()
@@ -273,10 +286,15 @@ private fun LocalTrack.toMediaItem(): MediaItem {
         .setTitle(title)
         .setArtist(artist)
         .setAlbumTitle(album)
+        .setExtras(android.os.Bundle().apply { putLong("durationMs", durationMs) })
         .apply {
             if (!artPath.isNullOrBlank()) {
-                val f = File(artPath)
-                if (f.exists()) setArtworkUri(Uri.fromFile(f))
+                if (artPath.startsWith("http://", true) || artPath.startsWith("https://", true)) {
+                    setArtworkUri(Uri.parse(artPath))
+                } else {
+                    val f = File(artPath)
+                    if (f.exists()) setArtworkUri(Uri.fromFile(f))
+                }
             }
         }
         .build()

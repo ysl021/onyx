@@ -2,15 +2,19 @@ package app.onyx.music
 
 import android.app.PendingIntent
 import android.content.Intent
+import android.net.Uri
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import app.onyx.MainActivity
+import app.onyx.youtube.YouTubeStreamCache
+import java.io.IOException
 
 class LocalPlaybackService : MediaSessionService() {
 
@@ -29,7 +33,20 @@ class LocalPlaybackService : MediaSessionService() {
                     "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
             )
             .setDefaultRequestProperties(mapOf("Referer" to "https://www.youtube.com/"))
-        val dataSource = DefaultDataSource.Factory(this, http)
+        val localSource = DefaultDataSource.Factory(this, http)
+        // `yt://<videoId>` entries are resolved to a direct googlevideo URL
+        // when ExoPlayer opens them. This keeps the whole queue instant: the
+        // expensive extraction happens only for the track being played.
+        val dataSource = ResolvingDataSource.Factory(localSource) { dataSpec ->
+            if (dataSpec.uri.scheme == "yt") {
+                val id = dataSpec.uri.host ?: dataSpec.uri.lastPathSegment.orEmpty()
+                val direct = YouTubeStreamCache.resolveBlocking(id)
+                    ?: throw IOException("Не удалось получить поток YouTube")
+                dataSpec.withUri(Uri.parse(direct))
+            } else {
+                dataSpec
+            }
+        }
         val exo = ExoPlayer.Builder(this)
             .setMediaSourceFactory(DefaultMediaSourceFactory(dataSource))
             .build()

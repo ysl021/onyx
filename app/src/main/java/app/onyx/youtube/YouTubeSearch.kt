@@ -110,30 +110,63 @@ object YouTubeSearch {
                 ?: FALLBACK_MUSIC_CLIENT_VERSION
             musicConfig = Config(apiKey, clientVersion)
 
-            val body = buildString {
-                append("{\"context\":{\"client\":{\"clientName\":\"WEB_REMIX\",\"clientVersion\":\"")
-                append(escape(clientVersion))
-                append("\",\"hl\":\"en\",\"gl\":\"US\"}},\"query\":\"")
-                append(escape(q))
-                append("\",\"params\":\"")
-                append(MUSIC_VIDEOS_PARAM_BASE64)
-                append("\"}")
+            val config = Config(apiKey, clientVersion)
+            // "Songs" returns the official catalogue; "Videos" is full of
+            // sped-up edits and remixes, so it is only a fallback.
+            var response = musicInnerTubePost(
+                buildMusicBody(q, clientVersion, MUSIC_SONGS_PARAM_BASE64),
+                config,
+            )
+            var items = ArrayList<YtSearchResult>()
+            if (response != null) collectMusicItems(response, items)
+            if (items.isEmpty()) {
+                response = musicInnerTubePost(
+                    buildMusicBody(q, clientVersion, MUSIC_VIDEOS_PARAM_BASE64),
+                    config,
+                )
+                if (response != null) collectMusicItems(response, items)
             }
-            val response = musicInnerTubePost(body, Config(apiKey, clientVersion))
-            val videos = ArrayList<YtSearchResult>()
-            if (response != null) collectMusicItems(response, videos)
-            if (videos.isEmpty()) {
+            if (items.isEmpty()) {
                 // Last resort: regular search, so the screen is never empty.
                 return@withContext runCatching { search(q) }
                     .getOrDefault(Result(emptyList(), null))
             }
-            Result(videos, findContinuation(response))
+            Result(rankMusic(items), findContinuation(response))
         }
+
+    private fun buildMusicBody(query: String, clientVersion: String, params: String): String =
+        buildString {
+            append("{\"context\":{\"client\":{\"clientName\":\"WEB_REMIX\",\"clientVersion\":\"")
+            append(escape(clientVersion))
+            append("\",\"hl\":\"en\",\"gl\":\"US\"}},\"query\":\"")
+            append(escape(query))
+            append("\",\"params\":\"")
+            append(params)
+            append("\"}")
+        }
+
+    private fun rankMusic(items: List<YtSearchResult>): List<YtSearchResult> =
+        items.sortedByDescending { scoreMusic(it) }
+
+    private fun scoreMusic(item: YtSearchResult): Int {
+        val title = item.title.lowercase()
+        val channel = item.channel.lowercase()
+        var score = 0
+        if (channel.endsWith(" - topic")) score += 120
+        if (channel.contains("official")) score += 40
+        if (JUNK_MARKERS.any { title.contains(it) }) score -= 120
+        score += when {
+            item.durationMs in 90_000..8 * 60_000L -> 25
+            item.durationMs in 1..60_000L -> -40
+            else -> 0
+        }
+        return score
+    }
 
     private fun fetchMusicPage(query: String): String {
         val encoded = URLEncoder.encode(query, "UTF-8")
         return fetchPage(
-            "https://music.youtube.com/search?q=$encoded&sp=$MUSIC_VIDEOS_PARAM&hl=en&gl=US",
+            "https://music.youtube.com/search?q=$encoded&sp=$MUSIC_SONGS_PARAM&hl=en&gl=US",
             "https://music.youtube.com/",
         )
     }
@@ -511,6 +544,16 @@ object YouTubeSearch {
     private const val FALLBACK_CLIENT_VERSION = "2.20260101.00.00"
     private const val FALLBACK_MUSIC_CLIENT_VERSION = "1.20261104.00.00"
     private const val FALLBACK_MUSIC_API_KEY = "AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX30"
+    private const val MUSIC_SONGS_PARAM = "EgWKAQIIAWoKEAoQAxAEEAkQBQ%3D%3D"
+    private const val MUSIC_SONGS_PARAM_BASE64 = "EgWKAQIIAWoKEAoQAxAEEAkQBQ=="
     private const val MUSIC_VIDEOS_PARAM = "EgWKAQIQAWoKEAoQAxAEEAkQBQ%3D%3D"
     private const val MUSIC_VIDEOS_PARAM_BASE64 = "EgWKAQIQAWoKEAoQAxAEEAkQBQ=="
+
+    private val JUNK_MARKERS = listOf(
+        "speed up", "speedup", "sped up", "spedup", "slowed", "slowed down",
+        "reverb", "nightcore", "8d", "bass boost", "bass boosted", "remix",
+        "mashup", "cover", "instrumental", "karaoke", "acapella", "reaction",
+        "1 hour", "10 hours", "loop", "tiktok", "tik tok", "phonk",
+        "ускоренн", "замедленн", "спидап", "ремикс", "кавер", "минус",
+    )
 }

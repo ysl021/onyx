@@ -38,6 +38,30 @@ data class YouTubeDownloadEntry(
     val savedAt: Long = 0L,
 )
 
+@Serializable
+data class LikedArtist(
+    val name: String,
+    val thumbnailUrl: String? = null,
+    val browseId: String? = null,
+    val at: Long = 0L,
+)
+
+@Serializable
+data class LikedTrack(
+    /** Library track id or `yt:<videoId>`. */
+    val id: String,
+    val videoId: String? = null,
+    val uri: String? = null,
+    val title: String,
+    val artist: String,
+    val album: String = "",
+    val durationMs: Long = 0L,
+    val thumbnailUrl: String? = null,
+    val at: Long = 0L,
+) {
+    val isYouTube: Boolean get() = videoId != null
+}
+
 data class PrefsData(
     val spotifyClientId: String = "",
     val spotifyAccess: String = "",
@@ -82,6 +106,8 @@ data class PrefsData(
     val youtubeHistory: List<String> = emptyList(),
     val youtubeMusicOnly: Boolean = true,
     val youtubeDownloads: List<YouTubeDownloadEntry> = emptyList(),
+    val likedArtists: List<LikedArtist> = emptyList(),
+    val likedTracks: List<LikedTrack> = emptyList(),
 )
 
 class Prefs(private val context: Context) {
@@ -129,6 +155,8 @@ class Prefs(private val context: Context) {
         val youtubeHistory = stringPreferencesKey("youtube_history")
     val youtubeMusicOnly = booleanPreferencesKey("youtube_music_only")
         val youtubeDownloads = stringPreferencesKey("youtube_downloads")
+        val likedArtists = stringPreferencesKey("liked_artists")
+        val likedTracks = stringPreferencesKey("liked_tracks")
     }
 
     val data: Flow<PrefsData> = context.dataStore.data.map { p -> p.toData() }
@@ -190,6 +218,12 @@ class Prefs(private val context: Context) {
         youtubeMusicOnly = this[K.youtubeMusicOnly] ?: true,
         youtubeDownloads = runCatching {
             Json.decodeFromString<List<YouTubeDownloadEntry>>(this[K.youtubeDownloads] ?: "[]")
+        }.getOrDefault(emptyList()),
+        likedArtists = runCatching {
+            Json.decodeFromString<List<LikedArtist>>(this[K.likedArtists] ?: "[]")
+        }.getOrDefault(emptyList()),
+        likedTracks = runCatching {
+            Json.decodeFromString<List<LikedTrack>>(this[K.likedTracks] ?: "[]")
         }.getOrDefault(emptyList()),
     )
 
@@ -307,6 +341,46 @@ class Prefs(private val context: Context) {
                 Json.decodeFromString<List<YouTubeDownloadEntry>>(prefs[K.youtubeDownloads] ?: "[]")
             }.getOrDefault(emptyList())
             prefs[K.youtubeDownloads] = Json.encodeToString(current.filterNot { it.id == id })
+        }
+    }
+
+    suspend fun toggleLikedArtist(artist: LikedArtist) {
+        val clean = artist.name.trim()
+        if (clean.isEmpty()) return
+        edit { prefs ->
+            val current = runCatching {
+                Json.decodeFromString<List<LikedArtist>>(prefs[K.likedArtists] ?: "[]")
+            }.getOrDefault(emptyList())
+            val next = if (current.any { it.name.equals(clean, ignoreCase = true) }) {
+                current.filterNot { it.name.equals(clean, ignoreCase = true) }
+            } else {
+                listOf(artist.copy(name = clean, at = System.currentTimeMillis())) + current
+            }
+            prefs[K.likedArtists] = Json.encodeToString(next)
+        }
+    }
+
+    suspend fun toggleLikedTrack(track: LikedTrack) {
+        if (track.id.isBlank()) return
+        edit { prefs ->
+            val current = runCatching {
+                Json.decodeFromString<List<LikedTrack>>(prefs[K.likedTracks] ?: "[]")
+            }.getOrDefault(emptyList())
+            val next = if (current.any { it.id == track.id }) {
+                current.filterNot { it.id == track.id }
+            } else {
+                listOf(track.copy(at = System.currentTimeMillis())) + current
+            }
+            prefs[K.likedTracks] = Json.encodeToString(next)
+        }
+    }
+
+    suspend fun removeLikedTrack(id: String) {
+        edit { prefs ->
+            val current = runCatching {
+                Json.decodeFromString<List<LikedTrack>>(prefs[K.likedTracks] ?: "[]")
+            }.getOrDefault(emptyList())
+            prefs[K.likedTracks] = Json.encodeToString(current.filterNot { it.id == id })
         }
     }
 

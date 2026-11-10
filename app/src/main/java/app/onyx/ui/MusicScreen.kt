@@ -22,8 +22,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Pause
@@ -44,6 +47,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -62,10 +66,14 @@ import androidx.compose.ui.unit.sp
 import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.onyx.AppController
+import app.onyx.core.LikedArtist
+import app.onyx.core.LikedTrack
+import app.onyx.core.PrefsData
 import app.onyx.music.LocalTrack
 import app.onyx.music.TagWriter
 import app.onyx.ui.components.AsyncArt
 import app.onyx.ui.components.CircleButton
+import app.onyx.ui.components.artModel
 import app.onyx.ui.components.GlassCard
 import app.onyx.ui.components.GlassPill
 import app.onyx.ui.components.GlassSurface
@@ -78,8 +86,14 @@ import app.onyx.ui.theme.OnyxBlack
 import app.onyx.ui.theme.OnyxLine
 import app.onyx.ui.theme.OnyxSurface
 import app.onyx.ui.theme.OnyxWhite
+import app.onyx.youtube.YtSearchResult
+import app.onyx.youtube.YouTubeMusic
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
+
+private enum class MusicView { TRACKS, FAVORITES }
 
 @Composable
 fun MusicScreen(
@@ -87,8 +101,11 @@ fun MusicScreen(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val library by controller.localLibrary.state.collectAsStateWithLifecycle()
     val playback by controller.localPlayer.state.collectAsStateWithLifecycle()
+    val prefs by controller.prefs.data.collectAsStateWithLifecycle(initialValue = PrefsData())
+    var view by remember { mutableStateOf(MusicView.TRACKS) }
     var query by remember { mutableStateOf("") }
     var selectedFolder by remember { mutableStateOf<String?>(null) }
     var editingTrack by remember { mutableStateOf<LocalTrack?>(null) }
@@ -319,6 +336,26 @@ fun MusicScreen(
             }
         }
 
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp)
+                .padding(bottom = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            GlassPill(
+                text = tr("Треки", "Tracks"),
+                selected = view == MusicView.TRACKS,
+                onClick = { view = MusicView.TRACKS },
+            )
+            GlassPill(
+                text = tr("Любимые", "Liked"),
+                selected = view == MusicView.FAVORITES,
+                onClick = { view = MusicView.FAVORITES },
+            )
+        }
+
+        if (view == MusicView.TRACKS) {
         LazyColumn(
             modifier = Modifier.weight(1f),
             contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 4.dp, bottom = 132.dp),
@@ -371,6 +408,12 @@ fun MusicScreen(
                             }
                         },
                         onEdit = { editingTrack = track },
+                        liked = prefs.likedTracks.any { it.id == track.id },
+                        onLike = {
+                            scope.launch {
+                                controller.prefs.toggleLikedTrack(track.toLiked())
+                            }
+                        },
                     )
                 }
             }
@@ -393,6 +436,47 @@ fun MusicScreen(
                     onClick = { picker.launch(null) },
                 )
             }
+        }
+        } else {
+            FavoritesView(
+                artists = prefs.likedArtists,
+                tracks = prefs.likedTracks,
+                onPlayArtist = { artist ->
+                    scope.launch(Dispatchers.IO) {
+                        val found = YouTubeMusic.searchArtist(artist.name)
+                        val page = found?.let { YouTubeMusic.artistPage(it) }
+                        if (page != null && page.songs.isNotEmpty()) {
+                            withContext(Dispatchers.Main) {
+                                controller.youtubeRadio.playQueue(page.songs, artist.name)
+                            }
+                        }
+                    }
+                },
+                onPlayTrack = { liked ->
+                    if (liked.isYouTube) {
+                        val all = prefs.likedTracks.filter { it.videoId != null }
+                        val ordered = all.dropWhile { it.id != liked.id } +
+                            all.takeWhile { it.id != liked.id }
+                        controller.youtubeRadio.playQueue(
+                            ordered.mapNotNull { it.toSearchResult() },
+                            liked.artist,
+                        )
+                    } else {
+                        library.tracks.firstOrNull { it.id == liked.id }?.let { track ->
+                            controller.localPlayer.play(track, library.tracks)
+                        }
+                    }
+                },
+                onRemoveArtist = { artist ->
+                    scope.launch {
+                        controller.prefs.toggleLikedArtist(LikedArtist(artist.name))
+                    }
+                },
+                onRemoveTrack = { liked ->
+                    scope.launch { controller.prefs.removeLikedTrack(liked.id) }
+                },
+                modifier = Modifier.weight(1f),
+            )
         }
 
         editingTrack?.let { track ->
@@ -488,12 +572,187 @@ fun MusicScreen(
 }
 
 @Composable
+private fun FavoritesView(
+    artists: List<LikedArtist>,
+    tracks: List<LikedTrack>,
+    onPlayArtist: (LikedArtist) -> Unit,
+    onPlayTrack: (LikedTrack) -> Unit,
+    onRemoveArtist: (LikedArtist) -> Unit,
+    onRemoveTrack: (LikedTrack) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    LazyColumn(
+        modifier = modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 4.dp, bottom = 132.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        item {
+            SectionLabel(
+                tr("Любимые артисты · ${artists.size}", "Liked artists · ${artists.size}"),
+            )
+        }
+        items(artists, key = { "artist:${it.name}" }) { liked ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .clickable { onPlayArtist(liked) }
+                    .padding(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                AsyncArt(
+                    model = artModel(liked.thumbnailUrl),
+                    modifier = Modifier
+                        .size(48.dp)
+                        .clip(CircleShape),
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        liked.name,
+                        color = OnyxWhite,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        tr("Нажми, чтобы слушать", "Tap to listen"),
+                        color = OnyxFaint,
+                        fontSize = 10.sp,
+                    )
+                }
+                IconButton(
+                    onClick = { onRemoveArtist(liked) },
+                    modifier = Modifier.size(32.dp),
+                ) {
+                    Icon(
+                        Icons.Rounded.Favorite,
+                        contentDescription = tr("Убрать из любимых", "Unlike"),
+                        tint = OnyxWhite,
+                        modifier = Modifier.size(17.dp),
+                    )
+                }
+            }
+        }
+        if (artists.isEmpty()) {
+            item {
+                Text(
+                    tr(
+                        "Лайкни артиста на его странице в YouTube — он появится здесь.",
+                        "Like an artist on their YouTube page and they will appear here.",
+                    ),
+                    color = OnyxFaint,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(vertical = 4.dp),
+                )
+            }
+        }
+
+        item {
+            Spacer(Modifier.height(10.dp))
+            SectionLabel(
+                tr("Любимые треки · ${tracks.size}", "Liked tracks · ${tracks.size}"),
+            )
+        }
+        items(tracks, key = { "track:${it.id}" }) { liked ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .clickable { onPlayTrack(liked) }
+                    .padding(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                AsyncArt(
+                    model = artModel(liked.thumbnailUrl),
+                    modifier = Modifier
+                        .size(46.dp)
+                        .clip(RoundedCornerShape(10.dp)),
+                )
+                Spacer(Modifier.width(11.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        liked.title,
+                        color = OnyxWhite,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
+                        liked.artist.ifBlank { liked.album },
+                        color = OnyxDim,
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Text(
+                    if (liked.durationMs > 0) fmtLocal(liked.durationMs) else "",
+                    color = OnyxFaint,
+                    fontSize = 10.sp,
+                )
+                IconButton(
+                    onClick = { onRemoveTrack(liked) },
+                    modifier = Modifier.size(32.dp),
+                ) {
+                    Icon(
+                        Icons.Rounded.Favorite,
+                        contentDescription = tr("Убрать из любимых", "Unlike"),
+                        tint = OnyxWhite,
+                        modifier = Modifier.size(17.dp),
+                    )
+                }
+            }
+        }
+        if (tracks.isEmpty()) {
+            item {
+                Text(
+                    tr(
+                        "Лайкни трек в поиске YouTube — он появится здесь.",
+                        "Like a track in YouTube search and it will appear here.",
+                    ),
+                    color = OnyxFaint,
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(vertical = 4.dp),
+                )
+            }
+        }
+    }
+}
+
+private fun LocalTrack.toLiked(): LikedTrack = LikedTrack(
+    id = id,
+    uri = uri,
+    title = title,
+    artist = artist,
+    album = album,
+    durationMs = durationMs,
+    thumbnailUrl = artPath,
+)
+
+private fun LikedTrack.toSearchResult(): YtSearchResult? {
+    val video = videoId ?: return null
+    return YtSearchResult(
+        id = video,
+        url = "https://www.youtube.com/watch?v=$video",
+        title = title,
+        channel = artist,
+        durationMs = durationMs,
+        thumbnailUrl = thumbnailUrl,
+    )
+}
+
+@Composable
 private fun TrackRow(
     track: LocalTrack,
     active: Boolean,
     playing: Boolean,
     onClick: () -> Unit,
     onEdit: () -> Unit,
+    liked: Boolean = false,
+    onLike: () -> Unit = {},
     selectMode: Boolean = false,
     selected: Boolean = false,
 ) {
@@ -562,6 +821,17 @@ private fun TrackRow(
                 if (playing) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                 contentDescription = null,
                 tint = OnyxWhite,
+                modifier = Modifier.size(16.dp),
+            )
+        }
+        IconButton(
+            onClick = onLike,
+            modifier = Modifier.size(32.dp),
+        ) {
+            Icon(
+                if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                contentDescription = tr("В любимые", "Like"),
+                tint = if (liked) OnyxWhite else OnyxFaint,
                 modifier = Modifier.size(16.dp),
             )
         }

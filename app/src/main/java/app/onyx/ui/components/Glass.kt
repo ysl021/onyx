@@ -384,6 +384,16 @@ fun BatteryMeter(
     }
 }
 
+/**
+ * Artwork can be a local file or a remote YouTube thumbnail URL. Coil handles
+ * both; wrapping a URL in File() would silently break the image.
+ */
+fun artModel(path: String?): Any? = when {
+    path.isNullOrBlank() -> null
+    path.startsWith("http://", true) || path.startsWith("https://", true) -> path
+    else -> java.io.File(path)
+}
+
 @Composable
 fun AsyncArt(model: Any?, modifier: Modifier = Modifier) {
     val palette = LocalOnyx.current

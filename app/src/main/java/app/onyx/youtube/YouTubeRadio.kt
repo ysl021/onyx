@@ -5,12 +5,8 @@ import app.onyx.music.LocalPlaybackController
 import app.onyx.music.LocalTrack
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import okhttp3.Request
 import java.io.File
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicBoolean
@@ -18,9 +14,10 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * Online streaming with automatic recommendations.
  *
- * The seed video is resolved to a direct audio URL and played by the same
- * ExoPlayer session as local files. Related videos from YouTube become the
- * queue; when it gets close to the end another batch is resolved and appended.
+ * Queue entries use `yt://<videoId>`; ExoPlayer resolves the direct audio URL
+ * when it opens a track. The whole queue can therefore be built instantly and
+ * the next few tracks are resolved in the background, so track changes do not
+ * wait for NewPipe extraction.
  */
 class YouTubeRadio(
     private val scope: CoroutineScope,
@@ -41,18 +38,37 @@ class YouTubeRadio(
         known.clear()
         known += video.id
         lastUrl = video.url
+        loading.set(true)
         scope.launch(Dispatchers.IO) {
-            val first = toTrack(video) ?: return@launch
-            if (!withRadio) {
-                withContext(Dispatchers.Main) { player.play(first, listOf(first)) }
-                return@launch
+            try {
+                val seed = pendingTrack(video)
+                withContext(Dispatchers.Main) { player.play(seed, listOf(seed)) }
+                YouTubeStreamCache.prefetch(video.id)
+                if (!withRadio) return@launch
+                val related = video.related.ifEmpty { YouTubeClient.related(video.url) }
+                    .filter { known.add(it.id) }
+                appendPending(related)
+            } finally {
+                loading.set(false)
             }
-            val related = video.related.ifEmpty { YouTubeClient.related(video.url) }
-            val batch = related.take(8)
-            val tracks = resolve(batch)
-            lastUrl = batch.lastOrNull()?.url ?: video.url
-            withContext(Dispatchers.Main) {
-                player.play(first, listOf(first) + tracks)
+        }
+    }
+
+    /** Plays an explicit list (artist top songs, album) and keeps radio going. */
+    fun playQueue(items: List<YtSearchResult>, fallbackArtist: String) {
+        if (items.isEmpty()) return
+        known.clear()
+        items.forEach { known += it.id }
+        lastUrl = items.first().url
+        loading.set(true)
+        scope.launch(Dispatchers.IO) {
+            try {
+                // The whole album/playlist lands in the queue at once.
+                val tracks = items.map { pendingTrack(it, fallbackArtist) }
+                withContext(Dispatchers.Main) { player.play(tracks.first(), tracks) }
+                items.take(PREFETCH).forEach { YouTubeStreamCache.prefetch(it.id) }
+            } finally {
+                loading.set(false)
             }
         }
     }
@@ -61,64 +77,95 @@ class YouTubeRadio(
         if (!loading.compareAndSet(false, true)) return
         scope.launch(Dispatchers.IO) {
             try {
-                val url = lastUrl ?: return@launch
-                val related = YouTubeClient.related(url)
-                val fresh = related.filter { known.add(it.id) }
-                if (fresh.isEmpty()) return@launch
-                val tracks = resolve(fresh.take(5))
-                if (tracks.isNotEmpty()) {
-                    lastUrl = fresh.last().url
-                    withContext(Dispatchers.Main) { player.appendToQueue(tracks) }
+                val seedUrl = seedFromQueue() ?: lastUrl ?: return@launch
+                var fresh = runCatching { YouTubeClient.related(seedUrl) }
+                    .getOrDefault(emptyList())
+                    .filter { known.add(it.id) }
+
+                if (fresh.isEmpty()) {
+                    lastUrl?.takeIf { it != seedUrl }?.let { previous ->
+                        fresh = runCatching { YouTubeClient.related(previous) }
+                            .getOrDefault(emptyList())
+                            .filter { known.add(it.id) }
+                    }
                 }
+
+                if (fresh.isEmpty()) {
+                    val track = player.state.value.queue.lastOrNull()
+                    val query = listOf(track?.artist.orEmpty(), track?.title.orEmpty())
+                        .filter { it.isNotBlank() }
+                        .joinToString(" ")
+                    fresh = runCatching { YouTubeClient.search(query, music = true) }
+                        .getOrNull()
+                        ?.items
+                        ?.filter { known.add(it.id) }
+                        .orEmpty()
+                }
+
+                if (fresh.isEmpty()) return@launch
+                appendPending(fresh)
             } finally {
                 loading.set(false)
             }
         }
     }
 
-    private suspend fun resolve(items: List<YtSearchResult>): List<LocalTrack> = coroutineScope {
-        items.map { item ->
-            async {
-                runCatching { YouTubeClient.resolve(item.url) }
-                    .getOrNull()
-                    ?.let { video ->
-                        known += video.id
-                        toTrack(video)
-                    }
-            }
-        }.awaitAll().filterNotNull()
+    private suspend fun appendPending(items: List<YtSearchResult>) {
+        val batch = items.take(RADIO_BATCH)
+        if (batch.isEmpty()) return
+        val tracks = batch.map { pendingTrack(it, "") }
+        withContext(Dispatchers.Main) { player.appendToQueue(tracks) }
+        batch.take(PREFETCH).forEach { YouTubeStreamCache.prefetch(it.id) }
+        lastUrl = batch.last().url
     }
 
-    private suspend fun toTrack(video: YtVideo): LocalTrack? = withContext(Dispatchers.IO) {
-        if (video.audioUrl.isBlank()) return@withContext null
-        LocalTrack(
-            id = "yt:${video.id}",
-            uri = video.audioUrl,
-            title = video.title.ifBlank { video.id },
-            artist = video.channel,
-            album = "YouTube",
-            durationMs = video.durationMs,
-            artPath = cacheArt(video),
-            folderName = "YouTube",
+    private fun seedFromQueue(): String? {
+        val track = player.state.value.queue.lastOrNull() ?: return null
+        val id = track.id.removePrefix("yt:")
+        return if (id.length == 11) "https://www.youtube.com/watch?v=$id" else null
+    }
+
+    private fun pendingTrack(video: YtVideo): LocalTrack = pendingTrack(
+        id = video.id,
+        title = video.title,
+        artist = video.channel,
+        durationMs = video.durationMs,
+        thumbnailUrl = video.thumbnailUrl,
+    )
+
+    private fun pendingTrack(item: YtSearchResult, fallbackArtist: String): LocalTrack =
+        pendingTrack(
+            id = item.id,
+            title = item.title,
+            artist = item.channel.ifBlank { fallbackArtist },
+            durationMs = item.durationMs,
+            thumbnailUrl = item.thumbnailUrl,
         )
+
+    private fun pendingTrack(
+        id: String,
+        title: String,
+        artist: String,
+        durationMs: Long,
+        thumbnailUrl: String?,
+    ): LocalTrack = LocalTrack(
+        id = "yt:$id",
+        uri = "yt://$id",
+        title = title.ifBlank { id },
+        artist = artist,
+        album = "YouTube",
+        durationMs = durationMs,
+        artPath = cachedArt(id) ?: thumbnailUrl,
+        folderName = "YouTube",
+    )
+
+    private fun cachedArt(videoId: String): String? {
+        val file = File(context.cacheDir, "yt-art").resolve("$videoId.jpg")
+        return file.takeIf { it.exists() && it.length() > 0L }?.absolutePath
     }
 
-    private fun cacheArt(video: YtVideo): String? {
-        val url = video.thumbnailUrl ?: return null
-        val file = File(context.cacheDir, "yt-art").apply { mkdirs() }
-            .resolve("${video.id}.jpg")
-        if (file.exists() && file.length() > 0L) return file.absolutePath
-        return runCatching {
-            val request = Request.Builder()
-                .url(url)
-                .header("User-Agent", YouTubeHttp.USER_AGENT)
-                .build()
-            YouTubeHttp.client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return null
-                val body = response.body?.bytes() ?: return null
-                file.writeBytes(body)
-                file.absolutePath
-            }
-        }.getOrNull()
+    private companion object {
+        const val RADIO_BATCH = 10
+        const val PREFETCH = 4
     }
 }

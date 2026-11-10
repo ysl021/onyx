@@ -78,6 +78,7 @@ import app.onyx.media.NowPlaying
 import app.onyx.spotify.QueueData
 import app.onyx.ui.components.BatteryMeter
 import app.onyx.ui.components.BlurredBackdrop
+import app.onyx.ui.components.artModel
 import app.onyx.ui.components.CircleButton
 import app.onyx.ui.components.GlassCard
 import app.onyx.ui.components.GlassPill
@@ -934,7 +935,7 @@ private fun LocalQueueCard(
                                 .clip(RoundedCornerShape(9.dp))
                                 .background(OnyxWhite.copy(alpha = 0.05f)),
                         ) {
-                            val art = track.artPath?.let { java.io.File(it) }
+                            val art = artModel(track.artPath)
                             if (art != null) {
                                 AsyncImage(
                                     model = art,
@@ -963,7 +964,11 @@ private fun LocalQueueCard(
                             )
                         }
                         Spacer(Modifier.width(8.dp))
-                        Text(text = fmt(track.durationMs), color = OnyxFaint, fontSize = 10.sp)
+                        Text(
+                            text = if (track.durationMs > 0) fmt(track.durationMs) else "",
+                            color = OnyxFaint,
+                            fontSize = 10.sp,
+                        )
                         Spacer(Modifier.width(8.dp))
                         Icon(
                             Icons.Rounded.Delete,

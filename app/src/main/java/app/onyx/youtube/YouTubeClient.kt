@@ -113,14 +113,12 @@ object YouTubeClient {
         val url = normalizeUrl(rawUrl)
         val id = videoIdOf(url)
 
-        // NewPipe is the richest source (chapters included), but YouTube's
-        // "confirm you're not a bot" block hits its clients from time to time.
-        // If it fails, ask innerTube directly with mobile clients, which often
-        // still hand out a playable audio URL.
+        // innerTube answers in well under a second, while NewPipe's extractor
+        // can spend 5-20 seconds on the same video. Try the fast path first;
+        // NewPipe is the richer fallback (chapters, related streams).
+        resolveWithInnertube(id)?.let { return@withContext it }
         val failure = runCatching { resolveWithNewPipe(url, id) }
         failure.getOrNull()?.let { return@withContext it }
-        val fallback = resolveWithInnertube(id)
-        if (fallback != null) return@withContext fallback
 
         val error = failure.exceptionOrNull()
         throw error ?: IllegalStateException("YouTube did not return a playable audio stream")

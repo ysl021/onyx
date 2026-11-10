@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
@@ -31,6 +32,8 @@ import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FavoriteBorder
 import androidx.compose.material.icons.rounded.Folder
 import androidx.compose.material.icons.rounded.FormatListBulleted
 import androidx.compose.material.icons.rounded.History
@@ -38,6 +41,7 @@ import androidx.compose.material.icons.rounded.KeyboardArrowDown
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.Search
@@ -76,6 +80,8 @@ import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.chrisbanes.haze.HazeState
 import app.onyx.AppController
+import app.onyx.core.LikedArtist
+import app.onyx.core.LikedTrack
 import app.onyx.core.PrefsData
 import app.onyx.ui.components.AsyncArt
 import app.onyx.ui.components.CircleButton
@@ -88,12 +94,16 @@ import app.onyx.ui.theme.OnyxWhite
 import app.onyx.youtube.DownloadJob
 import app.onyx.youtube.JobStatus
 import app.onyx.youtube.TimecodeParser
+import app.onyx.youtube.YtAlbum
+import app.onyx.youtube.YtArtistPage
 import app.onyx.youtube.YtSearchResult
 import app.onyx.youtube.YtSection
 import app.onyx.youtube.YtVideo
 import app.onyx.youtube.YouTubeClient
 import app.onyx.youtube.YouTubeDownloads
+import app.onyx.youtube.YouTubeMusic
 import app.onyx.youtube.YouTubeSession
+import app.onyx.youtube.YouTubeStreamCache
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -135,7 +145,94 @@ fun YouTubeScreen(
     var manualText by YouTubeSession.manualText
     var queueOpen by rememberSaveable { mutableStateOf(false) }
     var historyOpen by rememberSaveable { mutableStateOf(false) }
+    var artistPage by remember { mutableStateOf<YtArtistPage?>(null) }
+    var artistLoading by remember { mutableStateOf(false) }
+    var recommendations by remember { mutableStateOf<List<YtSearchResult>>(emptyList()) }
+    var recommendationsLoading by remember { mutableStateOf(false) }
     val pageBlack = app.onyx.ui.theme.LocalOnyx.current.black
+
+    LaunchedEffect(Unit) {
+        recommendationsLoading = true
+        recommendations = runCatching { YouTubeMusic.homeRecommendations() }
+            .getOrDefault(emptyList())
+        recommendationsLoading = false
+    }
+
+    fun isLikedTrack(videoId: String): Boolean =
+        prefs.likedTracks.any { it.id == "yt:$videoId" }
+
+    fun toggleLikeTrack(item: YtSearchResult) {
+        scope.launch {
+            controller.prefs.toggleLikedTrack(
+                LikedTrack(
+                    id = "yt:${item.id}",
+                    videoId = item.id,
+                    title = item.title,
+                    artist = item.channel,
+                    durationMs = item.durationMs,
+                    thumbnailUrl = item.thumbnailUrl,
+                ),
+            )
+        }
+    }
+
+    fun toggleLikeVideo(video: YtVideo) {
+        scope.launch {
+            controller.prefs.toggleLikedTrack(
+                LikedTrack(
+                    id = "yt:${video.id}",
+                    videoId = video.id,
+                    title = video.title,
+                    artist = video.channel,
+                    durationMs = video.durationMs,
+                    thumbnailUrl = video.thumbnailUrl,
+                ),
+            )
+        }
+    }
+
+    fun toggleLikeArtist(name: String, thumbnailUrl: String?, browseId: String?) {
+        if (name.isBlank() || name.equals("YouTube", ignoreCase = true)) return
+        scope.launch {
+            controller.prefs.toggleLikedArtist(
+                LikedArtist(name = name, thumbnailUrl = thumbnailUrl, browseId = browseId),
+            )
+        }
+    }
+
+    fun playSongs(items: List<YtSearchResult>, fallbackArtist: String) {
+        if (items.isEmpty()) return
+        controller.youtubeRadio.playQueue(items, fallbackArtist)
+        onBack()
+    }
+
+    fun openArtist(name: String) {
+        if (name.isBlank() || name.equals("YouTube", ignoreCase = true)) return
+        scope.launch {
+            artistLoading = true
+            try {
+                val artist = YouTubeMusic.searchArtist(name)
+                if (artist == null) {
+                    controller.toast(tr("Артист не найден", "Artist not found"))
+                } else {
+                    val page = YouTubeMusic.artistPage(artist)
+                    if (page == null) {
+                        controller.toast(
+                            tr("Не удалось открыть страницу артиста", "Could not open the artist page"),
+                        )
+                    } else {
+                        artistPage = page
+                        // Warm the stream cache while the user looks at the page.
+                        page.songs.take(2).forEach { YouTubeStreamCache.prefetch(it.id) }
+                    }
+                }
+            } catch (t: Throwable) {
+                controller.toast(YouTubeClient.describe(t))
+            } finally {
+                artistLoading = false
+            }
+        }
+    }
 
     fun deleteSaved(entry: app.onyx.core.YouTubeDownloadEntry) {
         scope.launch {
@@ -154,6 +251,7 @@ fun YouTubeScreen(
     // throw away a resolved mix and jump to the player.
     BackHandler {
         when {
+            artistPage != null -> artistPage = null
             historyOpen -> historyOpen = false
             queueOpen -> queueOpen = false
             preview != null -> YouTubeSession.closePreview()
@@ -190,6 +288,9 @@ fun YouTubeScreen(
             previewError = null
             sections = emptyList()
             selectedSections = emptySet()
+            // Resolve the audio in parallel with the metadata preview so the
+            // play button starts much sooner.
+            YouTubeStreamCache.prefetch(YouTubeClient.videoIdOf(url))
             try {
                 val video = YouTubeClient.resolve(url)
                 preview = video
@@ -317,23 +418,13 @@ fun YouTubeScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             GlassPill(
-                text = tr("Поиск", "Search"),
-                selected = mode == MODE_SEARCH,
-                icon = Icons.Rounded.Search,
-                onClick = {
-                    if (mode != MODE_SEARCH) {
-                        // Leaving the link flow must actually show the search UI:
-                        // a resolved preview used to keep the screen unchanged.
-                        YouTubeSession.closePreview()
-                    }
-                    mode = MODE_SEARCH
-                },
-            )
-            GlassPill(
                 text = tr("Микс по ссылке", "Mix by link"),
                 selected = mode == MODE_LINK,
                 icon = Icons.Rounded.Link,
-                onClick = { mode = MODE_LINK },
+                onClick = {
+                    mode = if (mode == MODE_LINK) MODE_SEARCH else MODE_LINK
+                    if (mode == MODE_SEARCH) YouTubeSession.closePreview()
+                },
             )
             Spacer(Modifier.weight(1f))
             Text(
@@ -445,6 +536,9 @@ fun YouTubeScreen(
                     controller.youtubeRadio.start(currentPreview, withRadio = true)
                     onBack()
                 },
+                onArtist = { openArtist(currentPreview.channel) },
+                liked = isLikedTrack(currentPreview.id),
+                onLike = { toggleLikeVideo(currentPreview) },
                 modifier = Modifier.weight(1f),
             )
         } else {
@@ -571,6 +665,45 @@ fun YouTubeScreen(
                         contentPadding = PaddingValues(top = 12.dp, bottom = 132.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
+                        if (query.trim().length < 2) {
+                            item { SectionLabel(tr("Рекомендации", "Recommended")) }
+                            if (recommendationsLoading) {
+                                item {
+                                    Text(
+                                        tr("Подбираю музыку…", "Picking music…"),
+                                        color = OnyxFaint,
+                                        fontSize = 11.sp,
+                                        modifier = Modifier.padding(vertical = 6.dp),
+                                    )
+                                }
+                            }
+                            items(recommendations, key = { "rec:${it.id}" }) { result ->
+                                SearchResultRow(
+                                    result = result,
+                                    onClick = {
+                                        mode = MODE_LINK
+                                        link = result.url
+                                        openVideo(result.url)
+                                    },
+                                    onArtist = { openArtist(result.channel) },
+                                    liked = isLikedTrack(result.id),
+                                    onLike = { toggleLikeTrack(result) },
+                                )
+                            }
+                            if (!recommendationsLoading && recommendations.isEmpty()) {
+                                item {
+                                    Text(
+                                        tr(
+                                            "Не удалось загрузить рекомендации. Попробуй поиск.",
+                                            "Could not load recommendations. Try a search.",
+                                        ),
+                                        color = OnyxFaint,
+                                        fontSize = 11.sp,
+                                        modifier = Modifier.padding(vertical = 6.dp),
+                                    )
+                                }
+                            }
+                        }
                         if (query.trim().length < 2 && prefs.youtubeHistory.isNotEmpty()) {
                             item {
                                 Row(
@@ -609,6 +742,9 @@ fun YouTubeScreen(
                                     link = result.url
                                     openVideo(result.url)
                                 },
+                                onArtist = { openArtist(result.channel) },
+                                liked = isLikedTrack(result.id),
+                                onLike = { toggleLikeTrack(result) },
                             )
                         }
                         if (searchError != null && results.isEmpty()) {
@@ -685,6 +821,56 @@ fun YouTubeScreen(
             onMove = { id, delta -> YouTubeDownloads.moveJob(id, delta) },
             onClear = { YouTubeDownloads.clearFinished() },
         )
+    }
+
+    val artist = artistPage
+    if (artist != null) {
+        ArtistPage(
+            page = artist,
+            likedArtist = prefs.likedArtists.any {
+                it.name.equals(artist.artist.name, ignoreCase = true)
+            },
+            onLikeArtist = {
+                toggleLikeArtist(
+                    artist.artist.name,
+                    artist.artist.thumbnailUrl,
+                    artist.artist.browseId,
+                )
+            },
+            isLikedTrack = { isLikedTrack(it.id) },
+            onLikeTrack = { toggleLikeTrack(it) },
+            onBack = { artistPage = null },
+            onPlaySongs = { items -> playSongs(items, artist.artist.name) },
+            onPlayAlbum = { album ->
+                scope.launch {
+                    val tracks = runCatching { YouTubeMusic.albumTracks(album) }
+                        .getOrDefault(emptyList())
+                    if (tracks.isNotEmpty()) {
+                        playSongs(tracks, artist.artist.name)
+                    } else {
+                        controller.toast(tr("Не удалось открыть альбом", "Could not open the album"))
+                    }
+                }
+            },
+            modifier = Modifier
+                .fillMaxSize()
+                .background(pageBlack),
+        )
+    }
+
+    if (artistLoading) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(pageBlack.copy(alpha = 0.72f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                tr("Загружаю артиста…", "Loading artist…"),
+                color = OnyxFaint,
+                fontSize = 12.sp,
+            )
+        }
     }
     }
 }
@@ -817,6 +1003,9 @@ private fun HistoryRow(text: String, onDelete: () -> Unit, onClick: () -> Unit) 
 private fun SearchResultRow(
     result: YtSearchResult,
     onClick: () -> Unit,
+    onArtist: () -> Unit,
+    liked: Boolean,
+    onLike: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -852,11 +1041,20 @@ private fun SearchResultRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        Icon(
-            Icons.Rounded.Download,
-            contentDescription = null,
-            tint = OnyxFaint,
-            modifier = Modifier.size(18.dp),
+        CircleButton(
+            icon = Icons.Rounded.Person,
+            contentDescription = tr("Страница артиста", "Artist page"),
+            size = 34.dp,
+            iconSize = 16.dp,
+            onClick = onArtist,
+        )
+        Spacer(Modifier.width(6.dp))
+        CircleButton(
+            icon = if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+            contentDescription = tr("В любимые", "Like"),
+            size = 34.dp,
+            iconSize = 16.dp,
+            onClick = onLike,
         )
     }
 }
@@ -884,6 +1082,9 @@ private fun PreviewPanel(
     onPickFolder: () -> Unit,
     onListen: () -> Unit,
     onRadio: () -> Unit,
+    onArtist: () -> Unit,
+    liked: Boolean,
+    onLike: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val pageBlack = app.onyx.ui.theme.LocalOnyx.current.black
@@ -920,6 +1121,22 @@ private fun PreviewPanel(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+                CircleButton(
+                    icon = if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                    contentDescription = tr("В любимые", "Like"),
+                    size = 34.dp,
+                    iconSize = 16.dp,
+                    onClick = onLike,
+                )
+                Spacer(Modifier.width(6.dp))
+                CircleButton(
+                    icon = Icons.Rounded.Person,
+                    contentDescription = tr("Страница артиста", "Artist page"),
+                    size = 34.dp,
+                    iconSize = 16.dp,
+                    onClick = onArtist,
+                )
+                Spacer(Modifier.width(6.dp))
                 CircleButton(
                     icon = Icons.Rounded.Close,
                     contentDescription = tr("Закрыть", "Close"),
@@ -1610,5 +1827,249 @@ internal fun fmtTime(ms: Long): String {
         "%d:%02d:%02d".format(hours, minutes, seconds)
     } else {
         "%d:%02d".format(minutes, seconds)
+    }
+}
+
+@Composable
+private fun ArtistPage(
+    page: YtArtistPage,
+    likedArtist: Boolean,
+    onLikeArtist: () -> Unit,
+    isLikedTrack: (YtSearchResult) -> Boolean,
+    onLikeTrack: (YtSearchResult) -> Unit,
+    onBack: () -> Unit,
+    onPlaySongs: (List<YtSearchResult>) -> Unit,
+    onPlayAlbum: (YtAlbum) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 18.dp, end = 18.dp, top = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            CircleButton(
+                icon = Icons.AutoMirrored.Rounded.ArrowBack,
+                contentDescription = tr("Назад", "Back"),
+                size = 40.dp,
+                iconSize = 18.dp,
+                onClick = onBack,
+            )
+            Spacer(Modifier.width(12.dp))
+            AsyncArt(
+                model = page.artist.thumbnailUrl,
+                modifier = Modifier
+                    .size(54.dp)
+                    .clip(CircleShape),
+            )
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = page.artist.name,
+                    color = OnyxWhite,
+                    fontSize = 21.sp,
+                    fontWeight = FontWeight.Black,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = tr(
+                        "${page.songs.size} треков · ${page.albums.size + page.singles.size} релизов",
+                        "${page.songs.size} tracks · ${page.albums.size + page.singles.size} releases",
+                    ),
+                    color = OnyxFaint,
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            CircleButton(
+                icon = if (likedArtist) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                contentDescription = tr("В любимые", "Like"),
+                size = 38.dp,
+                iconSize = 17.dp,
+                onClick = onLikeArtist,
+            )
+            Spacer(Modifier.width(8.dp))
+            if (page.songs.isNotEmpty()) {
+                CircleButton(
+                    icon = Icons.Rounded.PlayArrow,
+                    contentDescription = tr("Играть артиста", "Play artist"),
+                    size = 46.dp,
+                    filled = true,
+                    iconSize = 22.dp,
+                    onClick = { onPlaySongs(page.songs) },
+                )
+            }
+        }
+
+        LazyColumn(
+            modifier = Modifier
+                .weight(1f)
+                .padding(top = 10.dp),
+            contentPadding = PaddingValues(start = 18.dp, end = 18.dp, bottom = 120.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (page.songs.isNotEmpty()) {
+                item { SectionLabel(tr("Треки", "Tracks")) }
+                items(page.songs, key = { it.id }) { song ->
+                    ArtistSongRow(
+                        song = song,
+                        liked = isLikedTrack(song),
+                        onLike = { onLikeTrack(song) },
+                        onPlay = { onPlaySongs(listOf(song)) },
+                    )
+                }
+            }
+
+            if (page.albums.isNotEmpty()) {
+                item { SectionLabel(tr("Альбомы", "Albums")) }
+                items(page.albums.chunked(2)) { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        row.forEach { album ->
+                            ArtistAlbumCard(album, Modifier.weight(1f)) { onPlayAlbum(album) }
+                        }
+                        repeat(2 - row.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
+            }
+
+            if (page.singles.isNotEmpty()) {
+                item { SectionLabel(tr("Синглы", "Singles")) }
+                items(page.singles.chunked(2)) { row ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        row.forEach { album ->
+                            ArtistAlbumCard(album, Modifier.weight(1f)) { onPlayAlbum(album) }
+                        }
+                        repeat(2 - row.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
+            }
+
+            if (page.videos.isNotEmpty()) {
+                item { SectionLabel(tr("Видео", "Videos")) }
+                items(page.videos, key = { it.id }) { video ->
+                    ArtistSongRow(
+                        song = video,
+                        liked = isLikedTrack(video),
+                        onLike = { onLikeTrack(video) },
+                        onPlay = { onPlaySongs(listOf(video)) },
+                    )
+                }
+            }
+
+            if (page.songs.isEmpty() && page.albums.isEmpty() &&
+                page.singles.isEmpty() && page.videos.isEmpty()
+            ) {
+                item {
+                    Text(
+                        tr(
+                            "У артиста пока нет треков на YouTube Music.",
+                            "This artist has no tracks on YouTube Music yet.",
+                        ),
+                        color = OnyxFaint,
+                        fontSize = 12.sp,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ArtistSongRow(
+    song: YtSearchResult,
+    liked: Boolean,
+    onLike: () -> Unit,
+    onPlay: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClick = onPlay)
+            .padding(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AsyncArt(
+            model = song.thumbnailUrl,
+            modifier = Modifier
+                .size(48.dp)
+                .clip(RoundedCornerShape(10.dp)),
+        )
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = song.title,
+                color = OnyxWhite,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Text(
+                text = listOf(
+                    song.channel,
+                    if (song.durationMs > 0) fmtTime(song.durationMs) else "",
+                )
+                    .filter { it.isNotBlank() }
+                    .joinToString(" · "),
+                color = OnyxFaint,
+                fontSize = 10.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        CircleButton(
+            icon = if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+            contentDescription = tr("В любимые", "Like"),
+            size = 32.dp,
+            iconSize = 15.dp,
+            onClick = onLike,
+        )
+        Spacer(Modifier.width(6.dp))
+        CircleButton(
+            icon = Icons.Rounded.PlayArrow,
+            contentDescription = tr("Играть", "Play"),
+            size = 34.dp,
+            filled = true,
+            iconSize = 16.dp,
+            onClick = onPlay,
+        )
+    }
+}
+
+@Composable
+private fun ArtistAlbumCard(album: YtAlbum, modifier: Modifier = Modifier, onPlay: () -> Unit) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClick = onPlay)
+            .padding(4.dp),
+    ) {
+        AsyncArt(
+            model = album.thumbnailUrl,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(132.dp)
+                .clip(RoundedCornerShape(12.dp)),
+        )
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = album.title,
+            color = OnyxWhite,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = album.subtitle,
+            color = OnyxFaint,
+            fontSize = 9.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
