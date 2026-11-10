@@ -95,53 +95,18 @@ object YouTubeClient {
      * extractor's search breaks on current YouTube layouts; only stream
      * resolution still goes through NewPipe.
      *
-     * Music mode uses NewPipe's dedicated YouTube Music extractor instead:
-     * its page layout is different and the regular parser cannot read it.
+     * Music mode uses the same HTML strategy against `music.youtube.com`:
+     * NewPipe's music extractor NPEs on the current layout, so it cannot be
+     * used for search.
      */
     suspend fun search(query: String, page: String? = null, music: Boolean = false): YtSearchPage {
-        if (music) return searchMusic(query, more = page != null)
-        val result = YouTubeSearch.search(query, page)
+        val result = if (music) {
+            YouTubeSearch.searchMusic(query, page)
+        } else {
+            YouTubeSearch.search(query, page)
+        }
         return YtSearchPage(items = result.items, next = result.continuation)
     }
-
-    private var musicQuery = ""
-    private var musicPage: org.schabi.newpipe.extractor.Page? = null
-
-    private suspend fun searchMusic(query: String, more: Boolean): YtSearchPage =
-        withContext(Dispatchers.IO) {
-            ensureInit()
-            if (query != musicQuery) {
-                musicQuery = query
-                musicPage = null
-            }
-            val handler = YoutubeSearchQueryHandlerFactory.getInstance().fromQuery(
-                query,
-                listOf(YoutubeSearchQueryHandlerFactory.MUSIC_VIDEOS),
-                "",
-            )
-            val extractor = YoutubeMusicSearchExtractor(service(), handler)
-            val cachedPage = musicPage
-            val result = if (more && cachedPage != null) {
-                extractor.getPage(cachedPage)
-            } else {
-                extractor.initialPage
-            }
-            musicPage = result.nextPage
-            val items = result.items.filterIsInstance<StreamInfoItem>().map { item ->
-                val id = videoIdOf(item.url)
-                YtSearchResult(
-                    id = id,
-                    url = item.url,
-                    title = item.name.orEmpty(),
-                    channel = item.uploaderName.orEmpty(),
-                    durationMs = item.duration * 1000L,
-                    thumbnailUrl = item.thumbnails
-                        ?.maxByOrNull { it.height }
-                        ?.url,
-                )
-            }
-            YtSearchPage(items = items, next = if (result.hasNextPage()) "music" else null)
-        }
 
     suspend fun resolve(rawUrl: String): YtVideo = withContext(Dispatchers.IO) {
         ensureInit()

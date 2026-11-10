@@ -68,17 +68,156 @@ object YouTubeSearch {
 
     private fun fetchResultsPage(query: String): String {
         val encoded = URLEncoder.encode(query, "UTF-8")
-        val url = "https://www.youtube.com/results?search_query=$encoded&hl=en&gl=US&ucbcb=1"
+        return fetchPage(
+            "https://www.youtube.com/results?search_query=$encoded&hl=en&gl=US&ucbcb=1",
+            "https://www.youtube.com/",
+        )
+    }
+
+    private fun fetchPage(url: String, referer: String): String {
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", YouTubeHttp.USER_AGENT)
             .header("Accept", "text/html,application/xhtml+xml")
             .header("Accept-Language", "en-US,en;q=0.9")
+            .header("Referer", referer)
             .build()
         return YouTubeHttp.client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) throw IllegalStateException("HTTP ${response.code}")
             response.body?.string().orEmpty()
         }
+    }
+
+    // ------------------------------------------------------------------ music
+
+    private var musicConfig: Config? = null
+
+    /**
+     * Music-only search. NewPipe's music extractor NPEs on the current
+     * `music.youtube.com` layout, so this follows the same strategy as the
+     * regular search: fetch the page once, slice `ytInitialData` and walk it.
+     */
+    suspend fun searchMusic(query: String, continuation: String? = null): Result =
+        withContext(Dispatchers.IO) {
+            if (continuation != null) return@withContext loadMoreMusic(continuation)
+            val q = query.trim()
+            if (q.isEmpty()) return@withContext Result(emptyList(), null)
+            val html = fetchMusicPage(q)
+            val initial = extractJson(html, "ytInitialData", "window[\"ytInitialData\"]")
+            val root = initial?.let { runCatching { JSONObject(it) }.getOrNull() }
+                ?: return@withContext Result(emptyList(), null)
+            musicConfig = Config(
+                regexValue(html, "INNERTUBE_API_KEY"),
+                regexValue(html, "INNERTUBE_CLIENT_VERSION"),
+            )
+            val videos = ArrayList<YtSearchResult>()
+            collectMusicItems(root, videos)
+            Result(videos, findContinuation(root))
+        }
+
+    private fun fetchMusicPage(query: String): String {
+        val encoded = URLEncoder.encode(query, "UTF-8")
+        return fetchPage(
+            "https://music.youtube.com/search?q=$encoded&sp=$MUSIC_VIDEOS_PARAM&hl=en&gl=US",
+            "https://music.youtube.com/",
+        )
+    }
+
+    private fun loadMoreMusic(continuation: String): Result {
+        val config = musicConfig ?: Config(null, null)
+        val body = buildString {
+            append("{\"context\":{\"client\":{\"clientName\":\"WEB_REMIX\",\"clientVersion\":\"")
+            append(escape(config.clientVersion ?: FALLBACK_MUSIC_CLIENT_VERSION))
+            append("\",\"hl\":\"en\",\"gl\":\"US\"}},\"continuation\":\"")
+            append(escape(continuation))
+            append("\"}")
+        }
+        val response = musicInnerTubePost(body, config) ?: return Result(emptyList(), null)
+        val videos = ArrayList<YtSearchResult>()
+        collectMusicItems(response, videos)
+        return Result(videos, findContinuation(response))
+    }
+
+    private fun musicInnerTubePost(body: String, config: Config): JSONObject? {
+        val url = buildString {
+            append("https://music.youtube.com/youtubei/v1/search?prettyPrint=false")
+            if (!config.apiKey.isNullOrBlank()) append("&key=").append(config.apiKey)
+        }
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", YouTubeHttp.USER_AGENT)
+            .header("Content-Type", "application/json")
+            .header("X-Youtube-Client-Name", "67")
+            .header("X-Youtube-Client-Version", config.clientVersion ?: FALLBACK_MUSIC_CLIENT_VERSION)
+            .header("Origin", "https://music.youtube.com")
+            .header("Referer", "https://music.youtube.com/")
+            .post(body.toRequestBody(JSON))
+            .build()
+        return YouTubeHttp.client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) return@use null
+            val text = response.body?.string().orEmpty()
+            runCatching { JSONObject(text) }.getOrNull()
+        }
+    }
+
+    private fun collectMusicItems(node: Any?, out: MutableList<YtSearchResult>, depth: Int = 0) {
+        if (node == null || depth > 50 || out.size >= 80) return
+        when (node) {
+            is JSONObject -> {
+                node.optJSONObject("musicResponsiveListItemRenderer")?.let { parseMusicItem(it, out) }
+                val keys = node.keys()
+                while (keys.hasNext()) {
+                    collectMusicItems(node.opt(keys.next()), out, depth + 1)
+                    if (out.size >= 80) return
+                }
+            }
+            is JSONArray -> {
+                for (i in 0 until node.length()) {
+                    collectMusicItems(node.opt(i), out, depth + 1)
+                    if (out.size >= 80) return
+                }
+            }
+        }
+    }
+
+    private fun parseMusicItem(renderer: JSONObject, out: MutableList<YtSearchResult>) {
+        val id = renderer.optJSONObject("playlistItemData")
+            ?.optString("videoId")
+            ?.takeIf { it.length == 11 }
+            ?: return
+        if (out.any { it.id == id }) return
+        val columns = renderer.optJSONArray("flexColumns") ?: return
+
+        fun column(index: Int): String {
+            val column = columns.optJSONObject(index) ?: return ""
+            val text = column.optJSONObject("musicResponsiveListItemFlexColumnRenderer")
+                ?.optJSONObject("text")
+                ?: return ""
+            return textOf(text)
+        }
+
+        val title = column(0).ifBlank { return }
+        val subtitle = column(1)
+        val durationText = renderer.optJSONArray("fixedColumns")
+            ?.optJSONObject(0)
+            ?.optJSONObject("musicResponsiveListItemFixedColumnRenderer")
+            ?.optJSONObject("text")
+            ?.let { textOf(it) }
+            ?: Regex("""\d{1,2}:\d{2}(?::\d{2})?""").find(subtitle)?.value
+        val artist = subtitle.substringBefore(" • ").trim().ifBlank { subtitle.trim() }
+        val thumbnail = renderer.optJSONObject("thumbnail")
+            ?.optJSONObject("musicThumbnailRenderer")
+            ?.optJSONObject("thumbnail")
+            ?.let { bestThumbnail(it) }
+            ?: "https://i.ytimg.com/vi/$id/hqdefault.jpg"
+        out += YtSearchResult(
+            id = id,
+            url = "https://www.youtube.com/watch?v=$id",
+            title = title,
+            channel = artist,
+            durationMs = parseDuration(durationText),
+            thumbnailUrl = thumbnail,
+        )
     }
 
     private fun loadMore(continuation: String): Result {
@@ -355,4 +494,6 @@ object YouTubeSearch {
     }
 
     private const val FALLBACK_CLIENT_VERSION = "2.20260101.00.00"
+    private const val FALLBACK_MUSIC_CLIENT_VERSION = "1.20260101.01.00"
+    private const val MUSIC_VIDEOS_PARAM = "EgWKAQIQAWoKEAoQAxAEEAkQBQ%3D%3D"
 }
