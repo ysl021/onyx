@@ -332,16 +332,6 @@ fun YouTubeScreen(
                 icon = Icons.Rounded.Link,
                 onClick = { mode = MODE_LINK },
             )
-            GlassPill(
-                text = tr("Только музыка", "Music only"),
-                selected = prefs.youtubeMusicOnly,
-                icon = Icons.Rounded.MusicNote,
-                onClick = {
-                    scope.launch {
-                        controller.prefs.setYouTubeMusicOnly(!prefs.youtubeMusicOnly)
-                    }
-                },
-            )
             Spacer(Modifier.weight(1f))
             Text(
                 text = prefs.youtubeFolderName.ifBlank { tr("папка не выбрана", "no folder yet") },
@@ -353,6 +343,37 @@ fun YouTubeScreen(
                     .clip(RoundedCornerShape(50))
                     .clickable { folderPicker.launch(null) }
                     .padding(horizontal = 8.dp, vertical = 4.dp),
+            )
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp)
+                .padding(bottom = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            GlassPill(
+                text = tr("Только музыка", "Music only"),
+                selected = prefs.youtubeMusicOnly,
+                icon = Icons.Rounded.MusicNote,
+                onClick = {
+                    scope.launch {
+                        controller.prefs.setYouTubeMusicOnly(!prefs.youtubeMusicOnly)
+                    }
+                },
+            )
+            Text(
+                text = if (prefs.youtubeMusicOnly) {
+                    tr("поиск в YouTube Music", "YouTube Music search")
+                } else {
+                    tr("обычный поиск YouTube", "regular YouTube search")
+                },
+                color = OnyxFaint,
+                fontSize = 10.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
 
