@@ -234,6 +234,9 @@ fun YouTubeScreen(
                 null
             }
             controller.prefs.addYouTubeQuery(text)
+        } catch (t: kotlinx.coroutines.CancellationException) {
+            // A new query/toggle cancelled this search; that is not an error.
+            throw t
         } catch (t: Throwable) {
             results = emptyList()
             nextPage = null
