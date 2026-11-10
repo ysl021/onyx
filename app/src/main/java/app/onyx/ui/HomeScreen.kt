@@ -35,6 +35,9 @@ import androidx.compose.material.icons.rounded.Bluetooth
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Cast
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.FavoriteBorder
+import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Pause
@@ -71,7 +74,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.onyx.AppController
 import app.onyx.buds.BudsService
 import app.onyx.buds.BudsState
+import app.onyx.core.LikedTrack
 import app.onyx.core.PrefsData
+import app.onyx.music.LocalTrack
+import app.onyx.music.PlaylistStreamTrack
 import app.onyx.media.AudioRoute
 import app.onyx.media.MediaState
 import app.onyx.media.NowPlaying
@@ -116,6 +122,11 @@ fun HomeScreen(
     val queue by controller.queue.collectAsStateWithLifecycle()
     val localPlayback by controller.localPlayer.state.collectAsStateWithLifecycle()
     val localQueueActive = localPlayback.current != null && localPlayback.queue.isNotEmpty()
+    var playerPickerTrack by remember { mutableStateOf<LocalTrack?>(null) }
+    val currentLocal = localPlayback.current
+    val currentLiked = currentLocal?.let { track ->
+        prefs.likedTracks.any { it.id == track.id }
+    } == true
     val localName = remember {
         if (androidx.core.content.ContextCompat.checkSelfPermission(
                 context,
@@ -168,7 +179,19 @@ fun HomeScreen(
             if (!media.hasAccess) {
                 AccessBanner()
             }
-            Hero(nowPlaying, onOpenLyrics)
+            Hero(
+                now = nowPlaying,
+                onOpenLyrics = onOpenLyrics,
+                liked = currentLiked,
+                onLike = {
+                    currentLocal?.let { track ->
+                        scope.launch {
+                            controller.prefs.toggleLikedTrack(track.toLikedTrack())
+                        }
+                    }
+                },
+                onAddToPlaylist = { playerPickerTrack = currentLocal },
+            )
             Controls(controller, media)
             if (remoteDevice != null) {
                 RemotePlaybackBanner(remoteDevice)
@@ -223,6 +246,29 @@ fun HomeScreen(
                     },
                 )
             }
+        }
+    }
+
+    playerPickerTrack?.let { track ->
+        if (track.id.startsWith("yt:")) {
+            StreamPlaylistDialog(
+                controller = controller,
+                entry = PlaylistStreamTrack(
+                    id = track.id,
+                    videoId = track.id.removePrefix("yt:"),
+                    title = track.title,
+                    artist = track.artist,
+                    durationMs = track.durationMs,
+                    thumbnailUrl = track.artPath,
+                ),
+                onDismiss = { playerPickerTrack = null },
+            )
+        } else {
+            AddToPlaylistDialog(
+                controller = controller,
+                trackIds = listOf(track.id),
+                onDismiss = { playerPickerTrack = null },
+            )
         }
     }
 }
@@ -296,7 +342,13 @@ private fun AccessBanner() {
 }
 
 @Composable
-private fun Hero(now: NowPlaying, onOpenLyrics: () -> Unit) {
+private fun Hero(
+    now: NowPlaying,
+    onOpenLyrics: () -> Unit,
+    liked: Boolean,
+    onLike: () -> Unit,
+    onAddToPlaylist: () -> Unit,
+) {
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -380,12 +432,31 @@ private fun Hero(now: NowPlaying, onOpenLyrics: () -> Unit) {
         }
         if (now.hasTrack) {
             Spacer(Modifier.height(12.dp))
-            GlassPill(
-                text = tr("Текст песни", "Lyrics"),
-                selected = false,
-                icon = Icons.Rounded.Translate,
-                onClick = onOpenLyrics,
-            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                GlassPill(
+                    text = tr("Текст песни", "Lyrics"),
+                    selected = false,
+                    icon = Icons.Rounded.Translate,
+                    onClick = onOpenLyrics,
+                )
+                CircleButton(
+                    icon = if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
+                    contentDescription = tr("В любимые", "Like"),
+                    size = 38.dp,
+                    iconSize = 17.dp,
+                    onClick = onLike,
+                )
+                CircleButton(
+                    icon = Icons.Rounded.PlaylistAdd,
+                    contentDescription = tr("В плейлист", "Add to playlist"),
+                    size = 38.dp,
+                    iconSize = 17.dp,
+                    onClick = onAddToPlaylist,
+                )
+            }
         }
     }
 }
@@ -1137,4 +1208,18 @@ internal fun fmt(ms: Long): String {
     val m = total / 60
     val s = total % 60
     return "%d:%02d".format(m, s)
+}
+
+private fun LocalTrack.toLikedTrack(): LikedTrack {
+    val yt = id.startsWith("yt:")
+    return LikedTrack(
+        id = id,
+        videoId = if (yt) id.removePrefix("yt:") else null,
+        uri = if (yt) null else uri,
+        title = title,
+        artist = artist,
+        album = album,
+        durationMs = durationMs,
+        thumbnailUrl = artPath,
+    )
 }

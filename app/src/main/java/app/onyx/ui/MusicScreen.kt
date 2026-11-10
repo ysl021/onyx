@@ -69,6 +69,7 @@ import app.onyx.AppController
 import app.onyx.core.LikedArtist
 import app.onyx.core.LikedTrack
 import app.onyx.core.PrefsData
+import app.onyx.music.LocalPlaylist
 import app.onyx.music.LocalTrack
 import app.onyx.music.PlaylistStreamTrack
 import app.onyx.music.TagWriter
@@ -1151,7 +1152,7 @@ private fun fmtLocal(ms: Long): String {
  * a new one. Used by the Music tab multi-select flow.
  */
 @Composable
-private fun AddToPlaylistDialog(
+internal fun AddToPlaylistDialog(
     controller: AppController,
     trackIds: List<String>,
     onDismiss: () -> Unit,
@@ -1159,6 +1160,16 @@ private fun AddToPlaylistDialog(
     val playlistsState by controller.localPlaylists.state.collectAsStateWithLifecycle()
     var newMode by remember { mutableStateOf(false) }
     var newName by remember { mutableStateOf("") }
+    var confirm by remember { mutableStateOf<LocalPlaylist?>(null) }
+
+    fun addToPlaylist(playlist: LocalPlaylist) {
+        confirm = null
+        controller.localPlaylists.addTracks(playlist.id, trackIds)
+        controller.toast(
+            tr("Добавлено в «${playlist.name}»", "Added to «${playlist.name}»"),
+        )
+        onDismiss()
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1195,11 +1206,8 @@ private fun AddToPlaylistDialog(
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(12.dp))
                                     .clickable {
-                                        controller.localPlaylists.addTracks(playlist.id, trackIds)
-                                        controller.toast(
-                                            tr("Добавлено в «${playlist.name}»", "Added to «${playlist.name}»"),
-                                        )
-                                        onDismiss()
+                                        val exists = trackIds.any { it in playlist.trackIds }
+                                        if (exists) confirm = playlist else addToPlaylist(playlist)
                                     }
                                     .padding(vertical = 6.dp, horizontal = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -1280,4 +1288,34 @@ private fun AddToPlaylistDialog(
             }
         },
     )
+
+    val duplicate = confirm
+    if (duplicate != null) {
+        AlertDialog(
+            onDismissRequest = { confirm = null },
+            title = {
+                Text(tr("Трек уже в плейлисте", "Already in playlist"), color = OnyxWhite)
+            },
+            text = {
+                Text(
+                    tr(
+                        "Трек уже есть в плейлисте «${duplicate.name}». Добавить ещё раз?",
+                        "This track is already in «${duplicate.name}». Add it again?",
+                    ),
+                    color = OnyxDim,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { addToPlaylist(duplicate) }) {
+                    Text(tr("Добавить", "Add"), color = OnyxWhite)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirm = null }) {
+                    Text(tr("Отмена", "Cancel"), color = OnyxFaint)
+                }
+            },
+            containerColor = OnyxBlack,
+        )
+    }
 }

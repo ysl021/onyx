@@ -86,6 +86,7 @@ import app.onyx.AppController
 import app.onyx.core.LikedArtist
 import app.onyx.core.LikedTrack
 import app.onyx.core.PrefsData
+import app.onyx.music.LocalPlaylist
 import app.onyx.music.PlaylistStreamTrack
 import app.onyx.ui.components.AsyncArt
 import app.onyx.ui.components.CircleButton
@@ -93,6 +94,7 @@ import app.onyx.ui.components.GlassCard
 import app.onyx.ui.components.GlassPill
 import app.onyx.ui.components.SectionLabel
 import app.onyx.ui.theme.OnyxBlack
+import app.onyx.ui.theme.OnyxDim
 import app.onyx.ui.theme.OnyxFaint
 import app.onyx.ui.theme.OnyxLine
 import app.onyx.ui.theme.OnyxWhite
@@ -2125,6 +2127,14 @@ internal fun StreamPlaylistDialog(
     onDismiss: () -> Unit,
 ) {
     val state by controller.localPlaylists.state.collectAsStateWithLifecycle()
+    var confirm by remember { mutableStateOf<LocalPlaylist?>(null) }
+
+    fun addTo(playlist: LocalPlaylist) {
+        confirm = null
+        controller.localPlaylists.addStreamTracks(playlist.id, listOf(entry))
+        onDismiss()
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(tr("В плейлист", "Add to playlist"), color = OnyxWhite) },
@@ -2146,11 +2156,11 @@ internal fun StreamPlaylistDialog(
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(12.dp))
                                 .clickable {
-                                    controller.localPlaylists.addStreamTracks(
-                                        playlist.id,
-                                        listOf(entry),
-                                    )
-                                    onDismiss()
+                                    if (playlist.trackIds.contains(entry.id)) {
+                                        confirm = playlist
+                                    } else {
+                                        addTo(playlist)
+                                    }
                                 }
                                 .padding(vertical = 8.dp, horizontal = 4.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -2190,6 +2200,36 @@ internal fun StreamPlaylistDialog(
         },
         containerColor = OnyxBlack,
     )
+
+    val duplicate = confirm
+    if (duplicate != null) {
+        AlertDialog(
+            onDismissRequest = { confirm = null },
+            title = {
+                Text(tr("Трек уже в плейлисте", "Already in playlist"), color = OnyxWhite)
+            },
+            text = {
+                Text(
+                    tr(
+                        "Трек уже есть в плейлисте «${duplicate.name}». Добавить ещё раз?",
+                        "This track is already in «${duplicate.name}». Add it again?",
+                    ),
+                    color = OnyxDim,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { addTo(duplicate) }) {
+                    Text(tr("Добавить", "Add"), color = OnyxWhite)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirm = null }) {
+                    Text(tr("Отмена", "Cancel"), color = OnyxFaint)
+                }
+            },
+            containerColor = OnyxBlack,
+        )
+    }
 }
 
 private fun YtSearchResult.toStreamTrack(): PlaylistStreamTrack = PlaylistStreamTrack(

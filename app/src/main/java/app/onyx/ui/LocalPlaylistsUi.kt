@@ -27,12 +27,14 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.CreateNewFolder
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material.icons.rounded.PhotoCamera
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
@@ -42,6 +44,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -54,8 +57,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.onyx.AppController
+import app.onyx.core.PrefsData
 import app.onyx.music.LocalPlaylist
 import app.onyx.music.LocalTrack
+import app.onyx.youtube.YouTubeClient
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import app.onyx.music.PlaylistStreamTrack
 import app.onyx.ui.components.artModel
 import app.onyx.music.PlaylistFolder
@@ -493,6 +501,57 @@ private fun LocalPlaylistDetail(
     var sortAsc by rememberSaveable { mutableStateOf(true) }
     var showEdit by remember { mutableStateOf(false) }
     var showPicker by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val prefs by controller.prefs.data.collectAsStateWithLifecycle(initialValue = PrefsData())
+
+    fun downloadStreamTrack(track: LocalTrack) {
+        if (!track.id.startsWith("yt:")) return
+        val folder = prefs.youtubeFolderUri
+        if (folder.isBlank()) {
+            controller.toast(tr("Сначала выбери папку для сохранения", "Pick a folder to save into first"))
+            return
+        }
+        scope.launch(Dispatchers.IO) {
+            val video = runCatching {
+                YouTubeClient.resolve("https://www.youtube.com/watch?v=${track.id.removePrefix("yt:")}")
+            }.getOrNull()
+            withContext(Dispatchers.Main) {
+                if (video != null) {
+                    controller.startYouTubeWhole(video, folder)
+                } else {
+                    controller.toast(tr("Не удалось получить трек", "Could not fetch the track"))
+                }
+            }
+        }
+    }
+
+    fun downloadAll() {
+        val folder = prefs.youtubeFolderUri
+        if (folder.isBlank()) {
+            controller.toast(tr("Сначала выбери папку для сохранения", "Pick a folder to save into first"))
+            return
+        }
+        if (playlist.streamTracks.isEmpty()) return
+        controller.toast(
+            tr(
+                "Скачиваю ${playlist.streamTracks.size} треков",
+                "Downloading ${playlist.streamTracks.size} tracks",
+            ),
+        )
+        scope.launch(Dispatchers.IO) {
+            playlist.streamTracks.forEach { entry ->
+                val video = runCatching {
+                    YouTubeClient.resolve("https://www.youtube.com/watch?v=${entry.videoId}")
+                }.getOrNull()
+                if (video != null) {
+                    withContext(Dispatchers.Main) {
+                        controller.startYouTubeWhole(video, folder)
+                    }
+                }
+            }
+        }
+    }
+
     val coverLauncher = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         uri?.let { controller.localPlaylists.setCover(playlist.id, it) }
     }
@@ -619,6 +678,14 @@ private fun LocalPlaylistDetail(
                     selected = false,
                     onClick = { showEdit = true },
                 )
+                Spacer(Modifier.width(8.dp))
+                GlassPill(
+                    text = tr("Скачать", "Download"),
+                    selected = false,
+                    icon = Icons.Rounded.Download,
+                    enabled = playlist.streamTracks.isNotEmpty(),
+                    onClick = { downloadAll() },
+                )
             }
             Spacer(Modifier.height(12.dp))
         }
@@ -726,6 +793,7 @@ private fun LocalPlaylistDetail(
                 ) {
                     PlaylistTrackRow(
                         track = track,
+                        onDownload = { downloadStreamTrack(track) },
                         onRemove = {
                             controller.localPlaylists.removeTrack(playlist.id, track.id)
                         },
@@ -790,6 +858,7 @@ private fun LocalPlaylistDetail(
 @Composable
 private fun PlaylistTrackRow(
     track: LocalTrack,
+    onDownload: () -> Unit,
     onRemove: () -> Unit,
 ) {
     Row(
@@ -825,6 +894,16 @@ private fun PlaylistTrackRow(
         }
         Text(text = fmtMs(track.durationMs), color = OnyxFaint, fontSize = 10.sp)
         Spacer(Modifier.width(8.dp))
+        if (track.id.startsWith("yt:")) {
+            IconButton(onClick = onDownload, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    Icons.Rounded.Download,
+                    contentDescription = tr("Скачать трек", "Download track"),
+                    tint = OnyxFaint,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
+        }
         Icon(
             Icons.Rounded.Delete,
             contentDescription = tr("Удалить из плейлиста", "Remove from playlist"),
