@@ -93,26 +93,41 @@ object YouTubeSearch {
     private var musicConfig: Config? = null
 
     /**
-     * Music-only search. NewPipe's music extractor NPEs on the current
-     * `music.youtube.com` layout, so this follows the same strategy as the
-     * regular search: fetch the page once, slice `ytInitialData` and walk it.
+     * Music-only search through YouTube Music's innerTube endpoint. The HTML
+     * page is only used to read the API key/client version; it no longer embeds
+     * `ytInitialData`, so parsing the page itself returns nothing.
      */
     suspend fun searchMusic(query: String, continuation: String? = null): Result =
         withContext(Dispatchers.IO) {
             if (continuation != null) return@withContext loadMoreMusic(continuation)
             val q = query.trim()
             if (q.isEmpty()) return@withContext Result(emptyList(), null)
-            val html = fetchMusicPage(q)
-            val initial = extractJson(html, "ytInitialData", "window[\"ytInitialData\"]")
-            val root = initial?.let { runCatching { JSONObject(it) }.getOrNull() }
-                ?: return@withContext Result(emptyList(), null)
-            musicConfig = Config(
-                regexValue(html, "INNERTUBE_API_KEY"),
-                regexValue(html, "INNERTUBE_CLIENT_VERSION"),
-            )
+
+            val html = runCatching { fetchMusicPage(q) }.getOrNull()
+            val apiKey = html?.let { regexValue(it, "INNERTUBE_API_KEY") }
+                ?: FALLBACK_MUSIC_API_KEY
+            val clientVersion = html?.let { regexValue(it, "INNERTUBE_CLIENT_VERSION") }
+                ?: FALLBACK_MUSIC_CLIENT_VERSION
+            musicConfig = Config(apiKey, clientVersion)
+
+            val body = buildString {
+                append("{\"context\":{\"client\":{\"clientName\":\"WEB_REMIX\",\"clientVersion\":\"")
+                append(escape(clientVersion))
+                append("\",\"hl\":\"en\",\"gl\":\"US\"}},\"query\":\"")
+                append(escape(q))
+                append("\",\"params\":\"")
+                append(MUSIC_VIDEOS_PARAM_BASE64)
+                append("\"}")
+            }
+            val response = musicInnerTubePost(body, Config(apiKey, clientVersion))
             val videos = ArrayList<YtSearchResult>()
-            collectMusicItems(root, videos)
-            Result(videos, findContinuation(root))
+            if (response != null) collectMusicItems(response, videos)
+            if (videos.isEmpty()) {
+                // Last resort: regular search, so the screen is never empty.
+                return@withContext runCatching { search(q) }
+                    .getOrDefault(Result(emptyList(), null))
+            }
+            Result(videos, findContinuation(response))
         }
 
     private fun fetchMusicPage(query: String): String {
@@ -494,6 +509,8 @@ object YouTubeSearch {
     }
 
     private const val FALLBACK_CLIENT_VERSION = "2.20260101.00.00"
-    private const val FALLBACK_MUSIC_CLIENT_VERSION = "1.20260101.01.00"
+    private const val FALLBACK_MUSIC_CLIENT_VERSION = "1.20261104.00.00"
+    private const val FALLBACK_MUSIC_API_KEY = "AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX30"
     private const val MUSIC_VIDEOS_PARAM = "EgWKAQIQAWoKEAoQAxAEEAkQBQ%3D%3D"
+    private const val MUSIC_VIDEOS_PARAM_BASE64 = "EgWKAQIQAWoKEAoQAxAEEAkQBQ=="
 }

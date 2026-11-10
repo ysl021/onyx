@@ -159,8 +159,9 @@ fun HomeScreen(
                                 "Set the PC IP in Settings → Discord",
                             ),
                         )
+                    } else {
+                        scope.launch { controller.prefs.setDiscordBridgeEnabled(next) }
                     }
-                    scope.launch { controller.prefs.setDiscordBridgeEnabled(next) }
                 },
             )
             if (!media.hasAccess) {

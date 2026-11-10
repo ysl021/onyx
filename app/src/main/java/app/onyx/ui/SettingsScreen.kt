@@ -535,12 +535,27 @@ fun SettingsScreen(
                     "Send the current track to your PC; it sets Discord Rich Presence.",
                 ),
                 checked = prefs.discordBridgeEnabled,
-                onChange = { scope.launch { controller.prefs.setDiscordBridgeEnabled(it) } },
+                onChange = { enabled ->
+                    if (enabled && prefs.discordBridgeHost.isBlank()) {
+                        controller.toast(
+                            tr("Сначала укажи IP компьютера", "Set the PC IP first"),
+                        )
+                    } else {
+                        scope.launch { controller.prefs.setDiscordBridgeEnabled(enabled) }
+                    }
+                },
             )
             Spacer(Modifier.height(10.dp))
             ThemeField(tr("IP компьютера", "PC IP"), bridgeHost) {
                 bridgeHost = it
-                scope.launch { controller.prefs.setDiscordBridgeHost(it.trim()) }
+                scope.launch {
+                    controller.prefs.setDiscordBridgeHost(it.trim())
+                    // A bridge without a host cannot work; do not leave the
+                    // switch looking enabled while every update is dropped.
+                    if (it.isBlank() && prefs.discordBridgeEnabled) {
+                        controller.prefs.setDiscordBridgeEnabled(false)
+                    }
+                }
             }
             ThemeField(tr("Порт", "Port"), bridgePort) {
                 bridgePort = it.filter { ch -> ch.isDigit() }.take(5)
