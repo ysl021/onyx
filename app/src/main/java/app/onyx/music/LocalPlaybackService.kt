@@ -4,6 +4,7 @@ import android.app.PendingIntent
 import android.content.Intent
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -19,15 +20,18 @@ class LocalPlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
         // YouTube streams are plain HTTPS URLs but googlevideo checks the UA
-        // and referer. The same data source is harmless for local files.
+        // and referer. DefaultDataSource keeps content:// and file:// URIs on
+        // the local file/content sources; passing the HTTP factory directly
+        // made every local track fail to load.
         val http = DefaultHttpDataSource.Factory()
             .setUserAgent(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
                     "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
             )
             .setDefaultRequestProperties(mapOf("Referer" to "https://www.youtube.com/"))
+        val dataSource = DefaultDataSource.Factory(this, http)
         val exo = ExoPlayer.Builder(this)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(http))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(dataSource))
             .build()
             .apply {
                 setAudioAttributes(
