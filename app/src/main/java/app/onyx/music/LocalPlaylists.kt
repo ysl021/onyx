@@ -20,6 +20,17 @@ import kotlinx.serialization.json.Json
 import java.io.File
 import java.util.UUID
 
+/** A streaming (YouTube) track saved into a playlist without downloading it. */
+@Serializable
+data class PlaylistStreamTrack(
+    val id: String,
+    val videoId: String,
+    val title: String,
+    val artist: String,
+    val durationMs: Long = 0L,
+    val thumbnailUrl: String? = null,
+)
+
 @Serializable
 data class LocalPlaylist(
     val id: String,
@@ -30,6 +41,8 @@ data class LocalPlaylist(
     val trackIds: List<String> = emptyList(),
     val folderId: String? = null,
     val pinned: Boolean = false,
+    /** Metadata for `yt:` ids inside [trackIds]; keeps the playlist order. */
+    val streamTracks: List<PlaylistStreamTrack> = emptyList(),
 )
 
 @Serializable
@@ -124,6 +137,15 @@ class LocalPlaylists(
 
     fun addTracks(id: String, trackIds: List<String>) = editPlaylist(id) { playlist ->
         playlist.copy(trackIds = (playlist.trackIds + trackIds).distinct())
+    }
+
+    fun addStreamTracks(id: String, tracks: List<PlaylistStreamTrack>) = editPlaylist(id) { playlist ->
+        val incomingIds = tracks.map { it.id }
+        val mergedMeta = playlist.streamTracks.filterNot { it.id in incomingIds } + tracks
+        playlist.copy(
+            trackIds = (playlist.trackIds + incomingIds).distinct(),
+            streamTracks = mergedMeta,
+        )
     }
 
     fun removeTrack(id: String, trackId: String) = editPlaylist(id) { playlist ->

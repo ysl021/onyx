@@ -43,9 +43,11 @@ import androidx.compose.material.icons.rounded.Link
 import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.Radio
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.VideoLibrary
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
@@ -54,6 +56,7 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -83,11 +86,13 @@ import app.onyx.AppController
 import app.onyx.core.LikedArtist
 import app.onyx.core.LikedTrack
 import app.onyx.core.PrefsData
+import app.onyx.music.PlaylistStreamTrack
 import app.onyx.ui.components.AsyncArt
 import app.onyx.ui.components.CircleButton
 import app.onyx.ui.components.GlassCard
 import app.onyx.ui.components.GlassPill
 import app.onyx.ui.components.SectionLabel
+import app.onyx.ui.theme.OnyxBlack
 import app.onyx.ui.theme.OnyxFaint
 import app.onyx.ui.theme.OnyxLine
 import app.onyx.ui.theme.OnyxWhite
@@ -149,6 +154,7 @@ fun YouTubeScreen(
     var artistLoading by remember { mutableStateOf(false) }
     var recommendations by remember { mutableStateOf<List<YtSearchResult>>(emptyList()) }
     var recommendationsLoading by remember { mutableStateOf(false) }
+    var pickerEntry by remember { mutableStateOf<PlaylistStreamTrack?>(null) }
     val pageBlack = app.onyx.ui.theme.LocalOnyx.current.black
 
     LaunchedEffect(Unit) {
@@ -539,6 +545,7 @@ fun YouTubeScreen(
                 onArtist = { openArtist(currentPreview.channel) },
                 liked = isLikedTrack(currentPreview.id),
                 onLike = { toggleLikeVideo(currentPreview) },
+                onAddToPlaylist = { pickerEntry = currentPreview.toStreamTrack() },
                 modifier = Modifier.weight(1f),
             )
         } else {
@@ -688,6 +695,7 @@ fun YouTubeScreen(
                                     onArtist = { openArtist(result.channel) },
                                     liked = isLikedTrack(result.id),
                                     onLike = { toggleLikeTrack(result) },
+                                    onAddToPlaylist = { pickerEntry = result.toStreamTrack() },
                                 )
                             }
                             if (!recommendationsLoading && recommendations.isEmpty()) {
@@ -745,6 +753,7 @@ fun YouTubeScreen(
                                 onArtist = { openArtist(result.channel) },
                                 liked = isLikedTrack(result.id),
                                 onLike = { toggleLikeTrack(result) },
+                                onAddToPlaylist = { pickerEntry = result.toStreamTrack() },
                             )
                         }
                         if (searchError != null && results.isEmpty()) {
@@ -839,6 +848,7 @@ fun YouTubeScreen(
             },
             isLikedTrack = { isLikedTrack(it.id) },
             onLikeTrack = { toggleLikeTrack(it) },
+            onAddTrack = { pickerEntry = it.toStreamTrack() },
             onBack = { artistPage = null },
             onPlaySongs = { items -> playSongs(items, artist.artist.name) },
             onPlayAlbum = { album ->
@@ -871,6 +881,10 @@ fun YouTubeScreen(
                 fontSize = 12.sp,
             )
         }
+    }
+
+    pickerEntry?.let { entry ->
+        StreamPlaylistDialog(controller, entry) { pickerEntry = null }
     }
     }
 }
@@ -1006,6 +1020,7 @@ private fun SearchResultRow(
     onArtist: () -> Unit,
     liked: Boolean,
     onLike: () -> Unit,
+    onAddToPlaylist: () -> Unit,
 ) {
     Row(
         modifier = Modifier
@@ -1050,6 +1065,14 @@ private fun SearchResultRow(
         )
         Spacer(Modifier.width(6.dp))
         CircleButton(
+            icon = Icons.Rounded.PlaylistAdd,
+            contentDescription = tr("В плейлист", "Add to playlist"),
+            size = 34.dp,
+            iconSize = 16.dp,
+            onClick = onAddToPlaylist,
+        )
+        Spacer(Modifier.width(6.dp))
+        CircleButton(
             icon = if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
             contentDescription = tr("В любимые", "Like"),
             size = 34.dp,
@@ -1085,6 +1108,7 @@ private fun PreviewPanel(
     onArtist: () -> Unit,
     liked: Boolean,
     onLike: () -> Unit,
+    onAddToPlaylist: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val pageBlack = app.onyx.ui.theme.LocalOnyx.current.black
@@ -1121,6 +1145,14 @@ private fun PreviewPanel(
                         overflow = TextOverflow.Ellipsis,
                     )
                 }
+                CircleButton(
+                    icon = Icons.Rounded.PlaylistAdd,
+                    contentDescription = tr("В плейлист", "Add to playlist"),
+                    size = 34.dp,
+                    iconSize = 16.dp,
+                    onClick = onAddToPlaylist,
+                )
+                Spacer(Modifier.width(6.dp))
                 CircleButton(
                     icon = if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                     contentDescription = tr("В любимые", "Like"),
@@ -1831,12 +1863,13 @@ internal fun fmtTime(ms: Long): String {
 }
 
 @Composable
-private fun ArtistPage(
+internal fun ArtistPage(
     page: YtArtistPage,
     likedArtist: Boolean,
     onLikeArtist: () -> Unit,
     isLikedTrack: (YtSearchResult) -> Boolean,
     onLikeTrack: (YtSearchResult) -> Unit,
+    onAddTrack: (YtSearchResult) -> Unit,
     onBack: () -> Unit,
     onPlaySongs: (List<YtSearchResult>) -> Unit,
     onPlayAlbum: (YtAlbum) -> Unit,
@@ -1918,6 +1951,7 @@ private fun ArtistPage(
                         song = song,
                         liked = isLikedTrack(song),
                         onLike = { onLikeTrack(song) },
+                        onAddToPlaylist = { onAddTrack(song) },
                         onPlay = { onPlaySongs(listOf(song)) },
                     )
                 }
@@ -1954,6 +1988,7 @@ private fun ArtistPage(
                         song = video,
                         liked = isLikedTrack(video),
                         onLike = { onLikeTrack(video) },
+                        onAddToPlaylist = { onAddTrack(video) },
                         onPlay = { onPlaySongs(listOf(video)) },
                     )
                 }
@@ -1982,6 +2017,7 @@ private fun ArtistSongRow(
     song: YtSearchResult,
     liked: Boolean,
     onLike: () -> Unit,
+    onAddToPlaylist: () -> Unit,
     onPlay: () -> Unit,
 ) {
     Row(
@@ -2021,6 +2057,14 @@ private fun ArtistSongRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
+        CircleButton(
+            icon = Icons.Rounded.PlaylistAdd,
+            contentDescription = tr("В плейлист", "Add to playlist"),
+            size = 32.dp,
+            iconSize = 15.dp,
+            onClick = onAddToPlaylist,
+        )
+        Spacer(Modifier.width(6.dp))
         CircleButton(
             icon = if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
             contentDescription = tr("В любимые", "Like"),
@@ -2073,3 +2117,95 @@ private fun ArtistAlbumCard(album: YtAlbum, modifier: Modifier = Modifier, onPla
         )
     }
 }
+
+@Composable
+internal fun StreamPlaylistDialog(
+    controller: AppController,
+    entry: PlaylistStreamTrack,
+    onDismiss: () -> Unit,
+) {
+    val state by controller.localPlaylists.state.collectAsStateWithLifecycle()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(tr("В плейлист", "Add to playlist"), color = OnyxWhite) },
+        text = {
+            if (state.playlists.isEmpty()) {
+                Text(
+                    tr(
+                        "Сначала создай плейлист во вкладке «Плейлист».",
+                        "Create a playlist in the Playlist tab first.",
+                    ),
+                    color = OnyxFaint,
+                    fontSize = 12.sp,
+                )
+            } else {
+                LazyColumn(modifier = Modifier.height(280.dp)) {
+                    items(state.playlists, key = { it.id }) { playlist ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable {
+                                    controller.localPlaylists.addStreamTracks(
+                                        playlist.id,
+                                        listOf(entry),
+                                    )
+                                    onDismiss()
+                                }
+                                .padding(vertical = 8.dp, horizontal = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            AsyncArt(
+                                model = playlist.coverPath?.let {
+                                    app.onyx.ui.components.artModel(it)
+                                },
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(RoundedCornerShape(8.dp)),
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    playlist.name,
+                                    color = OnyxWhite,
+                                    fontSize = 13.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    "${playlist.trackIds.size} " + tr("треков", "tracks"),
+                                    color = OnyxFaint,
+                                    fontSize = 10.sp,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(tr("Закрыть", "Close"), color = OnyxWhite)
+            }
+        },
+        containerColor = OnyxBlack,
+    )
+}
+
+private fun YtSearchResult.toStreamTrack(): PlaylistStreamTrack = PlaylistStreamTrack(
+    id = "yt:$id",
+    videoId = id,
+    title = title,
+    artist = channel,
+    durationMs = durationMs,
+    thumbnailUrl = thumbnailUrl,
+)
+
+private fun YtVideo.toStreamTrack(): PlaylistStreamTrack = PlaylistStreamTrack(
+    id = "yt:$id",
+    videoId = id,
+    title = title,
+    artist = channel,
+    durationMs = durationMs,
+    thumbnailUrl = thumbnailUrl,
+)

@@ -56,6 +56,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.onyx.AppController
 import app.onyx.music.LocalPlaylist
 import app.onyx.music.LocalTrack
+import app.onyx.music.PlaylistStreamTrack
+import app.onyx.ui.components.artModel
 import app.onyx.music.PlaylistFolder
 import app.onyx.ui.components.AsyncArt
 import app.onyx.ui.components.CircleButton
@@ -477,8 +479,13 @@ private fun LocalPlaylistDetail(
     }
 
     val byId = remember(library.tracks) { library.tracks.associateBy { it.id } }
-    val fullTracks = remember(playlist.trackIds, byId) {
-        playlist.trackIds.mapNotNull { byId[it] }
+    val streamById = remember(playlist.streamTracks) {
+        playlist.streamTracks.associateBy { it.id }
+    }
+    val fullTracks = remember(playlist.trackIds, byId, streamById) {
+        playlist.trackIds.mapNotNull { id ->
+            byId[id] ?: streamById[id]?.toLocalTrack()
+        }
     }
 
     var query by remember { mutableStateOf("") }
@@ -793,7 +800,7 @@ private fun PlaylistTrackRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AsyncArt(
-            model = track.artPath?.let { java.io.File(it) },
+            model = artModel(track.artPath),
             modifier = Modifier
                 .size(38.dp)
                 .clip(RoundedCornerShape(9.dp)),
@@ -1119,3 +1126,14 @@ private fun FolderEditDialog(
         },
     )
 }
+
+private fun PlaylistStreamTrack.toLocalTrack(): LocalTrack = LocalTrack(
+    id = id,
+    uri = "yt://$videoId",
+    title = title,
+    artist = artist,
+    album = "YouTube",
+    durationMs = durationMs,
+    artPath = thumbnailUrl,
+    folderName = "YouTube",
+)

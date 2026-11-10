@@ -70,6 +70,7 @@ import app.onyx.core.LikedArtist
 import app.onyx.core.LikedTrack
 import app.onyx.core.PrefsData
 import app.onyx.music.LocalTrack
+import app.onyx.music.PlaylistStreamTrack
 import app.onyx.music.TagWriter
 import app.onyx.ui.components.AsyncArt
 import app.onyx.ui.components.CircleButton
@@ -86,6 +87,8 @@ import app.onyx.ui.theme.OnyxBlack
 import app.onyx.ui.theme.OnyxLine
 import app.onyx.ui.theme.OnyxSurface
 import app.onyx.ui.theme.OnyxWhite
+import app.onyx.youtube.YtAlbum
+import app.onyx.youtube.YtArtistPage
 import app.onyx.youtube.YtSearchResult
 import app.onyx.youtube.YouTubeMusic
 import kotlinx.coroutines.Dispatchers
@@ -106,7 +109,23 @@ fun MusicScreen(
     val playback by controller.localPlayer.state.collectAsStateWithLifecycle()
     val prefs by controller.prefs.data.collectAsStateWithLifecycle(initialValue = PrefsData())
     var view by remember { mutableStateOf(MusicView.TRACKS) }
+    var openedArtist by remember { mutableStateOf<YtArtistPage?>(null) }
+    var artistLoading by remember { mutableStateOf(false) }
+    var streamPicker by remember { mutableStateOf<PlaylistStreamTrack?>(null) }
     var query by remember { mutableStateOf("") }
+
+    fun openArtist(name: String) {
+        if (name.isBlank()) return
+        scope.launch(Dispatchers.IO) {
+            artistLoading = true
+            val found = runCatching { YouTubeMusic.searchArtist(name) }.getOrNull()
+            val page = found?.let { runCatching { YouTubeMusic.artistPage(it) }.getOrNull() }
+            withContext(Dispatchers.Main) {
+                if (page != null) openedArtist = page
+                artistLoading = false
+            }
+        }
+    }
     var selectedFolder by remember { mutableStateOf<String?>(null) }
     var editingTrack by remember { mutableStateOf<LocalTrack?>(null) }
     // Multi-select: long-press a track then drag across rows to select several.
@@ -441,17 +460,7 @@ fun MusicScreen(
             FavoritesView(
                 artists = prefs.likedArtists,
                 tracks = prefs.likedTracks,
-                onPlayArtist = { artist ->
-                    scope.launch(Dispatchers.IO) {
-                        val found = YouTubeMusic.searchArtist(artist.name)
-                        val page = found?.let { YouTubeMusic.artistPage(it) }
-                        if (page != null && page.songs.isNotEmpty()) {
-                            withContext(Dispatchers.Main) {
-                                controller.youtubeRadio.playQueue(page.songs, artist.name)
-                            }
-                        }
-                    }
-                },
+                onPlayArtist = { artist -> openArtist(artist.name) },
                 onPlayTrack = { liked ->
                     if (liked.isYouTube) {
                         val all = prefs.likedTracks.filter { it.videoId != null }
@@ -568,6 +577,75 @@ fun MusicScreen(
                 containerColor = OnyxBlack,
             )
         }
+    }
+
+    val artist = openedArtist
+    if (artist != null) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(OnyxBlack),
+        ) {
+            ArtistPage(
+                page = artist,
+                likedArtist = prefs.likedArtists.any {
+                    it.name.equals(artist.artist.name, ignoreCase = true)
+                },
+                onLikeArtist = {
+                    scope.launch {
+                        controller.prefs.toggleLikedArtist(
+                            LikedArtist(
+                                artist.artist.name,
+                                artist.artist.thumbnailUrl,
+                                artist.artist.browseId,
+                            ),
+                        )
+                    }
+                },
+                isLikedTrack = { item ->
+                    prefs.likedTracks.any { it.id == "yt:${item.id}" }
+                },
+                onLikeTrack = { item ->
+                    scope.launch { controller.prefs.toggleLikedTrack(item.toLiked()) }
+                },
+                onAddTrack = { item -> streamPicker = item.toStreamTrack() },
+                onBack = { openedArtist = null },
+                onPlaySongs = { items ->
+                    controller.youtubeRadio.playQueue(items, artist.artist.name)
+                },
+                onPlayAlbum = { album ->
+                    scope.launch(Dispatchers.IO) {
+                        val tracks = runCatching { YouTubeMusic.albumTracks(album) }
+                            .getOrDefault(emptyList())
+                        if (tracks.isNotEmpty()) {
+                            withContext(Dispatchers.Main) {
+                                controller.youtubeRadio.playQueue(tracks, artist.artist.name)
+                            }
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    }
+
+    if (artistLoading) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(OnyxBlack.copy(alpha = 0.8f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                tr("Загружаю артиста…", "Loading artist…"),
+                color = OnyxFaint,
+                fontSize = 12.sp,
+            )
+        }
+    }
+
+    streamPicker?.let { entry ->
+        StreamPlaylistDialog(controller, entry) { streamPicker = null }
     }
 }
 
@@ -721,6 +799,24 @@ private fun FavoritesView(
         }
     }
 }
+
+private fun YtSearchResult.toLiked(): LikedTrack = LikedTrack(
+    id = "yt:$id",
+    videoId = id,
+    title = title,
+    artist = channel,
+    durationMs = durationMs,
+    thumbnailUrl = thumbnailUrl,
+)
+
+private fun YtSearchResult.toStreamTrack(): PlaylistStreamTrack = PlaylistStreamTrack(
+    id = "yt:$id",
+    videoId = id,
+    title = title,
+    artist = channel,
+    durationMs = durationMs,
+    thumbnailUrl = thumbnailUrl,
+)
 
 private fun LocalTrack.toLiked(): LikedTrack = LikedTrack(
     id = id,
