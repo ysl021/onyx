@@ -140,6 +140,25 @@ class LocalLibrary(
         }
     }
 
+    /** Re-reads folders after a backup restore and scans them again. */
+    fun reload() {
+        scope.launch {
+            val p = prefs.snapshot()
+            p.localFolders.forEach { folder ->
+                runCatching {
+                    context.contentResolver.takePersistableUriPermission(
+                        Uri.parse(folder.uri),
+                        android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                            android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION,
+                    )
+                }
+            }
+            _state.value = _state.value.copy(folders = p.localFolders)
+            readCache()
+            if (p.localFolders.isNotEmpty()) scan()
+        }
+    }
+
     /**
      * One-tap folder discovery through MediaStore. No SAF picker is involved:
      * the system index already knows every audio file, so we only group it by

@@ -41,6 +41,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,6 +62,7 @@ import app.onyx.core.PrefsData
 import app.onyx.music.LocalPlaylist
 import app.onyx.music.LocalTrack
 import app.onyx.youtube.YouTubeClient
+import app.onyx.youtube.YouTubeStreamCache
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -504,6 +506,11 @@ private fun LocalPlaylistDetail(
     val scope = rememberCoroutineScope()
     val prefs by controller.prefs.data.collectAsStateWithLifecycle(initialValue = PrefsData())
 
+    // Warm the first streams while the playlist is open.
+    LaunchedEffect(playlist.id) {
+        playlist.streamTracks.take(3).forEach { YouTubeStreamCache.prefetch(it.videoId) }
+    }
+
     fun downloadStreamTrack(track: LocalTrack) {
         if (!track.id.startsWith("yt:")) return
         val folder = prefs.youtubeFolderUri
@@ -680,9 +687,10 @@ private fun LocalPlaylistDetail(
                 )
                 Spacer(Modifier.width(8.dp))
                 GlassPill(
-                    text = tr("Скачать", "Download"),
+                    text = "",
                     selected = false,
                     icon = Icons.Rounded.Download,
+                    iconDescription = tr("Скачать плейлист", "Download playlist"),
                     enabled = playlist.streamTracks.isNotEmpty(),
                     onClick = { downloadAll() },
                 )

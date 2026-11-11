@@ -24,6 +24,8 @@ import app.onyx.spotify.SpotifyClient
 import app.onyx.spotify.QueueData
 import app.onyx.spotify.DiscordBridge
 import app.onyx.ui.tr
+import app.onyx.update.UpdateManager
+import app.onyx.update.UpdateState
 import app.onyx.youtube.DownloadService
 import app.onyx.youtube.YtSection
 import app.onyx.youtube.YtVideo
@@ -79,7 +81,19 @@ class AppController private constructor(context: Context) {
     /** Local playback wins over notification sessions so artwork and lyrics never go stale. */
     val nowPlaying = combine(media.state, localPlayer.state) { mediaState, localState ->
         val track = localState.current
-        if (track != null && localState.isPlaying) track.toNowPlaying() else mediaState.now
+        // Buffering reports isPlaying=false. Using playWhenReady as well keeps
+        // the player from flashing the previous app's track (or an empty card)
+        // for a second every time a new song is started. While the local track
+        // is current but paused, keep it on screen unless another app actually
+        // plays something; otherwise the card bounces between sources.
+        val localActive = track != null && (
+            localState.isPlaying || localState.playWhenReady || !mediaState.now.isPlaying
+        )
+        if (localActive) {
+            track!!.toNowPlaying(playing = localState.isPlaying || localState.playWhenReady)
+        } else {
+            mediaState.now
+        }
     }.stateIn(scope, SharingStarted.Eagerly, media.state.value.now)
 
     /**
@@ -87,13 +101,17 @@ class AppController private constructor(context: Context) {
      * so the UI does not recompose three times a second.
      */
     val playbackPosition = combine(media.state, localPlayer.state) { mediaState, localState ->
-        if (localState.current != null && localState.isPlaying) localState.positionMs
-        else mediaState.positionMs
+        val localActive = localState.current != null && (
+            localState.isPlaying || localState.playWhenReady || !mediaState.now.isPlaying
+        )
+        if (localActive) localState.positionMs else mediaState.positionMs
     }.stateIn(scope, SharingStarted.Eagerly, 0L)
 
     val queue = MutableStateFlow<QueueData?>(null)
     private var queueFetchedAt = 0L
     val discordBridge = DiscordBridge(prefs, nowPlaying, playbackPosition)
+    val syncClient = app.onyx.sync.SyncClient(appContext, prefs, localPlaylists, localLibrary)
+    val updates = UpdateManager(appContext)
 
     // Sleep timer: counts down and pauses playback when it hits zero.
     private val _sleepRemainingMs = MutableStateFlow(0L)
@@ -226,6 +244,10 @@ class AppController private constructor(context: Context) {
     @Volatile
     var lastTab: String = "Player"
 
+    /** In-memory mirror so the first-run flow never flashes twice in one process. */
+    @Volatile
+    var onboardingDone: Boolean? = null
+
     fun refreshQueue(force: Boolean = false) {
         if (!force && SystemClock.elapsedRealtime() - queueFetchedAt < 8_000L) return
         scope.launch {
@@ -248,7 +270,27 @@ class AppController private constructor(context: Context) {
         headphones.refresh()
         sound.init()
         localPlayer.connect()
+        scope.launch {
+            // The player session can be created before or after DataStore is
+            // read; LocalPlaybackController buffers the mode until it connects.
+            localPlayer.setRepeatMode(prefs.snapshot().repeatMode)
+        }
         startBudsIfAllowed()
+        scope.launch {
+            val snapshot = prefs.snapshot()
+            if (snapshot.autoUpdateCheck && !BuildConfig.TRANSITIONAL) {
+                when (val result = updates.check()) {
+                    is UpdateState.Available -> toast(
+                        tr(
+                            "Доступно обновление ${result.info.versionName}",
+                            "Update ${result.info.versionName} is available",
+                        ),
+                    )
+                    else -> Unit
+                }
+                prefs.setLastUpdateCheck(System.currentTimeMillis())
+            }
+        }
         if (watcher != null) return
         watcher = scope.launch {
             nowPlaying
@@ -273,6 +315,12 @@ class AppController private constructor(context: Context) {
 
     fun toast(message: String) {
         _messages.tryEmit(message)
+    }
+
+    /** Applies a repeat mode now and remembers it for the next launch. */
+    fun setRepeatMode(mode: Int) {
+        localPlayer.setRepeatMode(mode)
+        scope.launch { prefs.setRepeatMode(mode) }
     }
 
     /**
@@ -312,6 +360,7 @@ class AppController private constructor(context: Context) {
         sound.close()
         volume.close()
         discordBridge.close()
+        syncClient.close()
         localPlayer.close()
         localPlaylists.close()
         localLibrary.close()
@@ -329,7 +378,7 @@ class AppController private constructor(context: Context) {
     }
 }
 
-private fun LocalTrack.toNowPlaying(): NowPlaying = NowPlaying(
+private fun LocalTrack.toNowPlaying(playing: Boolean = true): NowPlaying = NowPlaying(
     packageName = "app.onyx.local",
     title = title,
     artist = artist,
@@ -343,7 +392,7 @@ private fun LocalTrack.toNowPlaying(): NowPlaying = NowPlaying(
     },
     mediaId = id,
     durationMs = durationMs,
-    isPlaying = true,
+    isPlaying = playing,
     canSeek = true,
     canSkip = true,
 )

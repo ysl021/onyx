@@ -149,9 +149,12 @@ fun QueueScreen(
             }
 
             item {
+                val nowTitle = media.now.title.ifBlank { queue?.current?.title.orEmpty() }
+                val nowArtist = media.now.artist.ifBlank { queue?.current?.artist.orEmpty() }
+                val nowAlbum = media.now.album.ifBlank { queue?.current?.album.orEmpty() }
                 NowCard(
-                    title = media.now.title.ifBlank { queue?.current?.title.orEmpty() },
-                    artist = media.now.artist.ifBlank { queue?.current?.artist.orEmpty() },
+                    title = nowPlayingTitle(nowTitle, nowArtist, nowAlbum),
+                    artist = nowPlayingArtist(nowArtist, nowAlbum),
                     art = media.now.art ?: media.now.artUri ?: queue?.current?.art,
                 )
             }

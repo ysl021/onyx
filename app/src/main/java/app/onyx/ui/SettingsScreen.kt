@@ -37,6 +37,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.Logout
 import androidx.compose.material.icons.rounded.Check
+import androidx.compose.material.icons.rounded.Computer
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Share
@@ -79,6 +80,13 @@ import app.onyx.core.CustomThemeCodec
 import app.onyx.core.DiscordConfig
 import app.onyx.core.Http
 import app.onyx.core.IconSwitcher
+import app.onyx.core.OnyxBackup
+import app.onyx.core.buildBackup
+import app.onyx.core.readBackup
+import app.onyx.core.writeBackup
+import app.onyx.music.PlaylistsState
+import app.onyx.sync.SyncResult
+import app.onyx.update.UpdateState
 import app.onyx.ui.components.CircleButton
 import app.onyx.ui.components.CustomBackdrop
 import app.onyx.ui.components.GlassCard
@@ -96,6 +104,8 @@ import app.onyx.ui.theme.toOnyxColors
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 
 private const val REDIRECT = "http://127.0.0.1:8899/callback"
 
@@ -117,6 +127,13 @@ fun SettingsScreen(
         mutableStateOf(prefs.discordBridgePort.toString())
     }
     var bridgeStatus by remember { mutableStateOf("") }
+    var transferStatus by remember { mutableStateOf("") }
+    var discovered by remember { mutableStateOf<List<app.onyx.core.DiscoveredPc>>(emptyList()) }
+    var searching by remember { mutableStateOf(false) }
+    var manualHost by remember { mutableStateOf(false) }
+    var pairTarget by remember { mutableStateOf<app.onyx.core.DiscoveredPc?>(null) }
+    var pairCodeInput by remember { mutableStateOf("") }
+    var pairing by remember { mutableStateOf(false) }
     var showEq by rememberSaveable { mutableStateOf(false) }
     var pendingBgPage by remember { mutableStateOf<String?>(null) }
     var previewBgPage by remember { mutableStateOf<String?>(null) }
@@ -125,6 +142,9 @@ fun SettingsScreen(
     var offset by remember { mutableFloatStateOf(prefs.lyricOffsetMs.toFloat()) }
     var listenerOn by remember { mutableStateOf(isListenerEnabled(context)) }
     var batteryFree by remember { mutableStateOf(isBatteryFree(context)) }
+    var installAllowed by remember { mutableStateOf(controller.updates.canInstall()) }
+    var pendingImport by remember { mutableStateOf<OnyxBackup?>(null) }
+    val updateState by controller.updates.state.collectAsStateWithLifecycle()
     val loginState by controller.spotify.loginState.collectAsStateWithLifecycle()
     val busy = loginState is app.onyx.spotify.SpotifyLoginState.Waiting
     val loginError = (loginState as? app.onyx.spotify.SpotifyLoginState.Failed)?.message
@@ -144,6 +164,7 @@ fun SettingsScreen(
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         listenerOn = isListenerEnabled(context)
         batteryFree = isBatteryFree(context)
+        installAllowed = controller.updates.canInstall()
     }
 
     val permissionLauncher = rememberLauncherForActivityResult(
@@ -157,7 +178,7 @@ fun SettingsScreen(
     }
 
     val musicFolderLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocumentTree(),
+        OpenFolderTree(),
     ) { uri ->
         if (uri != null) {
             runCatching {
@@ -170,6 +191,48 @@ fun SettingsScreen(
                 .getOrNull() ?: uri.lastPathSegment ?: tr("Папка", "Folder")
             controller.localLibrary.addFolder(uri, name)
             controller.toast(tr("Папка сохранена", "Folder saved"))
+        }
+    }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                runCatching {
+                    val snapshot = controller.prefs.snapshot()
+                    val playlists = controller.localPlaylists.snapshot()
+                    val backup = buildBackup(
+                        snapshot,
+                        playlists,
+                        app.onyx.BuildConfig.VERSION_NAME,
+                        app.onyx.BuildConfig.VERSION_CODE,
+                    )
+                    writeBackup(context, uri, backup)
+                }.onSuccess {
+                    controller.toast(tr("Данные экспортированы", "Data exported"))
+                }.onFailure {
+                    controller.toast(
+                        tr("Ошибка экспорта: ${it.message}", "Export failed: ${it.message}"),
+                    )
+                }
+            }
+        }
+    }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) {
+            scope.launch {
+                runCatching { readBackup(context, uri) }
+                    .onSuccess { pendingImport = it }
+                    .onFailure {
+                        controller.toast(
+                            tr("Ошибка импорта: ${it.message}", "Import failed: ${it.message}"),
+                        )
+                    }
+            }
         }
     }
 
@@ -222,6 +285,59 @@ fun SettingsScreen(
             modifier = modifier,
         )
         return
+    }
+
+    pendingImport?.let { backup ->
+        AlertDialog(
+            onDismissRequest = { pendingImport = null },
+            title = { Text(tr("Заменить данные?", "Replace data?"), color = OnyxWhite) },
+            text = {
+                Text(
+                    text = tr(
+                        "Плейлисты, избранное и настройки будут заменены данными из файла" +
+                            (if (backup.versionName.isNotBlank()) " (версия ${backup.versionName})" else "") + ".",
+                        "Playlists, favorites and settings will be replaced by the file" +
+                            (if (backup.versionName.isNotBlank()) " (version ${backup.versionName})" else "") + ".",
+                    ),
+                    color = OnyxDim,
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingImport = null
+                        scope.launch {
+                            runCatching {
+                                controller.prefs.restore(backup.prefs)
+                                controller.localPlaylists.replaceAll(
+                                    PlaylistsState(backup.playlists, backup.playlistFolders),
+                                )
+                                controller.localLibrary.reload()
+                                runCatching {
+                                    IconSwitcher.apply(context, backup.prefs.appIcon)
+                                }
+                            }.onSuccess {
+                                controller.toast(tr("Данные восстановлены", "Data restored"))
+                            }.onFailure {
+                                controller.toast(
+                                    tr(
+                                        "Ошибка восстановления: ${it.message}",
+                                        "Restore failed: ${it.message}",
+                                    ),
+                                )
+                            }
+                        }
+                    },
+                ) {
+                    Text(tr("Заменить", "Replace"))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingImport = null }) {
+                    Text(tr("Отмена", "Cancel"))
+                }
+            },
+        )
     }
 
     Column(
@@ -464,10 +580,10 @@ fun SettingsScreen(
             Spacer(Modifier.height(10.dp))
             Text(
                 tr(
-                    "Мост на ПК ставит настоящий Rich Presence: трек, артист, обложка и полоса прогресса. " +
-                        "Запусти bridge/onyx_bridge.py и включи мост ниже.",
-                    "The PC bridge sets real Rich Presence: track, artist, cover and a progress bar. " +
-                        "Run bridge/onyx_bridge.py and enable the bridge below.",
+                    "Хаб ONYX на ПК ставит настоящий Rich Presence: трек, артист, обложка и полоса прогресса. " +
+                        "Открой ONYX на компьютере — телефон найдёт его сам.",
+                    "The ONYX hub on the PC sets real Rich Presence: track, artist, cover and a progress bar. " +
+                        "Open ONYX on the PC and the phone finds it automatically.",
                 ),
                 color = OnyxDim,
                 fontSize = 12.sp,
@@ -520,8 +636,8 @@ fun SettingsScreen(
             Spacer(Modifier.height(8.dp))
             Text(
                 tr(
-                    "Rich Presence оформляется на компьютере. Включи мост ниже и укажи IP компьютера.",
-                    "Rich Presence is rendered on the PC. Enable the bridge below and enter the PC IP.",
+                    "Сопряжение нужно один раз: найди компьютер и введи код из ONYX на ПК.",
+                    "Pair once: find the PC and enter the code shown in ONYX on the PC.",
                 ),
                 color = OnyxFaint,
                 fontSize = 10.sp,
@@ -529,44 +645,136 @@ fun SettingsScreen(
             )
             Spacer(Modifier.height(14.dp))
             ToggleRow(
-                title = tr("ПК-мост ONYX", "ONYX PC bridge"),
+                title = tr("Хаб ONYX на ПК", "ONYX hub on PC"),
                 subtitle = tr(
-                    "Отправлять текущий трек на компьютер, а он поставит Rich Presence в Discord.",
-                    "Send the current track to your PC; it sets Discord Rich Presence.",
+                    "Телефон найдёт компьютер сам по Wi-Fi — IP вводить не нужно.",
+                    "The phone finds the PC over Wi-Fi; no IP needed.",
                 ),
                 checked = prefs.discordBridgeEnabled,
                 onChange = { enabled ->
                     if (enabled && prefs.discordBridgeHost.isBlank()) {
-                        controller.toast(
-                            tr("Сначала укажи IP компьютера", "Set the PC IP first"),
-                        )
+                        controller.toast(tr("Сначала найди компьютер", "Find the PC first"))
                     } else {
                         scope.launch { controller.prefs.setDiscordBridgeEnabled(enabled) }
                     }
                 },
             )
             Spacer(Modifier.height(10.dp))
-            ThemeField(tr("IP компьютера", "PC IP"), bridgeHost) {
-                bridgeHost = it
-                scope.launch {
-                    controller.prefs.setDiscordBridgeHost(it.trim())
-                    // A bridge without a host cannot work; do not leave the
-                    // switch looking enabled while every update is dropped.
-                    if (it.isBlank() && prefs.discordBridgeEnabled) {
-                        controller.prefs.setDiscordBridgeEnabled(false)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                GlassPill(
+                    text = if (searching) tr("Ищу…", "Searching…") else tr("Найти ПК", "Find PC"),
+                    selected = true,
+                    enabled = !searching,
+                    onClick = {
+                        searching = true
+                        bridgeStatus = ""
+                        scope.launch {
+                            val found = withContext(Dispatchers.IO) { app.onyx.core.PcDiscovery.find() }
+                            discovered = found
+                            searching = false
+                            if (found.isEmpty()) {
+                                bridgeStatus = tr(
+                                    "Компьютер не найден. Проверь Wi-Fi и что ONYX открыт на ПК.",
+                                    "No PC found. Check Wi-Fi and that ONYX is running on the PC.",
+                                )
+                            }
+                        }
+                    },
+                )
+                GlassPill(
+                    text = tr("Вручную", "Manual"),
+                    selected = manualHost,
+                    onClick = { manualHost = !manualHost },
+                )
+            }
+            if (discovered.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                discovered.forEach { pc ->
+                    val active = pc.host == prefs.discordBridgeHost
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable {
+                                bridgeHost = pc.host
+                                bridgePort = pc.port.toString()
+                                scope.launch {
+                                    controller.prefs.setDiscordBridgeHost(pc.host)
+                                    controller.prefs.setDiscordBridgePort(pc.port)
+                                    if (prefs.discordBridgeToken.isBlank()) {
+                                        pairTarget = pc
+                                        pairCodeInput = ""
+                                    } else {
+                                        controller.prefs.setDiscordBridgeEnabled(true)
+                                        bridgeStatus = tr("Подключено: ${pc.name}", "Connected: ${pc.name}")
+                                    }
+                                }
+                            }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Rounded.Computer,
+                            contentDescription = null,
+                            tint = if (active) OnyxWhite else OnyxDim,
+                            modifier = Modifier.size(18.dp),
+                        )
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                pc.name,
+                                color = OnyxWhite,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                "${pc.host}:${pc.port}" +
+                                    if (pc.paired) tr(" · сопряжён", " · paired") else "",
+                                color = OnyxFaint,
+                                fontSize = 10.sp,
+                            )
+                        }
+                        if (active) {
+                            Icon(
+                                Icons.Rounded.Check,
+                                contentDescription = null,
+                                tint = OnyxWhite,
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
                     }
                 }
             }
-            ThemeField(tr("Порт", "Port"), bridgePort) {
-                bridgePort = it.filter { ch -> ch.isDigit() }.take(5)
-                scope.launch {
-                    controller.prefs.setDiscordBridgePort(bridgePort.toIntOrNull() ?: 8787)
+            if (manualHost) {
+                Spacer(Modifier.height(8.dp))
+                ThemeField(tr("IP компьютера", "PC IP"), bridgeHost) {
+                    bridgeHost = it
+                    scope.launch {
+                        controller.prefs.setDiscordBridgeHost(it.trim())
+                        controller.prefs.setDiscordBridgeToken("")
+                        // A bridge without a host cannot work; do not leave the
+                        // switch looking enabled while every update is dropped.
+                        if (it.isBlank() && prefs.discordBridgeEnabled) {
+                            controller.prefs.setDiscordBridgeEnabled(false)
+                        }
+                    }
+                }
+                ThemeField(tr("Порт", "Port"), bridgePort) {
+                    bridgePort = it.filter { ch -> ch.isDigit() }.take(5)
+                    scope.launch {
+                        controller.prefs.setDiscordBridgePort(bridgePort.toIntOrNull() ?: 8787)
+                    }
                 }
             }
+            Spacer(Modifier.height(8.dp))
             Text(
                 tr(
-                    "На ПК запусти bridge/onyx_bridge.py. Телефон и ПК должны быть в одной Wi-Fi сети.",
-                    "Run bridge/onyx_bridge.py on the PC. Phone and PC must be on the same Wi-Fi.",
+                    "На ПК открой ONYX и включи хаб в Настройки → Интеграции → Устройства. " +
+                        "Телефон и ПК должны быть в одной Wi-Fi сети.",
+                    "Open ONYX on the PC and enable the hub in Settings → Integrations → Devices. " +
+                        "Phone and PC must be on the same Wi-Fi.",
                 ),
                 color = OnyxFaint,
                 fontSize = 10.sp,
@@ -584,7 +792,7 @@ fun SettingsScreen(
                         val host = bridgeHost.trim()
                         val port = bridgePort.toIntOrNull() ?: 8787
                         if (host.isBlank()) {
-                            bridgeStatus = tr("Сначала укажи IP компьютера", "Enter the PC IP first")
+                            bridgeStatus = tr("Сначала найди компьютер", "Find the PC first")
                         } else {
                             scope.launch {
                                 bridgeStatus = tr("Проверяю…", "Checking…")
@@ -602,6 +810,106 @@ fun SettingsScreen(
                     )
                 }
             }
+            Spacer(Modifier.height(14.dp))
+            Text(
+                tr("Плейлисты и лайки", "Playlists and likes"),
+                color = OnyxWhite,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                tr(
+                    "Передача вручную и только добавлением: существующие плейлисты не перезаписываются, " +
+                        "в них доливаются недостающие треки.",
+                    "Manual and additive: existing playlists are never overwritten, only missing tracks are added.",
+                ),
+                color = OnyxFaint,
+                fontSize = 10.sp,
+                lineHeight = 14.sp,
+            )
+            Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                GlassPill(
+                    text = tr("Отправить на ПК", "Send to PC"),
+                    selected = true,
+                    onClick = {
+                        scope.launch {
+                            val result = controller.syncClient.pushToPc()
+                            transferStatus = syncMessage(result, sending = true)
+                        }
+                    },
+                )
+                GlassPill(
+                    text = tr("Загрузить с ПК", "Load from PC"),
+                    selected = false,
+                    onClick = {
+                        scope.launch {
+                            val result = controller.syncClient.pullFromPc()
+                            transferStatus = syncMessage(result, sending = false)
+                        }
+                    },
+                )
+            }
+            if (transferStatus.isNotBlank()) {
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    transferStatus,
+                    color = OnyxFaint,
+                    fontSize = 10.sp,
+                    lineHeight = 14.sp,
+                )
+            }
+        }
+
+        GlassCard(modifier = Modifier.fillMaxWidth()) {
+            SectionLabel(tr("Подключение к ПК", "PC connection"))
+            Spacer(Modifier.height(10.dp))
+            if (prefs.discordBridgeHost.isNotBlank()) {
+                Text(
+                    tr(
+                        "Подключено: ${prefs.discordBridgeHost}:${prefs.discordBridgePort}",
+                        "Connected: ${prefs.discordBridgeHost}:${prefs.discordBridgePort}",
+                    ),
+                    color = OnyxWhite,
+                    fontSize = 13.sp,
+                )
+                Spacer(Modifier.height(8.dp))
+                GlassPill(
+                    text = tr("Отключить от ПК", "Disconnect from PC"),
+                    selected = false,
+                    onClick = {
+                        scope.launch {
+                            controller.syncClient.unpair()
+                            transferStatus = ""
+                            bridgeStatus = tr("Сопряжение сброшено", "Pairing reset")
+                            controller.toast(tr("ПК отключён", "PC disconnected"))
+                        }
+                    },
+                )
+            } else {
+                Text(
+                    tr(
+                        "Компьютер не подключён. Нажми «Найти ПК» выше и введи код с ПК.",
+                        "No PC connected. Tap “Find PC” above and enter the code from the PC.",
+                    ),
+                    color = OnyxDim,
+                    fontSize = 12.sp,
+                    lineHeight = 17.sp,
+                )
+            }
+            Spacer(Modifier.height(14.dp))
+            ToggleRow(
+                title = tr("Копировать аудиофайлы", "Copy audio files"),
+                subtitle = tr(
+                    "Недостающие локальные треки переносятся вместе с плейлистами.",
+                    "Missing local tracks are copied along with playlists.",
+                ),
+                checked = prefs.syncCopyFiles,
+                onChange = { enabled ->
+                    scope.launch { controller.prefs.setSyncCopyFiles(enabled) }
+                },
+            )
         }
 
         GlassCard(modifier = Modifier.fillMaxWidth()) {
@@ -727,6 +1035,33 @@ fun SettingsScreen(
                     }
                 },
             )
+            if (!listenerOn) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = tr(
+                        "Переключатель серый? Откройте настройки приложения → меню ⋮ → " +
+                            "«Разрешить ограниченные настройки», затем включите доступ к уведомлениям.",
+                        "Switch greyed out? Open app settings → ⋮ → Allow restricted settings, " +
+                            "then enable notification access.",
+                    ),
+                    color = OnyxFaint,
+                    fontSize = 10.sp,
+                    lineHeight = 15.sp,
+                )
+                Spacer(Modifier.height(8.dp))
+                GlassPill(
+                    text = tr("Настройки приложения", "App settings"),
+                    selected = false,
+                    onClick = { controller.updates.openAppSettings() },
+                )
+            }
+            Spacer(Modifier.height(12.dp))
+            StatusRow(
+                title = tr("Установка обновлений", "Update installation"),
+                ok = installAllowed,
+                action = tr("Разрешить", "Allow"),
+                onAction = { controller.updates.openInstallPermission() },
+            )
             Spacer(Modifier.height(12.dp))
             StatusRow(
                 title = tr("Bluetooth-разрешения", "Bluetooth permissions"),
@@ -815,7 +1150,7 @@ fun SettingsScreen(
                 GlassPill(
                     text = if (prefs.localFolders.isEmpty()) tr("Выбрать папку", "Choose folder") else tr("Добавить папку", "Add folder"),
                     selected = false,
-                    onClick = { musicFolderLauncher.launch(null) },
+                    onClick = { musicFolderLauncher.launch(musicFolderUri()) },
                 )
                 if (prefs.localFolders.isNotEmpty()) {
                     GlassPill(
@@ -825,6 +1160,16 @@ fun SettingsScreen(
                     )
                 }
             }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = tr(
+                    "В проводнике откройте Music или Download и нажмите «Использовать эту папку». Корень хранилища Android выбрать не даёт.",
+                    "In the picker open Music or Download and tap Use this folder. Android does not allow the storage root.",
+                ),
+                color = OnyxFaint,
+                fontSize = 10.sp,
+                lineHeight = 15.sp,
+            )
         }
 
         GlassCard(modifier = Modifier.fillMaxWidth()) {
@@ -852,6 +1197,120 @@ fun SettingsScreen(
                 fontSize = 10.sp,
                 lineHeight = 15.sp,
             )
+        }
+
+        GlassCard(modifier = Modifier.fillMaxWidth()) {
+            SectionLabel(tr("Данные", "Data"))
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = tr(
+                    "Экспорт и импорт плейлистов, избранного и настроек. Файл содержит токены Spotify и Discord — храните его в безопасном месте.",
+                    "Export and import playlists, favorites and settings. The file contains Spotify and Discord tokens — keep it private.",
+                ),
+                color = OnyxDim,
+                fontSize = 12.sp,
+                lineHeight = 17.sp,
+            )
+            Spacer(Modifier.height(12.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                GlassPill(
+                    text = tr("Экспорт данных", "Export data"),
+                    selected = true,
+                    onClick = {
+                        val stamp = java.text.SimpleDateFormat(
+                            "yyyyMMdd-HHmm",
+                            java.util.Locale.US,
+                        ).format(java.util.Date())
+                        exportLauncher.launch("onyx-backup-$stamp.json")
+                    },
+                )
+                GlassPill(
+                    text = tr("Импорт данных", "Import data"),
+                    selected = false,
+                    onClick = { importLauncher.launch(arrayOf("application/json")) },
+                )
+            }
+        }
+
+        GlassCard(modifier = Modifier.fillMaxWidth()) {
+            SectionLabel(tr("Обновления", "Updates"))
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = tr(
+                    "Версия ${app.onyx.BuildConfig.VERSION_NAME} (сборка ${app.onyx.BuildConfig.VERSION_CODE})",
+                    "Version ${app.onyx.BuildConfig.VERSION_NAME} (build ${app.onyx.BuildConfig.VERSION_CODE})",
+                ),
+                color = OnyxFaint,
+                fontSize = 10.sp,
+                letterSpacing = 0.6.sp,
+            )
+            Spacer(Modifier.height(12.dp))
+            ToggleRow(
+                title = tr("Проверять при запуске", "Check on launch"),
+                subtitle = tr(
+                    "Тихая проверка при открытии приложения.",
+                    "Silent check when the app opens.",
+                ),
+                checked = prefs.autoUpdateCheck,
+                onChange = { scope.launch { controller.prefs.setAutoUpdateCheck(it) } },
+            )
+            Spacer(Modifier.height(12.dp))
+            val statusText = when (val state = updateState) {
+                is UpdateState.Idle -> tr("Проверка не запускалась", "Not checked yet")
+                is UpdateState.Checking -> tr("Проверяем…", "Checking…")
+                is UpdateState.UpToDate -> tr("Обновлений нет", "You are up to date")
+                is UpdateState.Available -> tr(
+                    "Доступно ${state.info.versionName}",
+                    "${state.info.versionName} is available",
+                )
+                is UpdateState.Downloading -> tr(
+                    "Скачивание ${state.progress}%",
+                    "Downloading ${state.progress}%",
+                )
+                is UpdateState.Installing -> tr("Установка…", "Installing…")
+                is UpdateState.NeedsInstallPermission -> tr(
+                    "Нужно разрешение на установку",
+                    "Install permission required",
+                )
+                is UpdateState.Error -> state.message
+            }
+            Text(text = statusText, color = OnyxDim, fontSize = 12.sp, lineHeight = 17.sp)
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                GlassPill(
+                    text = tr("Проверить обновления", "Check for updates"),
+                    selected = false,
+                    enabled = updateState !is UpdateState.Checking,
+                    onClick = { scope.launch { controller.updates.check() } },
+                )
+                when (val state = updateState) {
+                    is UpdateState.Available -> GlassPill(
+                        text = tr("Скачать и установить", "Download and install"),
+                        selected = true,
+                        onClick = {
+                            scope.launch { controller.updates.downloadAndInstall(state.info) }
+                        },
+                    )
+                    is UpdateState.NeedsInstallPermission -> GlassPill(
+                        text = tr("Разрешить установку", "Allow installation"),
+                        selected = true,
+                        onClick = { controller.updates.openInstallPermission() },
+                    )
+                    else -> Unit
+                }
+            }
+            if (!installAllowed) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    text = tr(
+                        "Если пункт «Установка неизвестных приложений» недоступен: настройки приложения → ⋮ → «Разрешить ограниченные настройки».",
+                        "If Install unknown apps is unavailable: app settings → ⋮ → Allow restricted settings.",
+                    ),
+                    color = OnyxFaint,
+                    fontSize = 10.sp,
+                    lineHeight = 15.sp,
+                )
+            }
         }
 
         GlassCard(modifier = Modifier.fillMaxWidth()) {
@@ -884,6 +1343,97 @@ fun SettingsScreen(
                 onPickBackground = { page ->
                     pendingBgPage = page
                     backgroundPicker.launch(arrayOf("image/*"))
+                },
+            )
+        }
+
+        val pairPc = pairTarget
+        if (pairPc != null) {
+            AlertDialog(
+                onDismissRequest = { pairTarget = null },
+                containerColor = OnyxSurface,
+                title = {
+                    Text(
+                        tr("Код сопряжения", "Pairing code"),
+                        color = OnyxWhite,
+                        fontWeight = FontWeight.Bold,
+                    )
+                },
+                text = {
+                    Column {
+                        Text(
+                            tr(
+                                "Введи 6-значный код из ONYX на компьютере «${pairPc.name}».",
+                                "Enter the 6-digit code from ONYX on \"${pairPc.name}\".",
+                            ),
+                            color = OnyxDim,
+                            fontSize = 12.sp,
+                            lineHeight = 17.sp,
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        OutlinedTextField(
+                            value = pairCodeInput,
+                            onValueChange = { pairCodeInput = it.filter(Char::isDigit).take(6) },
+                            singleLine = true,
+                            label = { Text(tr("Код", "Code"), fontSize = 11.sp) },
+                            textStyle = androidx.compose.ui.text.TextStyle(
+                                color = OnyxWhite,
+                                fontSize = 20.sp,
+                                letterSpacing = 4.sp,
+                            ),
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = OnyxWhite.copy(alpha = 0.45f),
+                                unfocusedBorderColor = OnyxLine,
+                                focusedLabelColor = OnyxDim,
+                                unfocusedLabelColor = OnyxFaint,
+                                cursorColor = OnyxWhite,
+                            ),
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(
+                        enabled = pairCodeInput.length == 6 && !pairing,
+                        onClick = {
+                            pairing = true
+                            scope.launch {
+                                val token = withContext(Dispatchers.IO) {
+                                    pairBridge(pairPc.host, pairPc.port, pairCodeInput)
+                                }
+                                pairing = false
+                                if (token != null) {
+                                    controller.prefs.setDiscordBridgeToken(token)
+                                    controller.prefs.setDiscordBridgeHost(pairPc.host)
+                                    controller.prefs.setDiscordBridgePort(pairPc.port)
+                                    controller.prefs.setDiscordBridgeEnabled(true)
+                                    bridgeStatus = tr(
+                                        "Подключено: ${pairPc.name}",
+                                        "Connected: ${pairPc.name}",
+                                    )
+                                    pairTarget = null
+                                    controller.toast(
+                                        tr("Телефон подключён к ПК", "Phone connected to the PC"),
+                                    )
+                                } else {
+                                    bridgeStatus = tr(
+                                        "Неверный код или компьютер недоступен",
+                                        "Wrong code or PC unavailable",
+                                    )
+                                }
+                            }
+                        },
+                    ) {
+                        Text(
+                            if (pairing) tr("Подключаю…", "Connecting…") else tr("Подключить", "Connect"),
+                            color = OnyxWhite,
+                        )
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { pairTarget = null }) {
+                        Text(tr("Отмена", "Cancel"), color = OnyxDim)
+                    }
                 },
             )
         }
@@ -1891,6 +2441,103 @@ private fun decodeBackgrounds(raw: String): Map<String, String> {
 
 private fun encodeBackgrounds(map: Map<String, String>): String =
     map.entries.joinToString("\u001E") { it.key + "\u001F" + it.value }
+
+/**
+ * Formats the result of an additive transfer for the settings card.
+ */
+private fun syncMessage(result: SyncResult, sending: Boolean): String {
+    if (!result.ok) {
+        return when {
+            result.unauthorized -> tr(
+                "Сопряжение устарело: нажми «Отключить от ПК» и подключись заново.",
+                "Pairing is stale: tap “Disconnect from PC” and pair again.",
+            )
+            result.offline -> tr(
+                "ПК недоступен: открой ONYX на компьютере и проверь Wi-Fi.",
+                "PC unavailable: open ONYX on the PC and check Wi-Fi.",
+            )
+            else -> tr("Не удалось передать данные", "Could not transfer the data")
+        }
+    }
+    val parts = mutableListOf<String>()
+    if (result.playlistsAdded > 0) {
+        parts += tr(
+            "новых плейлистов: ${result.playlistsAdded}",
+            "new playlists: ${result.playlistsAdded}",
+        )
+    }
+    if (result.tracksAdded > 0) {
+        parts += tr(
+            "добавлено треков: ${result.tracksAdded}",
+            "tracks added: ${result.tracksAdded}",
+        )
+    }
+    if (result.likesAdded > 0) {
+        parts += tr(
+            "лайков: ${result.likesAdded}",
+            "likes: ${result.likesAdded}",
+        )
+    }
+    if (result.filesSent > 0) {
+        parts += tr(
+            "файлов отправлено: ${result.filesSent}",
+            "files sent: ${result.filesSent}",
+        )
+    }
+    if (result.filesReceived > 0) {
+        parts += tr(
+            "файлов скачано: ${result.filesReceived}",
+            "files downloaded: ${result.filesReceived}",
+        )
+    }
+    if (result.filesFailed > 0) {
+        parts += tr(
+            "не удалось: ${result.filesFailed}",
+            "failed: ${result.filesFailed}",
+        )
+    }
+    if (result.noFolder) {
+        parts += tr(
+            "нет папки музыки — файлы не скопированы",
+            "no music folder — files were not copied",
+        )
+    }
+    if (parts.isEmpty()) {
+        return if (sending) {
+            tr("Всё уже было на ПК", "Everything was already on the PC")
+        } else {
+            tr("Всё уже было на телефоне", "Everything was already on the phone")
+        }
+    }
+    return parts.joinToString(" · ")
+}
+
+/**
+ * Exchanges the 6-digit pairing code for a long-lived token. Returns null when
+ * the code is wrong or the PC is not reachable.
+ */
+private fun pairBridge(host: String, port: Int, code: String): String? {
+    val client = okhttp3.OkHttpClient.Builder()
+        .connectTimeout(3, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(5, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
+    val payload = org.json.JSONObject()
+        .put("code", code)
+        .put("device", android.os.Build.MODEL ?: "Android")
+        .toString()
+    val request = okhttp3.Request.Builder()
+        .url("http://$host:${port.coerceIn(1, 65535)}/pair")
+        .post(payload.toRequestBody("application/json".toMediaType()))
+        .build()
+    return runCatching {
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) return@use null
+            org.json.JSONObject(response.body?.string().orEmpty())
+                .optString("token")
+                .ifBlank { null }
+        }
+    }.getOrNull()
+}
 
 /**
  * Short-timeout health check for the LAN bridge behind the Discord card.

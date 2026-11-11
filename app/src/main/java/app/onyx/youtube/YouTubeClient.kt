@@ -108,17 +108,25 @@ object YouTubeClient {
         return YtSearchPage(items = result.items, next = result.continuation)
     }
 
-    suspend fun resolve(rawUrl: String): YtVideo = withContext(Dispatchers.IO) {
+    suspend fun resolve(rawUrl: String, preferNewPipe: Boolean = false): YtVideo = withContext(Dispatchers.IO) {
         ensureInit()
         val url = normalizeUrl(rawUrl)
         val id = videoIdOf(url)
 
         // innerTube answers in well under a second, while NewPipe's extractor
-        // can spend 5-20 seconds on the same video. Try the fast path first;
-        // NewPipe is the richer fallback (chapters, related streams).
-        resolveWithInnertube(id)?.let { return@withContext it }
+        // can spend 5-20 seconds on the same video. Trust the fast path here;
+        // if googlevideo rejects the URL, the ExoPlayer data source catches
+        // the 403 and re-resolves this video through NewPipe (preferNewPipe).
+        // Probing every innerTube URL first made normal playback noticeably
+        // slower, so the fallback now happens only on a real failure.
+        if (!preferNewPipe) {
+            resolveWithInnertube(id)?.let { return@withContext it }
+        }
         val failure = runCatching { resolveWithNewPipe(url, id) }
-        failure.getOrNull()?.let { return@withContext it }
+        failure.getOrNull()?.let {
+            println("[yt] $id: resolved via NewPipe")
+            return@withContext it
+        }
 
         val error = failure.exceptionOrNull()
         throw error ?: IllegalStateException("YouTube did not return a playable audio stream")

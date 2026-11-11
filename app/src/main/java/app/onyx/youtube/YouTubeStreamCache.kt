@@ -16,7 +16,10 @@ import java.util.concurrent.ConcurrentHashMap
  */
 object YouTubeStreamCache {
 
-    private const val TTL_MS = 2 * 60 * 60 * 1000L
+    // googlevideo URLs are IP-bound and can start returning 403 earlier than
+    // the advertised expiry. The player re-resolves on 403; keeping cached
+    // entries short avoids handing out stale URLs after a network switch.
+    private const val TTL_MS = 45 * 60 * 1000L
 
     private data class Entry(val url: String, val at: Long)
 
@@ -33,18 +36,26 @@ object YouTubeStreamCache {
         return entry.url
     }
 
+    fun invalidate(videoId: String) {
+        cache.remove(videoId)
+    }
+
     /** Blocks until the stream URL is known; used by the ExoPlayer data source. */
-    fun resolveBlocking(videoId: String): String? {
-        cached(videoId)?.let { return it }
+    fun resolveBlocking(videoId: String, preferNewPipe: Boolean = false): String? {
+        if (!preferNewPipe) cached(videoId)?.let { return it }
+        val key = "$videoId|$preferNewPipe"
         while (true) {
-            inFlight[videoId]?.let { pending ->
+            inFlight[key]?.let { pending ->
                 return runBlocking { pending.await() }
             }
             val pending = CompletableDeferred<String?>()
-            if (inFlight.putIfAbsent(videoId, pending) != null) continue
+            if (inFlight.putIfAbsent(key, pending) != null) continue
             return try {
                 val video = runBlocking {
-                    YouTubeClient.resolve("https://www.youtube.com/watch?v=$videoId")
+                    YouTubeClient.resolve(
+                        "https://www.youtube.com/watch?v=$videoId",
+                        preferNewPipe = preferNewPipe,
+                    )
                 }
                 val url = video.audioUrl.takeIf { it.isNotBlank() }
                 if (url != null) {
@@ -56,14 +67,14 @@ object YouTubeStreamCache {
                 pending.complete(null)
                 null
             } finally {
-                inFlight.remove(videoId, pending)
+                inFlight.remove(key, pending)
             }
         }
     }
 
     fun prefetch(videoId: String) {
         if (videoId.length != 11) return
-        if (cached(videoId) != null || inFlight.containsKey(videoId)) return
+        if (cached(videoId) != null || inFlight.containsKey("$videoId|false")) return
         scope.launch { resolveBlocking(videoId) }
     }
 }

@@ -128,7 +128,11 @@ fun VisualizerScreen(
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                text = nowPlaying.title.ifBlank { tr("Тишина", "Silence") },
+                text = nowPlayingTitle(
+                    nowPlaying.title,
+                    nowPlaying.artist,
+                    nowPlaying.album,
+                ).ifBlank { tr("Тишина", "Silence") },
                 color = OnyxWhite,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
@@ -137,7 +141,7 @@ fun VisualizerScreen(
                 textAlign = TextAlign.Center,
             )
             Text(
-                text = nowPlaying.artist,
+                text = nowPlayingArtist(nowPlaying.artist, nowPlaying.album),
                 color = OnyxDim,
                 fontSize = 12.sp,
                 maxLines = 1,

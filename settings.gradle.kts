@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "ONYX"
 include(":app")
+include(":desktop")

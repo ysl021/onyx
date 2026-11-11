@@ -153,7 +153,7 @@ fun MusicScreen(
     }
 
     val picker = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocumentTree(),
+        OpenFolderTree(),
     ) { uri ->
         if (uri != null) {
             runCatching {
@@ -247,7 +247,7 @@ fun MusicScreen(
                     text = tr("Добавить папку", "Add folder"),
                     selected = true,
                     icon = Icons.Rounded.FolderOpen,
-                    onClick = { picker.launch(null) },
+                    onClick = { picker.launch(musicFolderUri()) },
                 )
             }
             return@Column
@@ -275,7 +275,7 @@ fun MusicScreen(
             GlassPill(
                 text = tr("+ Добавить", "+ Add"),
                 selected = false,
-                onClick = { picker.launch(null) },
+                onClick = { picker.launch(musicFolderUri()) },
             )
         }
 
@@ -453,7 +453,7 @@ fun MusicScreen(
                 GlassPill(
                     text = tr("Добавить папку", "Add folder"),
                     selected = false,
-                    onClick = { picker.launch(null) },
+                    onClick = { picker.launch(musicFolderUri()) },
                 )
             }
         }

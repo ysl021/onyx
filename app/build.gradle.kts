@@ -19,20 +19,23 @@ fun secret(name: String): String =
         .replace("\\", "\\\\")
         .replace("\"", "\\\"")
 
-// Version is kept in one place: version.properties holds the human version,
-// versionCode follows the git commit count so it never has to be bumped by hand.
-val appVersionName: String = Properties().apply {
-    val f = rootProject.file("version.properties")
-    if (f.exists()) f.inputStream().use { load(it) }
-}.getProperty("versionName") ?: "0.0.0"
+// Version comes from the root build script so Android and desktop always share
+// one global value. version.properties only stores the human version (0.9.0);
+// the build number is derived from it instead of being a fixed constant.
+val appVersionName: String = rootProject.extra["onyxVersionName"] as String
+val appVersionCode: Int = rootProject.extra["onyxVersionCode"] as Int
 
-val appVersionCode: Int = run {
-    val result = providers.exec {
-        commandLine("git", "rev-list", "--count", "HEAD")
-        isIgnoreExitValue = true
-    }.standardOutput.asText.get().trim().toIntOrNull() ?: 0
-    1000 + result
+// Release signing lives outside the repo: keystore.properties is ignored by
+// git, the keystore itself is ignored by *.jks. CI restores both from secrets.
+val keystoreFile = rootProject.file("keystore.properties")
+val keystore = Properties().apply {
+    if (keystoreFile.exists()) keystoreFile.inputStream().use { load(it) }
 }
+val hasReleaseKey = keystoreFile.exists() &&
+    !keystore.getProperty("storeFile").isNullOrBlank()
+// `-PdebugSigning` builds the transitional APK that must install over the old
+// debug-signed release before the one-time reinstall.
+val useDebugSigning = project.hasProperty("debugSigning") || !hasReleaseKey
 
 android {
     namespace = "app.onyx"
@@ -46,6 +49,21 @@ android {
         versionName = appVersionName
 
         buildConfigField("String", "SPICY_KEY", "\"${secret("SPICY_KEY")}\"")
+        // True for the 0.8.10 migration build signed with the old debug key.
+        // That build can export data but must not offer the release-signed
+        // update (Android rejects it with a signature mismatch).
+        buildConfigField("boolean", "TRANSITIONAL", useDebugSigning.toString())
+    }
+
+    signingConfigs {
+        if (hasReleaseKey) {
+            create("release") {
+                storeFile = rootProject.file(keystore.getProperty("storeFile"))
+                storePassword = keystore.getProperty("storePassword")
+                keyAlias = keystore.getProperty("keyAlias")
+                keyPassword = keystore.getProperty("keyPassword")
+            }
+        }
     }
 
     buildTypes {
@@ -53,9 +71,13 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // Personal sideload build: keep the debug key so updates install over the
-            // existing APK without uninstalling. Keys are never stored in this repo.
-            signingConfig = signingConfigs.getByName("debug")
+            // Debug signing is only used for the 0.8.10 migration build; every
+            // published release uses the dedicated keystore above.
+            signingConfig = if (useDebugSigning) {
+                signingConfigs.getByName("debug")
+            } else {
+                signingConfigs.getByName("release")
+            }
         }
     }
 

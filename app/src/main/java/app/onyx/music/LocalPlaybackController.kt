@@ -29,6 +29,8 @@ data class LocalPlaybackState(
     val queue: List<LocalTrack> = emptyList(),
     val currentIndex: Int = -1,
     val isPlaying: Boolean = false,
+    /** True while playback is intended to run, including buffering. */
+    val playWhenReady: Boolean = false,
     val positionMs: Long = 0L,
     val durationMs: Long = 0L,
     val shuffle: Boolean = false,
@@ -49,8 +51,10 @@ class LocalPlaybackController(
 
     private var controller: MediaController? = null
     private var pending: (() -> Unit)? = null
+    private var pendingRepeat: Int? = null
     private var connecting = false
     private var ticker: Job? = null
+    private var lastError: String? = null
 
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) {
@@ -58,12 +62,31 @@ class LocalPlaybackController(
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
+            if (isPlaying) lastError = null
             controller?.let { publish(it) }
             if (isPlaying) startTicker() else stopTicker()
         }
 
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            lastError = null
             controller?.let { publish(it) }
+        }
+
+        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+            controller?.let { publish(it) }
+            val blocked = error.errorCode ==
+                androidx.media3.common.PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ||
+                error.cause?.message?.contains("403") == true
+            lastError = if (blocked) {
+                tr(
+                    "YouTube отклоняет поток в этой сети — включи VPN или мобильный интернет",
+                    "YouTube rejects this stream on your network — use a VPN or mobile data",
+                )
+            } else {
+                tr("Не удалось воспроизвести поток", "Could not play the stream") +
+                    ": " + (error.cause?.message ?: error.message)
+            }
+            _state.value = _state.value.copy(error = lastError)
         }
     }
 
@@ -89,6 +112,9 @@ class LocalPlaybackController(
                 val c = future.get()
                 controller = c
                 c.addListener(listener)
+                // Re-apply the saved repeat mode as soon as the session exists,
+                // so a fresh process does not drop back to "off".
+                pendingRepeat?.let { c.repeatMode = it }
                 connecting = false
                 publish(c)
                 pending?.invoke()
@@ -122,7 +148,14 @@ class LocalPlaybackController(
 
     fun toggle() {
         val c = controller ?: return
-        if (c.isPlaying) c.pause() else c.play()
+        if (c.isPlaying) {
+            c.pause()
+            return
+        }
+        // After a playback error ExoPlayer drops to IDLE; plain play() would do
+        // nothing, so prepare the failed item again before resuming.
+        if (c.playbackState == Player.STATE_IDLE) c.prepare()
+        c.play()
     }
 
     /** Pause without toggling — used by the sleep timer. */
@@ -187,7 +220,12 @@ class LocalPlaybackController(
     }
 
     fun setRepeatMode(mode: Int) {
-        controller?.repeatMode = mode
+        val c = controller
+        if (c == null) {
+            pendingRepeat = mode
+            return
+        }
+        c.repeatMode = mode
     }
 
     fun stop() {
@@ -231,11 +269,12 @@ class LocalPlaybackController(
             },
             currentIndex = if (c.mediaItemCount == 0) -1 else c.currentMediaItemIndex,
             isPlaying = c.isPlaying,
+            playWhenReady = c.playWhenReady,
             positionMs = c.currentPosition.coerceAtLeast(0L),
             durationMs = c.duration.takeIf { it > 0 } ?: track?.durationMs ?: 0L,
             shuffle = c.shuffleModeEnabled,
             repeatMode = c.repeatMode,
-            error = null,
+            error = lastError,
         )
         val index = c.currentMediaItemIndex
         val currentId = c.currentMediaItem?.mediaId.orEmpty()

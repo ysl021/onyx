@@ -102,9 +102,13 @@ class DiscordBridge(
                 lastPlaying = now.isPlaying
 
                 val payload = JSONObject().apply {
+                    val cleanArtist = cleanSource(now.artist)
+                    val cleanAlbum = cleanSource(now.album)
                     put("title", now.title)
-                    put("artist", now.artist)
-                    put("album", now.album)
+                    // The PC puts this on the second line of the Discord card
+                    // and uses the album only as the cover hover text.
+                    put("artist", cleanArtist)
+                    put("album", cleanAlbum)
                     put("playing", now.isPlaying)
                     put("durationMs", duration)
                     put("positionMs", pos)
@@ -120,15 +124,26 @@ class DiscordBridge(
         }
     }
 
+    /**
+     * Some players report the source app as the artist for files without tags.
+     * Send an empty value instead so the PC card never shows "tg" or "Telegram".
+     */
+    private fun cleanSource(value: String): String {
+        val key = value.lowercase().replace(Regex("[\\p{Punct}\\s]+"), "")
+        return if (key in SOURCE_LABELS) "" else value.trim()
+    }
+
     private fun post(p: PrefsData, payload: JSONObject): Boolean {
         val url = "http://${p.discordBridgeHost.trim()}:" +
             "${p.discordBridgePort.coerceIn(1, 65535)}/presence"
-        val request = Request.Builder()
+        val builder = Request.Builder()
             .url(url)
             .post(payload.toString().toRequestBody("application/json".toMediaType()))
-            .build()
+        if (p.discordBridgeToken.isNotBlank()) {
+            builder.header("Authorization", "Bearer ${p.discordBridgeToken.trim()}")
+        }
         return runCatching {
-            Http.client.newCall(request).execute().use { it.isSuccessful }
+            Http.client.newCall(builder.build()).execute().use { it.isSuccessful }
         }.getOrDefault(false)
     }
 
@@ -145,5 +160,13 @@ class DiscordBridge(
 
         /** Anything bigger than this is treated as a seek and pushed immediately. */
         const val SEEK_THRESHOLD_MS = 4_000L
+
+        val SOURCE_LABELS = setOf(
+            "telegram", "tg", "телеграм", "exteragram", "telegramx",
+            "spotify", "youtube", "youtubemusic", "soundcloud",
+            "vk", "vkontakte", "вконтакте",
+            "music", "audio", "files", "downloads",
+            "музыка", "аудио", "загрузки", "локальныефайлы",
+        )
     }
 }

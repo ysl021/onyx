@@ -9,6 +9,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -62,6 +63,17 @@ data class PlaylistsState(
     val playlists: List<LocalPlaylist> = emptyList(),
     val folders: List<PlaylistFolder> = emptyList(),
 )
+
+/** Result of an additive transfer: new playlists and newly added tracks. */
+data class MergeCounts(val playlists: Int, val tracks: Int)
+
+private fun sameName(a: String, b: String): Boolean {
+    fun key(value: String) = value.lowercase()
+        .replace('\u00A0', ' ')
+        .replace(Regex("[\\p{Punct}\\s]+"), "")
+    val left = key(a)
+    return left.isNotEmpty() && left == key(b)
+}
 
 /**
  * User-built playlists persisted to JSON in filesDir. All mutations are
@@ -227,6 +239,63 @@ class LocalPlaylists(
     fun close() {
         scope.cancel()
     }
+
+    /** Replaces playlists after a transfer from the PC. */
+    fun replaceAll(playlists: List<LocalPlaylist>) {
+        scope.launch {
+            mutate { it.copy(playlists = playlists) }
+        }
+    }
+
+    /** Full snapshot used by the JSON backup. */
+    fun snapshot(): PlaylistsState = _state.value
+
+    /** Replaces playlists and folders (backup restore). */
+    fun replaceAll(state: PlaylistsState) {
+        scope.launch {
+            mutate { state }
+        }
+    }
+
+    /**
+     * Additive transfer from the PC. Same-name playlists are kept and only get
+     * the tracks they do not have yet; nothing is renamed or overwritten.
+     */
+    suspend fun mergeIncoming(incoming: List<LocalPlaylist>): MergeCounts = scope.async {
+        var addedPlaylists = 0
+        var addedTracks = 0
+        val now = System.currentTimeMillis()
+        mutate { s ->
+            val next = s.playlists.toMutableList()
+            for (source in incoming) {
+                if (source.name.isBlank()) continue
+                val index = next.indexOfFirst { sameName(it.name, source.name) }
+                if (index < 0) {
+                    val copy = source.copy(
+                        id = UUID.randomUUID().toString(),
+                        coverPath = null,
+                        createdAt = if (source.createdAt > 0) source.createdAt else now,
+                    )
+                    next += copy
+                    addedPlaylists++
+                    addedTracks += copy.trackIds.size
+                    continue
+                }
+                val existing = next[index]
+                val newIds = source.trackIds.filterNot { it in existing.trackIds }
+                if (newIds.isEmpty()) continue
+                val meta = source.streamTracks.filter { it.id in newIds }
+                next[index] = existing.copy(
+                    trackIds = existing.trackIds + newIds,
+                    streamTracks = existing.streamTracks +
+                        meta.filterNot { item -> existing.streamTracks.any { it.id == item.id } },
+                )
+                addedTracks += newIds.size
+            }
+            s.copy(playlists = next)
+        }
+        MergeCounts(addedPlaylists, addedTracks)
+    }.await()
 
     private fun editPlaylist(id: String, transform: (LocalPlaylist) -> LocalPlaylist) {
         scope.launch {

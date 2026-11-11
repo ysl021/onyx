@@ -169,6 +169,7 @@ fun GlassPill(
     selected: Boolean,
     modifier: Modifier = Modifier,
     icon: ImageVector? = null,
+    iconDescription: String? = null,
     enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
@@ -215,16 +216,23 @@ fun GlassPill(
         horizontalArrangement = Arrangement.Center,
     ) {
         if (icon != null) {
-            Icon(icon, contentDescription = null, tint = fg, modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(7.dp))
+            Icon(
+                icon,
+                contentDescription = if (text.isBlank()) iconDescription else null,
+                tint = fg,
+                modifier = Modifier.size(16.dp),
+            )
+            if (text.isNotBlank()) Spacer(Modifier.width(7.dp))
         }
-        Text(
-            text = text,
-            color = fg,
-            fontSize = 13.sp,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-            maxLines = 1,
-        )
+        if (text.isNotBlank()) {
+            Text(
+                text = text,
+                color = fg,
+                fontSize = 13.sp,
+                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
+                maxLines = 1,
+            )
+        }
     }
 }
 

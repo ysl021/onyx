@@ -93,6 +93,7 @@ import app.onyx.ui.components.OnyxSlider
 import app.onyx.ui.components.ReorderableRow
 import app.onyx.ui.components.SectionLabel
 import app.onyx.ui.components.rememberReorderState
+import app.onyx.ui.theme.OnyxAccent
 import app.onyx.ui.theme.OnyxDim
 import app.onyx.ui.theme.OnyxFaint
 import app.onyx.ui.theme.OnyxLine
@@ -192,7 +193,19 @@ fun HomeScreen(
                 },
                 onAddToPlaylist = { playerPickerTrack = currentLocal },
             )
-            Controls(controller, media)
+            Controls(controller, media, nowPlaying)
+            localPlayback.error?.let { message ->
+                Text(
+                    text = message,
+                    color = OnyxAccent,
+                    fontSize = 11.sp,
+                    lineHeight = 15.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp),
+                )
+            }
             if (remoteDevice != null) {
                 RemotePlaybackBanner(remoteDevice)
             }
@@ -398,8 +411,11 @@ private fun Hero(
             }
         }
         Spacer(Modifier.height(18.dp))
+        val shownTitle = nowPlayingTitle(now.title, now.artist, now.album)
+        val shownArtist = nowPlayingArtist(now.artist, now.album)
+        val shownAlbum = nowPlayingAlbum(now.artist, now.album)
         Text(
-            text = now.title.ifBlank { tr("Ничего не играет", "Nothing playing") },
+            text = shownTitle.ifBlank { tr("Ничего не играет", "Nothing playing") },
             color = OnyxWhite,
             fontSize = 25.sp,
             lineHeight = 30.sp,
@@ -412,7 +428,11 @@ private fun Hero(
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            text = if (now.artist.isBlank()) tr("Запусти музыку на телефоне", "Start music on your phone") else now.artist,
+            text = when {
+                shownArtist.isNotBlank() -> shownArtist
+                now.hasTrack -> tr("Неизвестный исполнитель", "Unknown artist")
+                else -> tr("Запусти музыку на телефоне", "Start music on your phone")
+            },
             color = OnyxDim,
             fontSize = 14.sp,
             textAlign = TextAlign.Center,
@@ -420,10 +440,10 @@ private fun Hero(
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.fillMaxWidth(0.9f),
         )
-        if (now.album.isNotBlank()) {
+        if (shownAlbum.isNotBlank()) {
             Spacer(Modifier.height(3.dp))
             Text(
-                text = now.album,
+                text = shownAlbum,
                 color = OnyxFaint,
                 fontSize = 11.sp,
                 maxLines = 1,
@@ -462,16 +482,21 @@ private fun Hero(
 }
 
 @Composable
-private fun Controls(controller: AppController, media: MediaState) {
-    val now = media.now
-    val context = androidx.compose.ui.platform.LocalContext.current
+private fun Controls(controller: AppController, media: MediaState, now: NowPlaying) {
     val localPlayback by controller.localPlayer.state.collectAsStateWithLifecycle()
-    val localQueueActive = localPlayback.current != null && localPlayback.queue.isNotEmpty()
+    // Same priority as AppController.nowPlaying: while the local player owns
+    // the card, the slider must read the local position instead of whatever
+    // notification session happened to be bound a moment ago. Mixing the two
+    // made the progress bar jump back to 0 and made the play icon blink on
+    // every press.
+    val localActive = localPlayback.current != null &&
+        (localPlayback.isPlaying || localPlayback.playWhenReady || !media.now.isPlaying)
     var drag by remember { mutableStateOf<Float?>(null) }
     var lastSeek by remember { mutableLongStateOf(0L) }
 
     val duration = now.durationMs.coerceAtLeast(1L)
-    val shown = drag?.let { (it * duration).toLong() } ?: media.positionMs.coerceIn(0L, duration)
+    val positionMs = if (localActive) localPlayback.positionMs else media.positionMs
+    val shown = drag?.let { (it * duration).toLong() } ?: positionMs.coerceIn(0L, duration)
     val fraction = (shown.toFloat() / duration).coerceIn(0f, 1f)
 
     Column(modifier = Modifier.fillMaxWidth()) {
@@ -484,7 +509,8 @@ private fun Controls(controller: AppController, media: MediaState) {
                 val target = ((drag ?: fraction) * duration).toLong()
                 drag = null
                 lastSeek = target
-                controller.media.seekTo(target)
+                if (localActive) controller.localPlayer.seekTo(target)
+                else controller.media.seekTo(target)
             },
         )
         Row(
@@ -494,7 +520,7 @@ private fun Controls(controller: AppController, media: MediaState) {
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             Text(
-                text = fmt(if (drag != null) shown else media.positionMs),
+                text = fmt(if (drag != null) shown else positionMs),
                 color = OnyxFaint,
                 fontSize = 11.sp,
                 letterSpacing = 0.6.sp,
@@ -518,11 +544,8 @@ private fun Controls(controller: AppController, media: MediaState) {
                 size = 54.dp,
                 enabled = now.hasTrack,
                 onClick = {
-                    if (localQueueActive && now.packageName == context.packageName) {
-                        controller.localPlayer.previous()
-                    } else {
-                        controller.media.previous()
-                    }
+                    if (localActive) controller.localPlayer.previous()
+                    else controller.media.previous()
                 },
             )
             Spacer(Modifier.width(22.dp))
@@ -534,11 +557,8 @@ private fun Controls(controller: AppController, media: MediaState) {
                 iconSize = 32.dp,
                 enabled = now.hasTrack,
                 onClick = {
-                    if (localQueueActive && now.packageName == context.packageName) {
-                        controller.localPlayer.toggle()
-                    } else {
-                        controller.media.playPause()
-                    }
+                    if (localActive) controller.localPlayer.toggle()
+                    else controller.media.playPause()
                 },
             )
             Spacer(Modifier.width(22.dp))
@@ -548,11 +568,8 @@ private fun Controls(controller: AppController, media: MediaState) {
                 size = 54.dp,
                 enabled = now.hasTrack,
                 onClick = {
-                    if (localQueueActive && now.packageName == context.packageName) {
-                        controller.localPlayer.next()
-                    } else {
-                        controller.media.next()
-                    }
+                    if (localActive) controller.localPlayer.next()
+                    else controller.media.next()
                 },
             )
         }
@@ -944,18 +961,30 @@ private fun LocalQueueCard(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth(),
         ) {
+            val sameAlbum = state.queue
+                .map { it.album.trim().lowercase() }
+                .filter { it.isNotEmpty() }
+                .distinct()
+                .size == 1
             GlassPill(
-                text = tr("Повтор", "Repeat"),
+                text = when (state.repeatMode) {
+                    Player.REPEAT_MODE_ONE -> tr("Повтор трека", "Repeat track")
+                    Player.REPEAT_MODE_ALL ->
+                        if (sameAlbum) tr("Повтор альбома", "Repeat album")
+                        else tr("Повтор плейлиста", "Repeat playlist")
+                    else -> tr("Повтор", "Repeat")
+                },
                 selected = state.repeatMode != Player.REPEAT_MODE_OFF,
                 modifier = Modifier.weight(1f),
                 onClick = {
-                    player.setRepeatMode(
-                        when (state.repeatMode) {
-                            Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
-                            Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
-                            else -> Player.REPEAT_MODE_OFF
-                        },
-                    )
+                    // 1st press: the current track, 2nd: the whole album or
+                    // playlist, 3rd: off. Remembered in Prefs across restarts.
+                    val next = when (state.repeatMode) {
+                        Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ONE
+                        Player.REPEAT_MODE_ONE -> Player.REPEAT_MODE_ALL
+                        else -> Player.REPEAT_MODE_OFF
+                    }
+                    controller.setRepeatMode(next)
                 },
             )
             GlassPill(

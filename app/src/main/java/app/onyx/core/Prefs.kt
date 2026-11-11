@@ -18,7 +18,10 @@ import kotlinx.serialization.json.Json
 
 private val Context.dataStore by preferencesDataStore("onyx")
 
+@Serializable
 enum class ThemeMode { DARK, LIGHT, SYSTEM }
+
+@Serializable
 enum class AppLanguage { RU, EN }
 
 @Serializable
@@ -62,7 +65,11 @@ data class LikedTrack(
     val isYouTube: Boolean get() = videoId != null
 }
 
+@Serializable
 data class PrefsData(
+    val onboardingDone: Boolean = false,
+    val autoUpdateCheck: Boolean = true,
+    val lastUpdateCheck: Long = 0L,
     val spotifyClientId: String = "",
     val spotifyAccess: String = "",
     val spotifyRefresh: String = "",
@@ -84,9 +91,14 @@ data class PrefsData(
     val customThemeId: String = "",
     val appIcon: Int = 1,
     val volumeStep: Int = 5,
+    /** ExoPlayer repeat mode (0 off, 1 one, 2 all), kept across restarts. */
+    val repeatMode: Int = 0,
     val discordBridgeEnabled: Boolean = false,
     val discordBridgeHost: String = "",
     val discordBridgePort: Int = 8787,
+    val discordBridgeToken: String = "",
+    /** Copy missing local audio files during a manual transfer. */
+    val syncCopyFiles: Boolean = true,
     val language: AppLanguage = AppLanguage.RU,
     val coverBackdrop: Boolean = true,
     val coverIntensity: Int = 60,
@@ -112,6 +124,9 @@ data class PrefsData(
 
 class Prefs(private val context: Context) {
     private object K {
+        val onboardingDone = booleanPreferencesKey("onboarding_done")
+        val autoUpdateCheck = booleanPreferencesKey("auto_update_check")
+        val lastUpdateCheck = longPreferencesKey("last_update_check")
         val clientId = stringPreferencesKey("spotify_client_id")
         val access = stringPreferencesKey("spotify_access")
         val refresh = stringPreferencesKey("spotify_refresh")
@@ -133,9 +148,12 @@ class Prefs(private val context: Context) {
         val customThemeId = stringPreferencesKey("custom_theme_id")
         val appIcon = intPreferencesKey("app_icon")
         val volumeStep = intPreferencesKey("volume_step")
+        val repeatMode = intPreferencesKey("repeat_mode")
         val discordBridgeEnabled = booleanPreferencesKey("discord_bridge_enabled")
         val discordBridgeHost = stringPreferencesKey("discord_bridge_host")
         val discordBridgePort = intPreferencesKey("discord_bridge_port")
+        val discordBridgeToken = stringPreferencesKey("discord_bridge_token")
+        val syncCopyFiles = booleanPreferencesKey("sync_copy_files")
         val language = stringPreferencesKey("language")
         val coverBackdrop = booleanPreferencesKey("cover_backdrop")
         val coverIntensity = intPreferencesKey("cover_intensity")
@@ -164,6 +182,9 @@ class Prefs(private val context: Context) {
     suspend fun snapshot(): PrefsData = context.dataStore.data.first().toData()
 
     private fun Preferences.toData() = PrefsData(
+        onboardingDone = this[K.onboardingDone] ?: false,
+        autoUpdateCheck = this[K.autoUpdateCheck] ?: true,
+        lastUpdateCheck = this[K.lastUpdateCheck] ?: 0L,
         spotifyClientId = this[K.clientId] ?: "",
         spotifyAccess = this[K.access] ?: "",
         spotifyRefresh = this[K.refresh] ?: "",
@@ -187,9 +208,12 @@ class Prefs(private val context: Context) {
         customThemeId = this[K.customThemeId] ?: "",
         appIcon = this[K.appIcon] ?: 1,
         volumeStep = this[K.volumeStep] ?: 5,
+        repeatMode = this[K.repeatMode] ?: 0,
         discordBridgeEnabled = this[K.discordBridgeEnabled] ?: false,
         discordBridgeHost = this[K.discordBridgeHost] ?: "",
         discordBridgePort = this[K.discordBridgePort] ?: 8787,
+        discordBridgeToken = this[K.discordBridgeToken] ?: "",
+        syncCopyFiles = this[K.syncCopyFiles] ?: true,
         language = runCatching {
             AppLanguage.valueOf(this[K.language] ?: AppLanguage.RU.name)
         }.getOrDefault(AppLanguage.RU),
@@ -227,6 +251,9 @@ class Prefs(private val context: Context) {
         }.getOrDefault(emptyList()),
     )
 
+    suspend fun setOnboardingDone(v: Boolean) = edit { it[K.onboardingDone] = v }
+    suspend fun setAutoUpdateCheck(v: Boolean) = edit { it[K.autoUpdateCheck] = v }
+    suspend fun setLastUpdateCheck(v: Long) = edit { it[K.lastUpdateCheck] = v }
     suspend fun setClientId(v: String) = edit { it[K.clientId] = v.trim() }
     suspend fun setTokens(access: String, refresh: String, expiresAt: Long, user: String) = edit {
         it[K.access] = access
@@ -254,9 +281,19 @@ class Prefs(private val context: Context) {
     suspend fun setCustomThemeId(v: String) = edit { it[K.customThemeId] = v }
     suspend fun setAppIcon(v: Int) = edit { it[K.appIcon] = v }
     suspend fun setVolumeStep(v: Int) = edit { it[K.volumeStep] = v }
+    suspend fun setRepeatMode(v: Int) = edit { it[K.repeatMode] = v.coerceIn(0, 2) }
     suspend fun setDiscordBridgeEnabled(v: Boolean) = edit { it[K.discordBridgeEnabled] = v }
     suspend fun setDiscordBridgeHost(v: String) = edit { it[K.discordBridgeHost] = v }
+    suspend fun setDiscordBridgeToken(v: String) = edit { it[K.discordBridgeToken] = v }
     suspend fun setDiscordBridgePort(v: Int) = edit { it[K.discordBridgePort] = v }
+    suspend fun setSyncCopyFiles(v: Boolean) = edit { it[K.syncCopyFiles] = v }
+
+    /** Forgets the PC: the next connection needs a fresh pairing code. */
+    suspend fun clearPairing() = edit { prefs ->
+        prefs[K.discordBridgeEnabled] = false
+        prefs[K.discordBridgeHost] = ""
+        prefs[K.discordBridgeToken] = ""
+    }
     suspend fun setLanguage(v: AppLanguage) = edit { it[K.language] = v.name }
     suspend fun setCoverBackdrop(v: Boolean) = edit { it[K.coverBackdrop] = v }
     suspend fun setCoverIntensity(v: Int) = edit { it[K.coverIntensity] = v.coerceIn(0, 100) }
@@ -383,6 +420,104 @@ class Prefs(private val context: Context) {
             prefs[K.likedTracks] = Json.encodeToString(current.filterNot { it.id == id })
         }
     }
+
+    /** Adds likes from the PC, keeping the ones already on the phone. */
+    suspend fun mergeLikedLists(tracks: List<LikedTrack>, artists: List<LikedArtist>): Int {
+        var added = 0
+        edit { prefs ->
+            val currentTracks = runCatching {
+                Json.decodeFromString<List<LikedTrack>>(prefs[K.likedTracks] ?: "[]")
+            }.getOrDefault(emptyList())
+            val keys = currentTracks.map { likeKey(it) }.toMutableSet()
+            val nextTracks = currentTracks.toMutableList()
+            tracks.forEach { track ->
+                if (track.title.isNotBlank() && keys.add(likeKey(track))) {
+                    nextTracks += track
+                    added++
+                }
+            }
+            val currentArtists = runCatching {
+                Json.decodeFromString<List<LikedArtist>>(prefs[K.likedArtists] ?: "[]")
+            }.getOrDefault(emptyList())
+            val names = currentArtists.map { normalizeLike(it.name) }.toMutableSet()
+            val nextArtists = currentArtists.toMutableList()
+            artists.forEach { artist ->
+                if (artist.name.isNotBlank() && names.add(normalizeLike(artist.name))) {
+                    nextArtists += artist
+                    added++
+                }
+            }
+            prefs[K.likedTracks] = Json.encodeToString(nextTracks)
+            prefs[K.likedArtists] = Json.encodeToString(nextArtists)
+        }
+        return added
+    }
+
+    /** Replaces every stored value with [data]. Used by the JSON backup restore. */
+    suspend fun restore(data: PrefsData) = edit { prefs ->
+        prefs[K.onboardingDone] = data.onboardingDone
+        prefs[K.autoUpdateCheck] = data.autoUpdateCheck
+        prefs[K.lastUpdateCheck] = data.lastUpdateCheck
+        prefs[K.clientId] = data.spotifyClientId
+        prefs[K.access] = data.spotifyAccess
+        prefs[K.refresh] = data.spotifyRefresh
+        prefs[K.expires] = data.spotifyExpiresAt
+        prefs[K.user] = data.spotifyUser
+        prefs[K.karaoke] = data.karaoke
+        prefs[K.lyricsToolbarVisible] = data.lyricsToolbarVisible
+        prefs[K.translate] = data.translate
+        prefs[K.fontSize] = data.lyricFontSize
+        prefs[K.offset] = data.lyricOffsetMs
+        prefs[K.lyricActiveColor] = data.lyricActiveColor
+        prefs[K.lyricBrightness] = data.lyricBrightness
+        prefs[K.uiTextBrightness] = data.uiTextBrightness
+        prefs[K.lyricFont] = data.lyricFont
+        prefs[K.uiFont] = data.uiFont
+        prefs[K.spicyKey] = data.spicyKey
+        prefs[K.themeMode] = data.themeMode.name
+        prefs[K.customThemes] = data.customThemes
+        prefs[K.customThemeId] = data.customThemeId
+        prefs[K.appIcon] = data.appIcon
+        prefs[K.volumeStep] = data.volumeStep
+        prefs[K.repeatMode] = data.repeatMode
+        prefs[K.discordBridgeEnabled] = data.discordBridgeEnabled
+        prefs[K.discordBridgeHost] = data.discordBridgeHost
+        prefs[K.discordBridgePort] = data.discordBridgePort
+        prefs[K.discordBridgeToken] = data.discordBridgeToken
+        prefs[K.syncCopyFiles] = data.syncCopyFiles
+        prefs[K.language] = data.language.name
+        prefs[K.coverBackdrop] = data.coverBackdrop
+        prefs[K.coverIntensity] = data.coverIntensity
+        prefs[K.coverPages] = data.coverPages
+        prefs[K.pageBackgrounds] = data.pageBackgrounds
+        prefs[K.pageBackgroundBlur] = data.pageBackgroundBlur
+        prefs[K.eqEnabled] = data.eqEnabled
+        prefs[K.eqPreset] = data.eqPreset
+        prefs[K.eqLevels] = data.eqLevels
+        prefs[K.localFolders] = encodeFolders(data.localFolders)
+        prefs[K.localFolderUri] = data.localFolders.firstOrNull()?.uri.orEmpty()
+        prefs[K.localFolderName] = data.localFolders.firstOrNull()?.name.orEmpty()
+        prefs[K.autoConnect] = data.budsAutoConnect
+        prefs[K.budsMac] = data.budsMac
+        prefs[K.youtubeFolderUri] = data.youtubeFolderUri
+        prefs[K.youtubeFolderName] = data.youtubeFolderName
+        prefs[K.youtubeHistory] = data.youtubeHistory.joinToString("\n")
+        prefs[K.youtubeMusicOnly] = data.youtubeMusicOnly
+        prefs[K.youtubeDownloads] = Json.encodeToString(data.youtubeDownloads)
+        prefs[K.likedArtists] = Json.encodeToString(data.likedArtists)
+        prefs[K.likedTracks] = Json.encodeToString(data.likedTracks)
+    }
+
+    private fun likeKey(track: LikedTrack): String {
+        val videoId = track.videoId
+        if (!videoId.isNullOrBlank()) return "yt:$videoId"
+        return normalizeLike(track.artist) + "|" + normalizeLike(track.title) + "|" +
+            (track.durationMs / 1000L).coerceAtLeast(0L)
+    }
+
+    private fun normalizeLike(value: String): String = value.lowercase()
+        .replace('\u00A0', ' ')
+        .replace(Regex("[\\p{Punct}\\s]+"), "")
 
     private suspend fun edit(block: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
         context.dataStore.edit(block)

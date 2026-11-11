@@ -268,7 +268,7 @@ fun YouTubeScreen(
     }
 
     val folderPicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.OpenDocumentTree(),
+        OpenFolderTree(),
     ) { uri ->
         if (uri != null) {
             runCatching {
@@ -414,7 +414,7 @@ fun YouTubeScreen(
                 contentDescription = tr("Папка сохранения", "Save folder"),
                 size = 40.dp,
                 iconSize = 18.dp,
-                onClick = { folderPicker.launch(null) },
+                onClick = { folderPicker.launch(musicFolderUri()) },
             )
         }
 
@@ -443,7 +443,7 @@ fun YouTubeScreen(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
-                    .clickable { folderPicker.launch(null) }
+                    .clickable { folderPicker.launch(musicFolderUri()) }
                     .padding(horizontal = 8.dp, vertical = 4.dp),
             )
         }
@@ -535,7 +535,7 @@ fun YouTubeScreen(
                 onDownloadWhole = {
                     controller.startYouTubeWhole(currentPreview, prefs.youtubeFolderUri)
                 },
-                onPickFolder = { folderPicker.launch(null) },
+                onPickFolder = { folderPicker.launch(musicFolderUri()) },
                 onListen = {
                     controller.youtubeRadio.start(currentPreview, withRadio = false)
                     onBack()

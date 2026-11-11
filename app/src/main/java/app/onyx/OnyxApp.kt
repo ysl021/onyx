@@ -82,6 +82,7 @@ import app.onyx.ui.AppLanguageState
 import app.onyx.ui.FontCatalog
 import app.onyx.ui.FontPickerDialog
 import app.onyx.ui.IntroScreen
+import app.onyx.ui.OnboardingScreen
 import app.onyx.ui.LocalAppLanguage
 import app.onyx.ui.tr
 import app.onyx.ui.LyricsScreen
@@ -163,6 +164,15 @@ fun OnyxApp() {
     }
     LaunchedEffect(tab) { controller.lastTab = tab.name }
     var showIntro by rememberSaveable { mutableStateOf(true) }
+    var showOnboarding by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        showOnboarding = controller.onboardingDone?.let { !it }
+            ?: runCatching { !controller.prefs.snapshot().onboardingDone }
+                .getOrDefault(false)
+    }
+    LaunchedEffect(prefs.onboardingDone) {
+        if (prefs.onboardingDone) showOnboarding = false
+    }
     var lyricsFullscreen by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
 
@@ -465,6 +475,13 @@ fun OnyxApp() {
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 11.dp),
                         )
                     }
+                }
+
+                if (showOnboarding) {
+                    OnboardingScreen(
+                        controller = controller,
+                        onDone = { showOnboarding = false },
+                    )
                 }
 
                 if (showIntro) {
