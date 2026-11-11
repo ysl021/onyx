@@ -1,0 +1,21 @@
+[package]
+name = "onyx-desktop"
+version = "0.9.0"
+description = "ONYX — music player and control center"
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "onyx_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
