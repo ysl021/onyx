@@ -17,6 +17,7 @@
 
   let active = $state("player");
   let version = $state("0.9.0");
+  let settingsTab = $state<"main" | "look" | "integrations">("main");
 
   const titles: Record<string, string> = {
     lyrics: "Текст",
@@ -55,7 +56,10 @@
   <NavDock
     position={$settings.panelPosition}
     active={active}
-    onSelect={(key) => (active = key)}
+    onSelect={(key) => {
+      if (key === "settings") settingsTab = "main";
+      active = key;
+    }}
   />
 
   <main class="content">
@@ -70,12 +74,19 @@
     {:else if active === "youtube"}
       <YouTubeScreen
         onBack={() => (active = "player")}
-        onOpenSettings={() => (active = "settings")}
+        onOpenSettings={() => {
+          settingsTab = "integrations";
+          active = "settings";
+        }}
       />
     {:else if active === "visualizer"}
       <VisualizerScreen />
     {:else if active === "settings"}
-      <SettingsScreen {version} onBack={() => (active = "player")} />
+      <SettingsScreen
+        {version}
+        initialTab={settingsTab}
+        onBack={() => (active = "player")}
+      />
     {:else}
       <PlaceholderScreen title={titles[active] ?? active} />
     {/if}

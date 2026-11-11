@@ -18,7 +18,15 @@
   } from "../stores/settings";
   import type { PanelPosition } from "../stores/settings";
 
-  let { version, onBack }: { version: string; onBack: () => void } = $props();
+  let {
+    version,
+    onBack,
+    initialTab = "main",
+  }: {
+    version: string;
+    onBack: () => void;
+    initialTab?: "main" | "look" | "integrations";
+  } = $props();
 
   type HubDevice = { name: string; token: string; addedAt: number };
   type HubStatus = {
@@ -49,7 +57,7 @@
     { name: "Голос", bands: [-2, 0, 3, 4, 1] },
   ];
 
-  let tab = $state<"main" | "look" | "integrations">("main");
+  let tab = $state<"main" | "look" | "integrations">(initialTab);
   let hub = $state<HubStatus | null>(null);
   let hubBusy = $state(false);
   let hubError = $state("");
@@ -413,6 +421,7 @@
     </Glass>
 
     <Glass class="card" padding={18}>
+      <div class="section-label">Эффект</div>
       <div class="setting-row">
         <div>
           <div class="setting-title">Эквалайзер</div>
