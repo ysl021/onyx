@@ -52,7 +52,16 @@ impl PlayerHandle {
     }
 
     pub fn load(&self, path: &str) -> Result<(), String> {
+        self.load_with_proxy(path, None)
+    }
+
+    pub fn load_with_proxy(&self, path: &str, proxy: Option<&str>) -> Result<(), String> {
         self.ensure_mpv()?;
+        if let Some(proxy) = proxy {
+            self.send(&serde_json::json!({
+                "command": ["set_property", "http-proxy", proxy]
+            }))?;
+        }
         self.send(&serde_json::json!({ "command": ["loadfile", path] }))?;
         if let Ok(mut inner) = self.inner.lock() {
             inner.state = PlayerState {
@@ -84,6 +93,12 @@ impl PlayerHandle {
                 .map_err(|error| error.to_string())?;
         }
         Ok(())
+    }
+
+    pub fn pause(&self) -> Result<(), String> {
+        self.send(&serde_json::json!({
+            "command": ["set_property", "pause", true]
+        }))
     }
 
     fn send(&self, value: &Value) -> Result<(), String> {

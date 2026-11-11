@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { get, writable } from "svelte/store";
+import { tracks, type Track } from "./library";
+import { queue, queueIndex } from "./queue";
 import { settings } from "./settings";
 
 export type PlayerState = {
@@ -22,6 +24,8 @@ export const player = writable<PlayerState>({
 });
 
 export const cover = writable<string | null>(null);
+export const currentPath = writable<string | null>(null);
+export const currentTrack = writable<Track | null>(null);
 
 export async function setCoverFor(path: string) {
   try {
@@ -31,7 +35,13 @@ export async function setCoverFor(path: string) {
   }
 }
 
-export async function playTrack(path: string) {
+export async function playTrack(path: string, track?: Track) {
+  const fallback =
+    track ??
+    get(tracks).find((item) => item.path === path || item.id === path) ??
+    null;
+  currentTrack.set(fallback);
+  currentPath.set(path);
   const volume = get(settings).volume;
   await invoke("player_volume", { volume }).catch(() => {});
   await invoke("player_load", { path });
@@ -39,9 +49,39 @@ export async function playTrack(path: string) {
   await setCoverFor(path);
 }
 
+export async function playNext() {
+  const list = get(queue);
+  if (list.length === 0) return;
+  const index = (get(queueIndex) + 1) % list.length;
+  queueIndex.set(index);
+  await playTrack(list[index].path, list[index]);
+}
+
+export async function playPrevious() {
+  const list = get(queue);
+  if (list.length === 0) return;
+  const index = (get(queueIndex) - 1 + list.length) % list.length;
+  queueIndex.set(index);
+  await playTrack(list[index].path, list[index]);
+}
+
+export async function playQueueAt(index: number) {
+  const list = get(queue);
+  if (index < 0 || index >= list.length) return;
+  queueIndex.set(index);
+  await playTrack(list[index].path, list[index]);
+}
+
 export async function refreshPlayer() {
   try {
     const state = await invoke<PlayerState>("player_state");
+    const fallback = get(currentTrack);
+    if (fallback) {
+      state.title = state.title || fallback.title;
+      state.artist = state.artist || fallback.artist;
+      state.album = state.album || fallback.album;
+      state.durationMs = state.durationMs || fallback.durationMs;
+    }
     player.set(state);
   } catch {
     // mpv is not running yet; keep the empty card.
@@ -68,6 +108,8 @@ export async function openAudioFile() {
     ],
   });
   if (typeof selected === "string") {
+    currentTrack.set(null);
+    currentPath.set(selected);
     const volume = get(settings).volume;
     await invoke("player_volume", { volume }).catch(() => {});
     await invoke("player_load", { path: selected });

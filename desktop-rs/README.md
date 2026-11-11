@@ -14,6 +14,14 @@
   `settings.json` (в Kotlin-версии это `folders`).
 - `mpv.exe` встроен как Tauri sidecar (`externalBin`), поэтому установщик
   работает без отдельной установки mpv.
+- Очередь, следующий/предыдущий, таймер сна, любимые треки.
+- Плейлисты: создание, переименование, удаление, добавление текущего трека,
+  запуск плейлиста.
+- Текст: LRCLIB, синхронные строки, подсветка, перемотка по строке,
+  размер и смещение.
+- YouTube: поиск через yt-dlp и стриминг в mpv. Нужен VPN/прокси
+  (Happ/Clash/v2rayN); без него вкладка покажет ошибку.
+- Настройки: панель, тема (тёмная/светлая), громкость, папки музыки.
 - Настройки читаются и пишутся в тот же `%APPDATA%\ONYX\settings.json`,
   что и Kotlin-версия.
 - Сборка MSI и NSIS через `tauri build`.
@@ -26,17 +34,20 @@
 - `mpv.exe` для сборки: положить в
   `src-tauri/binaries/mpv-x86_64-pc-windows-msvc.exe`. Бинарник большой,
   поэтому в git не входит; `tauri build` без него упадёт.
-- Позже: `yt-dlp.exe` как sidecar для YouTube.
+- `yt-dlp.exe` для YouTube: положить в
+  `src-tauri/binaries/yt-dlp-x86_64-pc-windows-msvc.exe`.
 
 ## Команды
 
 ```powershell
 cd desktop-rs
 npm install
-# один раз: скопировать mpv.exe в sidecar
+# один раз: скопировать sidecar-бинарники
 New-Item -ItemType Directory -Force src-tauri/binaries
 Copy-Item "C:\Program Files\MPV Player\mpv.exe" `
   "src-tauri/binaries/mpv-x86_64-pc-windows-msvc.exe"
+Copy-Item "..\desktop\libs\yt-dlp.exe" `
+  "src-tauri/binaries/yt-dlp-x86_64-pc-windows-msvc.exe"
 npm run tauri dev      # dev-режим с горячей перезагрузкой
 npm run tauri build    # MSI + NSIS в src-tauri/target/release/bundle/
 ```
@@ -54,14 +65,19 @@ desktop-rs/
     App.svelte             оболочка, нижний док и переключение экранов
     app.css                палитра, шрифты, glass, общие кнопки
     lib/components/        Glass, Icon, NavDock
-    lib/screens/           PlayerScreen, SettingsScreen, PlaceholderScreen
-    lib/stores/            player и settings
+    lib/screens/           Player, Lyrics, Playlists, Music, YouTube, Settings
+    lib/stores/            player, settings, library, queue, favorites, sleep,
+                           playlists, lyrics, youtube
   src-tauri/
     src/main.rs            точка входа
     src/lib.rs             Tauri builder и IPC
     src/commands.rs        команды для фронтенда
     src/settings.rs        %APPDATA%\ONYX\settings.json
     src/player.rs          mpv sidecar + JSON IPC
+    src/library.rs         walkdir + lofty, теги и обложки
+    src/playlists.rs       rust-playlists.json
+    src/lyrics.rs          LRCLIB + LRC
+    src/youtube.rs         yt-dlp поиск/стриминг, авто-прокси
     src/hub.rs             TODO: TCP 8787 + UDP 8788
     src/discord.rs         TODO: Rich Presence
     src/update.rs          TODO: Tauri updater
@@ -74,18 +90,24 @@ desktop-rs/
 
 1. ~~**mpv**: sidecar, `--input-ipc-server`, play/pause, seek.~~ Готово.
 2. ~~**Библиотека**: `walkdir` + `lofty`, теги, обложки, экран «Музыка».~~ Готово.
-3. **Экраны**: перенести 7 экранов из Android-клиента (`../app/src/main/java/app/onyx/ui/`),
-   адаптировав под ПК и сверив скриншоты.
-4. **YouTube**: `yt-dlp.exe` sidecar, innerTube, локальный прокси.
-5. **Discord**: IPC-канал, тот же payload (artist в state, album в `large_text`).
-6. **Hub**: протокол должен совпадать с Android-клиентом (`SyncModels.kt`).
-7. **Автообновление**: `tauri-plugin-updater`, minisign-ключи, `latest.json`
-   на GitHub Releases.
-8. **MSI**: Authenticode-подпись (опционально), иконка, версия из
-   `../version.properties`.
+3. ~~**Плеер**: очередь, следующий/предыдущий, таймер сна, любимые.~~ Готово.
+4. ~~**Текст**: LRCLIB, синхронные строки, подсветка.~~ Готово.
+5. ~~**Плейлисты**: создание, добавление, запуск.~~ Готово.
+6. ~~**YouTube**: поиск и стриминг через yt-dlp.~~ Готово (нужен прокси).
+7. **Визуал**: FFT-спектр из PCM-потока mpv.
+8. **YouTube**: скачивание и нарезка, очередь загрузок.
+9. **Discord**: IPC-канал, тот же payload (artist в state, album в `large_text`).
+10. **Hub**: протокол должен совпадать с Android-клиентом (`SyncModels.kt`).
+11. **Автообновление**: `tauri-plugin-updater`, minisign-ключи, `latest.json`
+    на GitHub Releases.
+12. **MSI**: Authenticode-подпись (опционально), иконка, версия из
+    `../version.properties`.
 
 ## Важно
 
 - Android-клиент остаётся на Kotlin/Compose и не входит в этот проект.
 - Hub-протокол и `%APPDATA%\ONYX` нельзя ломать: иначе телефон и старые
   настройки перестанут работать.
+- YouTube требует локальный прокси (Happ/Clash/v2rayN на
+  `127.0.0.1:20808`, `10809` или `7890`). Без него поиск завершится
+  ошибкой через 20 секунд.

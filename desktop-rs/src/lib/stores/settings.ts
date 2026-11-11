@@ -28,12 +28,15 @@ export const settings = writable<Settings>(defaults);
 export async function loadSettings() {
   try {
     const loaded = await invoke<Partial<Settings>>("load_settings");
-    // The Kotlin build stores enum names like "BOTTOM"; normalize them.
+    // The Kotlin build stores enum names like "BOTTOM" / "DARK"; normalize them.
     const rawPanel = String(loaded.panelPosition ?? "bottom").toLowerCase();
     const panelPosition = (["bottom", "top", "left", "right"].includes(rawPanel)
       ? rawPanel
       : "bottom") as PanelPosition;
-    settings.set({ ...defaults, ...loaded, panelPosition });
+    const theme = String(loaded.theme ?? "dark").toLowerCase() === "light"
+      ? "light"
+      : "dark";
+    settings.set({ ...defaults, ...loaded, panelPosition, theme });
   } catch {
     // Keep defaults until the Rust backend is available.
   }
@@ -50,6 +53,10 @@ export async function saveSettings(next: Settings) {
 
 export async function setPanelPosition(panelPosition: PanelPosition) {
   await saveSettings({ ...get(settings), panelPosition });
+}
+
+export async function setTheme(theme: "dark" | "light") {
+  await saveSettings({ ...get(settings), theme });
 }
 
 export async function setVolume(volume: number) {

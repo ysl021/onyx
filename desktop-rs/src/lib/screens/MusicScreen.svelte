@@ -11,6 +11,7 @@
     tracks,
   } from "../stores/library";
   import { playTrack, player } from "../stores/player";
+  import { setQueue } from "../stores/queue";
   import { loadSettings, settings } from "../stores/settings";
 
   let error = $state("");
@@ -43,9 +44,12 @@
     return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
   }
 
-  async function play(path: string) {
+  async function play(index: number) {
+    const track = $tracks[index];
+    if (!track) return;
+    setQueue($tracks, index);
     try {
-      await playTrack(path);
+      await playTrack(track.path, track);
     } catch (e) {
       error = String(e);
     }
@@ -84,11 +88,11 @@
     </div>
   {:else}
     <Glass class="list" padding={8}>
-      {#each $tracks as track (track.id)}
+      {#each $tracks as track, index (track.id)}
         <button
           class="row"
           class:playing={$player.title === track.title && $player.artist === track.artist}
-          onclick={() => play(track.path)}
+          onclick={() => play(index)}
         >
           <div class="thumb">
             <Icon name="music-note" size={18} />

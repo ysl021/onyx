@@ -77,9 +77,11 @@ button {
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 28px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.085), rgba(255, 255, 255, 0.03));
-  backdrop-filter: blur(30px) saturate(120%);
-  -webkit-backdrop-filter: blur(30px) saturate(120%);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0.008)),
+    rgba(16, 16, 19, 0.45);
+  backdrop-filter: blur(36px) saturate(140%);
+  -webkit-backdrop-filter: blur(36px) saturate(140%);
 }
 
 .glass::before {
@@ -87,7 +89,7 @@ button {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.07), transparent 42%);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.035), transparent 42%);
 }
 
 .glass::after {
@@ -95,7 +97,7 @@ button {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  opacity: 0.012;
+  opacity: 0.015;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
@@ -105,12 +107,66 @@ button {
 }
 
 .glass.strong {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0.06));
-  border-color: rgba(255, 255, 255, 0.16);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.012)),
+    rgba(16, 16, 19, 0.55);
+  border-color: rgba(255, 255, 255, 0.09);
 }
 
 .glass.strong::before {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.12), transparent 42%);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.04), transparent 42%);
+}
+
+/* Light theme, values from Theme.kt's LightOnyx. */
+[data-theme="light"] {
+  --black: #f4f4f1;
+  --deep: #ededea;
+  --surface: #ffffff;
+  --elevated: #f8f8f5;
+  --white: #0a0a0c;
+  --dim: #5b5b63;
+  --faint: #8c8c93;
+  --line: rgba(0, 0, 0, 0.12);
+  --line-strong: rgba(0, 0, 0, 0.2);
+  --accent: #141416;
+}
+
+[data-theme="light"] body {
+  background:
+    radial-gradient(1100px 700px at 72% -12%, rgba(10, 10, 12, 0.06), transparent 62%),
+    radial-gradient(900px 600px at 8% 112%, rgba(10, 10, 12, 0.03), transparent 60%),
+    var(--black);
+}
+
+[data-theme="light"] .glass {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.36)),
+    rgba(244, 244, 241, 0.45);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .glass.strong {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.56)),
+    rgba(244, 244, 241, 0.5);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .glass::before {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.5), transparent 42%);
+}
+
+[data-theme="light"] .glass.strong::before {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.7), transparent 42%);
+}
+
+[data-theme="light"] .pill.selected {
+  color: #ffffff;
+}
+
+[data-theme="light"] .dock-inner button.active,
+[data-theme="light"] .rail-inner button.active {
+  color: #ffffff;
 }
 
 .section-label {

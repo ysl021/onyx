@@ -1,6 +1,9 @@
 use crate::library::{Library, Track};
+use crate::lyrics::Lyrics;
 use crate::player::{PlayerHandle, PlayerState};
+use crate::playlists::{Playlist, PlaylistStore};
 use crate::settings::{self, Settings};
+use crate::youtube::Video;
 use std::sync::Arc;
 use tauri::State;
 
@@ -46,6 +49,11 @@ pub fn player_volume(player: State<'_, PlayerHandle>, volume: u8) -> Result<(), 
 }
 
 #[tauri::command]
+pub fn player_pause(player: State<'_, PlayerHandle>) -> Result<(), String> {
+    player.pause()
+}
+
+#[tauri::command]
 pub fn library_tracks(library: State<'_, Arc<Library>>) -> Vec<Track> {
     library.tracks()
 }
@@ -64,4 +72,79 @@ pub async fn library_scan(
 #[tauri::command]
 pub fn track_cover(library: State<'_, Arc<Library>>, path: String) -> Option<String> {
     library.cover(&path)
+}
+
+#[tauri::command]
+pub fn playlists_load(store: State<'_, Arc<PlaylistStore>>) -> Vec<Playlist> {
+    store.list()
+}
+
+#[tauri::command]
+pub fn playlist_create(
+    store: State<'_, Arc<PlaylistStore>>,
+    name: String,
+) -> Vec<Playlist> {
+    store.create(&name)
+}
+
+#[tauri::command]
+pub fn playlist_rename(
+    store: State<'_, Arc<PlaylistStore>>,
+    id: String,
+    name: String,
+) -> Vec<Playlist> {
+    store.rename(&id, &name)
+}
+
+#[tauri::command]
+pub fn playlist_delete(
+    store: State<'_, Arc<PlaylistStore>>,
+    id: String,
+) -> Vec<Playlist> {
+    store.delete(&id)
+}
+
+#[tauri::command]
+pub fn playlist_add_tracks(
+    store: State<'_, Arc<PlaylistStore>>,
+    id: String,
+    track_ids: Vec<String>,
+) -> Vec<Playlist> {
+    store.add_tracks(&id, &track_ids)
+}
+
+#[tauri::command]
+pub fn playlist_remove_track(
+    store: State<'_, Arc<PlaylistStore>>,
+    id: String,
+    track_id: String,
+) -> Vec<Playlist> {
+    store.remove_track(&id, &track_id)
+}
+
+#[tauri::command]
+pub async fn lyrics_fetch(
+    artist: String,
+    title: String,
+    album: String,
+    duration_ms: u64,
+) -> Option<Lyrics> {
+    crate::lyrics::fetch(&artist, &title, &album, duration_ms).await
+}
+
+#[tauri::command]
+pub async fn youtube_search(query: String) -> Result<Vec<Video>, String> {
+    crate::youtube::search(&query).await
+}
+
+#[tauri::command]
+pub async fn youtube_play(
+    player: State<'_, PlayerHandle>,
+    id: String,
+) -> Result<(), String> {
+    let proxy = crate::youtube::active_proxy().ok_or(
+        "Включи VPN/прокси для YouTube (Happ/Clash на 127.0.0.1:20808 или 7890).",
+    )?;
+    let url = crate::youtube::resolve(&id, &proxy).await?;
+    player.load_with_proxy(&url, Some(&proxy))
 }
