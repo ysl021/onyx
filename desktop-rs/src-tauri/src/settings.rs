@@ -20,6 +20,8 @@ pub struct Settings {
     pub cover_backdrop: bool,
     pub youtube_proxy: String,
     pub volume_step: u8,
+    pub eq_enabled: bool,
+    pub eq_bands: Vec<f32>,
     pub music_folders: Vec<String>,
 }
 
@@ -38,6 +40,8 @@ impl Default for Settings {
             cover_backdrop: false,
             youtube_proxy: String::new(),
             volume_step: 5,
+            eq_enabled: false,
+            eq_bands: vec![0.0; 5],
             music_folders: Vec::new(),
         }
     }
@@ -49,10 +53,14 @@ pub fn path() -> PathBuf {
 }
 
 pub fn load() -> Settings {
-    fs::read_to_string(path())
+    let mut settings = fs::read_to_string(path())
         .ok()
-        .and_then(|text| serde_json::from_str(&text).ok())
-        .unwrap_or_default()
+        .and_then(|text| serde_json::from_str::<Settings>(&text).ok())
+        .unwrap_or_default();
+    settings.eq_bands = (0..5)
+        .map(|index| settings.eq_bands.get(index).copied().unwrap_or(0.0))
+        .collect();
+    settings
 }
 
 pub fn save(settings: &Settings) -> Result<(), String> {

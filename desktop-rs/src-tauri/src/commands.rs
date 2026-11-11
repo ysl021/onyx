@@ -40,10 +40,14 @@ pub fn player_toggle(player: State<'_, PlayerHandle>) -> Result<PlayerState, Str
 #[tauri::command]
 pub fn player_load(player: State<'_, PlayerHandle>, path: String) -> Result<(), String> {
     let config = settings::load();
+    player.load(&path)?;
     if !config.audio_device.trim().is_empty() && config.audio_device != "auto" {
         let _ = player.set_audio_device(&config.audio_device);
     }
-    player.load(&path)
+    if config.eq_enabled {
+        let _ = player.set_eq(true, &config.eq_bands);
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -261,6 +265,15 @@ pub fn player_set_audio_device(
 }
 
 #[tauri::command]
+pub fn player_set_eq(
+    player: State<'_, PlayerHandle>,
+    enabled: bool,
+    bands: Vec<f32>,
+) -> Result<(), String> {
+    player.set_eq(enabled, &bands)
+}
+
+#[tauri::command]
 pub async fn discord_test() -> bool {
     tauri::async_runtime::spawn_blocking(|| {
         let client_id = {
@@ -470,6 +483,11 @@ pub fn hub_regenerate_code(hub: State<'_, Hub>) -> HubStatus {
 #[tauri::command]
 pub fn hub_sync_state(hub: State<'_, Hub>) -> SyncState {
     hub.sync_state()
+}
+
+#[tauri::command]
+pub async fn youtube_playlist(url: String) -> Result<Vec<Video>, String> {
+    crate::youtube::playlist(&url).await
 }
 
 #[tauri::command]

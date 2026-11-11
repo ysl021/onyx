@@ -146,10 +146,24 @@ impl PlayerHandle {
     }
 
     pub fn set_audio_device(&self, device: &str) -> Result<(), String> {
-        self.ensure_mpv()?;
-        self.send(&serde_json::json!({
+        // Do not start mpv just to change a setting; it is applied on load.
+        let _ = self.send(&serde_json::json!({
             "command": ["set_property", "audio-device", device]
-        }))
+        }));
+        Ok(())
+    }
+
+    pub fn set_eq(&self, enabled: bool, bands: &[f32]) -> Result<(), String> {
+        let value = if enabled {
+            build_equalizer(bands)
+        } else {
+            String::new()
+        };
+        // Do not start mpv just to change the EQ; it is applied on load.
+        let _ = self.send(&serde_json::json!({
+            "command": ["set_property", "af", value]
+        }));
+        Ok(())
     }
 
     fn send(&self, value: &Value) -> Result<(), String> {
@@ -291,6 +305,19 @@ impl Drop for PlayerHandle {
     }
 }
 
+fn build_equalizer(bands: &[f32]) -> String {
+    const FREQS: [f32; 5] = [60.0, 230.0, 910.0, 3600.0, 14000.0];
+    let filters: Vec<String> = FREQS
+        .iter()
+        .enumerate()
+        .map(|(index, frequency)| {
+            let gain = bands.get(index).copied().unwrap_or(0.0).clamp(-12.0, 12.0);
+            format!("equalizer=f={frequency}:t=q:w=1:g={gain:.1}")
+        })
+        .collect();
+    format!("lavfi=[{}]", filters.join(","))
+}
+
 fn meta(data: &Value, key: &str) -> String {
     if let Some(object) = data.as_object() {
         for (name, value) in object {
@@ -329,7 +356,7 @@ pub fn audio_devices() -> Vec<AudioDevice> {
             ),
             _ => (line.to_string(), line.to_string()),
         };
-        if name.is_empty() {
+        if name.is_empty() || name == "auto" || name == "no" {
             continue;
         }
         devices.push(AudioDevice { name, description });

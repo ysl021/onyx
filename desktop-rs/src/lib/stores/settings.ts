@@ -16,6 +16,8 @@ export type Settings = {
   coverBackdrop: boolean;
   youtubeProxy: string;
   volumeStep: number;
+  eqEnabled: boolean;
+  eqBands: number[];
   musicFolders: string[];
 };
 
@@ -32,6 +34,8 @@ const defaults: Settings = {
   coverBackdrop: false,
   youtubeProxy: "",
   volumeStep: 5,
+  eqEnabled: false,
+  eqBands: [0, 0, 0, 0, 0],
   musicFolders: [],
 };
 
@@ -48,7 +52,11 @@ export async function loadSettings() {
     const theme = String(loaded.theme ?? "dark").toLowerCase() === "light"
       ? "light"
       : "dark";
-    settings.set({ ...defaults, ...loaded, panelPosition, theme });
+    const rawBands = Array.isArray(loaded.eqBands) ? loaded.eqBands : [];
+    const eqBands = [0, 1, 2, 3, 4].map((index) =>
+      Number(rawBands[index] ?? 0),
+    );
+    settings.set({ ...defaults, ...loaded, panelPosition, theme, eqBands });
   } catch {
     // Keep defaults until the Rust backend is available.
   }
@@ -84,6 +92,15 @@ export async function setAudioDevice(audioDevice: string) {
   await saveSettings({ ...get(settings), audioDevice });
   try {
     await invoke("player_set_audio_device", { device: audioDevice });
+  } catch {
+    // mpv starts with the next track.
+  }
+}
+
+export async function setEq(enabled: boolean, bands: number[]) {
+  await saveSettings({ ...get(settings), eqEnabled: enabled, eqBands: bands });
+  try {
+    await invoke("player_set_eq", { enabled, bands });
   } catch {
     // mpv starts with the next track.
   }

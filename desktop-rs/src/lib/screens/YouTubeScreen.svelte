@@ -10,6 +10,7 @@
     clearDownloads,
     downloads,
     loadDownloads,
+    loadPlaylist,
     playVideo,
     playingId,
     removeDownload,
@@ -140,6 +141,19 @@
     const value = linkValue.trim();
     if (!value) return;
     linkOpen = false;
+    error = "";
+    showRecent = false;
+    if (value.includes("list=") || value.includes("/playlist")) {
+      try {
+        await loadPlaylist(value);
+        if ($videos.length === 0) {
+          error = "В миксе не нашлось треков";
+        }
+      } catch (e) {
+        error = String(e);
+      }
+      return;
+    }
     await run(value);
   }
 
@@ -466,7 +480,7 @@
         <span>Ссылка YouTube</span>
         <input
           bind:value={linkValue}
-          placeholder="https://youtube.com/watch?v=…"
+          placeholder="https://youtube.com/watch?v=… или ссылка на микс"
           onkeydown={(event) => event.key === "Enter" && submitLink()}
         />
       </label>

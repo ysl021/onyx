@@ -49,6 +49,17 @@ export async function search(query: string, musicOnly = true) {
   }
 }
 
+export async function loadPlaylist(url: string) {
+  const clean = url.trim();
+  if (!clean) return;
+  searching.set(true);
+  try {
+    videos.set(await invoke<Video[]>("youtube_playlist", { url: clean }));
+  } finally {
+    searching.set(false);
+  }
+}
+
 export async function playVideo(video: Video) {
   playingId.set(video.id);
   try {

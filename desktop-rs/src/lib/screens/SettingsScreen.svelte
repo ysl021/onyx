@@ -10,6 +10,7 @@
   import {
     saveSettings,
     setAudioDevice,
+    setEq,
     setPanelPosition,
     setTheme,
     setVolume,
@@ -39,6 +40,13 @@
     { key: "top", label: "Сверху" },
     { key: "left", label: "Слева" },
     { key: "right", label: "Справа" },
+  ];
+
+  const eqFreqs = ["60", "230", "910", "3.6k", "14k"];
+  const eqPresets = [
+    { name: "Плоско", bands: [0, 0, 0, 0, 0] },
+    { name: "Бас", bands: [6, 4, 1, 0, 0] },
+    { name: "Голос", bands: [-2, 0, 3, 4, 1] },
   ];
 
   let tab = $state<"main" | "look" | "integrations">("main");
@@ -266,6 +274,25 @@
     });
   }
 
+  function currentBands() {
+    const bands = $settings.eqBands ?? [];
+    return [0, 1, 2, 3, 4].map((index) => Number(bands[index] ?? 0));
+  }
+
+  async function toggleEq() {
+    await setEq(!$settings.eqEnabled, currentBands());
+  }
+
+  async function changeEqBand(index: number, value: number) {
+    const bands = currentBands();
+    bands[index] = value;
+    await setEq($settings.eqEnabled, bands);
+  }
+
+  async function applyEqPreset(bands: number[]) {
+    await setEq(true, bands);
+  }
+
   async function openSoundSettings() {
     try {
       await invoke("open_sound_settings");
@@ -382,6 +409,46 @@
         </select>
         <button class="pill" onclick={reloadDevices}>Обновить</button>
         <button class="pill" onclick={openSoundSettings}>Настройки звука</button>
+      </div>
+    </Glass>
+
+    <Glass class="card" padding={18}>
+      <div class="setting-row">
+        <div>
+          <div class="setting-title">Эквалайзер</div>
+          <div class="setting-sub">5 полос, применяется к mpv</div>
+        </div>
+        <button
+          class="toggle"
+          class:on={$settings.eqEnabled}
+          aria-label="Эквалайзер"
+          onclick={toggleEq}
+        ></button>
+      </div>
+      <div class="eq-bands" class:disabled={!$settings.eqEnabled}>
+        {#each eqFreqs as frequency, index}
+          <div class="eq-row">
+            <span class="eq-freq">{frequency}</span>
+            <input
+              type="range"
+              min="-12"
+              max="12"
+              step="1"
+              value={currentBands()[index]}
+              oninput={(event) =>
+                changeEqBand(index, Number(event.currentTarget.value))}
+              aria-label={`Эквалайзер ${frequency}`}
+            />
+            <span class="eq-value">{currentBands()[index]}</span>
+          </div>
+        {/each}
+      </div>
+      <div class="pill-row">
+        {#each eqPresets as preset}
+          <button class="pill" onclick={() => applyEqPreset(preset.bands)}>
+            {preset.name}
+          </button>
+        {/each}
       </div>
     </Glass>
 
@@ -723,6 +790,43 @@
 
   .step-row {
     margin-top: 10px;
+  }
+
+  .eq-bands {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 14px;
+  }
+
+  .eq-bands.disabled {
+    opacity: 0.45;
+    pointer-events: none;
+  }
+
+  .eq-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .eq-freq {
+    width: 42px;
+    color: var(--faint);
+    font-size: 11px;
+    text-align: right;
+  }
+
+  .eq-row input {
+    flex: 1;
+    accent-color: var(--accent);
+  }
+
+  .eq-value {
+    width: 32px;
+    color: var(--dim);
+    font-size: 11px;
+    text-align: right;
   }
 
   .select {

@@ -170,12 +170,16 @@ pub async fn search(query: &str, music_only: bool) -> Result<Vec<Video>, String>
     }
     let root: serde_json::Value =
         serde_json::from_slice(&output.stdout).map_err(|error| error.to_string())?;
+    Ok(parse_videos(&root))
+}
+
+fn parse_videos(root: &serde_json::Value) -> Vec<Video> {
     let entries = root
         .get("entries")
         .and_then(|value| value.as_array())
         .cloned()
         .unwrap_or_default();
-    Ok(entries
+    entries
         .into_iter()
         .map(|entry| Video {
             id: entry
@@ -209,7 +213,42 @@ pub async fn search(query: &str, music_only: bool) -> Result<Vec<Video>, String>
                 .to_string(),
         })
         .filter(|video| !video.id.is_empty())
-        .collect())
+        .collect()
+}
+
+/// Resolves a YouTube mix/playlist URL into its tracks.
+pub async fn playlist(url: &str) -> Result<Vec<Video>, String> {
+    let url = url.trim().to_string();
+    if url.is_empty() {
+        return Ok(Vec::new());
+    }
+    let proxy = active_proxy().ok_or(
+        "Включи VPN/прокси для YouTube (Happ/Clash) или укажи прокси в настройках.",
+    )?;
+    let ytdlp = find_ytdlp().ok_or("yt-dlp.exe не найден")?;
+    let args = vec![
+        url,
+        "--dump-single-json".into(),
+        "--flat-playlist".into(),
+        "--no-warnings".into(),
+        "--skip-download".into(),
+        "--proxy".into(),
+        proxy,
+    ];
+    let mut command = Command::new(&ytdlp);
+    command.args(args);
+    let output = tauri::async_runtime::spawn_blocking(move || {
+        run_with_timeout(command, Duration::from_secs(20))
+    })
+    .await
+    .map_err(|error| error.to_string())??;
+    if !output.status.success() {
+        invalidate_proxy();
+        return Err(String::from_utf8_lossy(&output.stderr).trim().to_string());
+    }
+    let root: serde_json::Value =
+        serde_json::from_slice(&output.stdout).map_err(|error| error.to_string())?;
+    Ok(parse_videos(&root))
 }
 
 pub async fn resolve(id: &str, proxy: &str) -> Result<String, String> {
