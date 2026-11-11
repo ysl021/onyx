@@ -23,12 +23,17 @@ pub fn player_state(player: State<'_, PlayerHandle>) -> PlayerState {
 }
 
 #[tauri::command]
-pub fn player_toggle(player: State<'_, PlayerHandle>) -> PlayerState {
-    player.toggle();
-    player.state()
+pub fn player_toggle(player: State<'_, PlayerHandle>) -> Result<PlayerState, String> {
+    player.toggle()?;
+    Ok(player.state())
 }
 
 #[tauri::command]
 pub fn player_load(player: State<'_, PlayerHandle>, path: String) -> Result<(), String> {
     player.load(&path)
+}
+
+#[tauri::command]
+pub fn player_seek(player: State<'_, PlayerHandle>, seconds: f64) -> Result<(), String> {
+    player.seek(seconds)
 }

@@ -91,14 +91,9 @@ impl PlayerHandle {
             "mpv.exe не найден. Установите mpv или положите mpv.exe рядом с ONYX.",
         )?;
         let pipe_path = format!(r"\\.\pipe\onyx-mpv-{}", std::process::id());
+        let ipc = format!("--input-ipc-server={pipe_path}");
         let child = Command::new(&mpv)
-            .args([
-                "--no-video",
-                "--idle=yes",
-                "--force-window=no",
-                "--input-ipc-server",
-                &pipe_path,
-            ])
+            .args(["--no-video", "--idle=yes", "--force-window=no", ipc.as_str()])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -223,4 +218,34 @@ fn find_mpv() -> Option<PathBuf> {
         }
     }
     candidates.into_iter().find(|path| path.exists())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Manual integration check: `ONYX_TEST_FILE=... cargo test -- --nocapture`.
+    #[test]
+    fn mpv_loads_a_file_and_reports_duration() {
+        let Ok(path) = std::env::var("ONYX_TEST_FILE") else {
+            return;
+        };
+        let player = PlayerHandle::new();
+        player.load(&path).expect("mpv load");
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let state = player.state();
+            if state.duration_ms > 0 {
+                println!(
+                    "mpv ok: duration={}ms title={:?} artist={:?}",
+                    state.duration_ms, state.title, state.artist
+                );
+                return;
+            }
+            if Instant::now() >= deadline {
+                panic!("mpv did not report a duration for {path}");
+            }
+            thread::sleep(Duration::from_millis(200));
+        }
+    }
 }

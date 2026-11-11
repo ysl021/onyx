@@ -3,7 +3,14 @@
   import { onMount } from "svelte";
   import { derived } from "svelte/store";
   import Glass from "./lib/components/Glass.svelte";
-  import { player, refreshPlayer } from "./lib/stores/player";
+  import {
+    openAudioFile,
+    player,
+    refreshPlayer,
+    seekTo,
+    startPolling,
+    togglePlayer,
+  } from "./lib/stores/player";
 
   type Dest = { key: string; label: string; icon: string };
 
@@ -19,6 +26,7 @@
 
   let active = $state("player");
   let version = $state("0.9.0");
+  let error = $state("");
 
   const progress = derived(player, ($p) =>
     $p.durationMs > 0 ? Math.min(100, ($p.positionMs / $p.durationMs) * 100) : 0,
@@ -29,11 +37,40 @@
     return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
   }
 
+  async function pickFile() {
+    error = "";
+    try {
+      await openAudioFile();
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
+  async function seek(event: MouseEvent) {
+    const el = event.currentTarget as HTMLElement;
+    const rect = el.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
+    const seconds = (ratio * $player.durationMs) / 1000;
+    if (seconds > 0) {
+      await seekTo(seconds);
+    }
+  }
+
+  async function seekKey(event: KeyboardEvent) {
+    const step = event.key === "ArrowRight" ? 5 : event.key === "ArrowLeft" ? -5 : 0;
+    if (step === 0 || $player.durationMs <= 0) return;
+    event.preventDefault();
+    const current = $player.positionMs / 1000;
+    const seconds = Math.max(0, Math.min($player.durationMs / 1000, current + step));
+    await seekTo(seconds);
+  }
+
   onMount(() => {
     invoke<string>("app_version")
       .then((v) => (version = v))
       .catch(() => {});
     refreshPlayer();
+    return startPolling();
   });
 </script>
 
@@ -62,7 +99,10 @@
         <div class="eyebrow">{dests.find((d) => d.key === active)?.label}</div>
         <h1>{active === "player" ? "Сейчас играет" : dests.find((d) => d.key === active)?.label}</h1>
       </div>
-      <div class="pill">Rust + Tauri · Svelte 5</div>
+      <div class="top-actions">
+        <button class="pill action" onclick={pickFile}>Открыть файл</button>
+        <div class="pill">Rust + Tauri · Svelte 5</div>
+      </div>
     </header>
 
     {#if active === "player"}
@@ -77,7 +117,18 @@
               <div class="album">{$player.album}</div>
 
               <div class="progress">
-                <div class="bar"><div class="fill" style={`width:${$progress}%`}></div></div>
+                <div
+                  class="bar"
+                  role="slider"
+                  tabindex="0"
+                  aria-valuemin="0"
+                  aria-valuemax={$player.durationMs}
+                  aria-valuenow={$player.positionMs}
+                  onclick={seek}
+                  onkeydown={seekKey}
+                >
+                  <div class="fill" style={`width:${$progress}%`}></div>
+                </div>
                 <div class="times">
                   <span>{fmt($player.positionMs)}</span>
                   <span>{fmt($player.durationMs)}</span>
@@ -89,12 +140,16 @@
                 <button
                   class="play"
                   aria-label={$player.playing ? "Пауза" : "Играть"}
-                  onclick={() => invoke("player_toggle").then(refreshPlayer)}
+                  onclick={togglePlayer}
                 >
                   {$player.playing ? "⏸" : "▶"}
                 </button>
                 <button class="ghost" aria-label="Следующий">⏭</button>
               </div>
+
+              {#if error}
+                <div class="error">{error}</div>
+              {/if}
             </div>
           </div>
         </Glass>
@@ -217,6 +272,23 @@
     letter-spacing: 0.4px;
   }
 
+  .top-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .pill.action {
+    color: var(--white);
+    background: rgba(255, 255, 255, 0.08);
+    cursor: pointer;
+    transition: background 160ms ease;
+  }
+
+  .pill.action:hover {
+    background: rgba(255, 255, 255, 0.14);
+  }
+
   .player-inner {
     display: grid;
     grid-template-columns: 280px 1fr;
@@ -276,6 +348,7 @@
     overflow: hidden;
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.08);
+    cursor: pointer;
   }
 
   .fill {
@@ -297,6 +370,13 @@
     align-items: center;
     gap: 18px;
     margin-top: 22px;
+  }
+
+  .error {
+    margin-top: 14px;
+    color: #ff8a5c;
+    font-size: 12px;
+    line-height: 1.5;
   }
 
   .ghost,
