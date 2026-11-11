@@ -23,9 +23,6 @@ keystore.properties
 # Local toolchain and reference sources (huge, GPLv3 upstream)
 tools/
 
-# Desktop player: bundled VLC runtime is downloaded on demand
-desktop/libs/
-
 # WinUI 3 spike build output
 winui/
 vlc-help.txt

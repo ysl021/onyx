@@ -6,12 +6,11 @@ Galaxy Buds 3 Pro (шумодав, ANC на одно ухо, батареи), д
 
 Чёрно-белый интерфейс, стекло, крупная типографика, OLED-фон, тёмная и светлая темы.
 
-Текущая версия — **0.9.0**. В репозитории три клиента:
+Текущая версия Android — **0.9.0**. В репозитории:
 
 - **Android** — Kotlin/Compose, `app/`, основная версия для телефона.
-- **Windows, Kotlin/Compose** — `desktop/`, рабочая версия и эталон дизайна/функционала.
-- **Windows, Rust + Tauri + Svelte** — `desktop-rs/`, новый клиент; каркас уже собирается
-  в MSI/NSIS, плеер и хаб переносятся по этапам.
+- **Windows (Rust + Tauri + Svelte)** — `desktop-rs/`, новый ПК-клиент; каркас уже
+  собирается в MSI/NSIS, плеер и хаб переносятся по этапам.
 
 Репозиторий: [ysl021/onyx](https://github.com/ysl021/onyx) (public, GPLv3).
 Релизы: [ysl021/onyx/releases](https://github.com/ysl021/onyx/releases).
@@ -83,8 +82,8 @@ Galaxy Buds 3 Pro (шумодав, ANC на одно ухо, батареи), д
 - **Данные**: экспорт/импорт плейлистов, избранного и настроек в JSON.
 - **Связка с ПК**: LAN-хаб (TCP 8787 + UDP 8788), передача плейлистов/лайков,
   локальных файлов и presence; Discord Rich Presence на ПК.
-- **Windows-клиенты**: Kotlin/Compose (`desktop/`) и новый Rust + Tauri + Svelte
-  (`desktop-rs/`), оба в этом репозитории.
+- **Windows-клиент (в разработке)**: Rust + Tauri + Svelte (`desktop-rs/`),
+  каркас уже собирается в MSI/NSIS.
 
 ## Лицензия
 
@@ -94,7 +93,10 @@ Buds является производным от [GalaxyBudsClient](https://git
 
 ## Секреты
 
-Ключ Spicy Lyrics не хранится в репозитории. Для локальной сборки:
+В готовом APK ключ Spicy Lyrics уже встроен — пользователям собирать ничего не нужно.
+В репозитории ключа нет: он подставляется при сборке из `secrets.properties`
+(файл в `.gitignore`) в `BuildConfig.SPICY_KEY`. Это нужно только для локальной
+сборки из исходников.
 
 ```powershell
 Copy-Item secrets.properties.example secrets.properties
@@ -141,13 +143,6 @@ keyPassword=...
 из неё: `major*1_000_000 + minor*1_000 + patch` (0.9.0 → 9000).
 
 ### ПК (Windows)
-
-Kotlin/Compose-версия:
-
-```powershell
-$env:JAVA_HOME="C:\Program Files\Eclipse Adoptium\jdk-17.0.21.9-hotspot"
-.\gradlew.bat :desktop:run
-```
 
 Rust + Tauri + Svelte:
 
@@ -273,9 +268,9 @@ adb shell pm enable com.samsung.accessory.paranmgr
 
 ## Тексты Spicy Lyrics
 
-Основной источник — публичный API Spicy Lyrics (community TTML). Ключ **не хранится в git**:
-он подставляется при сборке из `secrets.properties` в `BuildConfig.SPICY_KEY`. В настройках
-ONYX поля для ключа больше нет.
+Основной источник — публичный API Spicy Lyrics (community TTML). В release-APK ключ
+уже встроен; в git его нет — для локальной сборки он берётся из `secrets.properties`
+и попадает в `BuildConfig.SPICY_KEY`. В настройках ONYX поля для ключа нет.
 
 Получить/заменить ключ: [developers.spicylyrics.org](https://developers.spicylyrics.org).
 Если ключ пустой или отклонён, ONYX автоматически уходит на Musixmatch → Genius → LRCLIB.
@@ -322,10 +317,8 @@ ONYX поля для ключа больше нет.
 Длинные видео скачиваются целиком перед нарезкой, поэтому нужно свободное место
 в кэше.
 
-## ПК-версия (Windows)
+## ПК-версия (Windows, в разработке)
 
-- `desktop/` — Kotlin/Compose, рабочая версия: локальный плеер на VLC, YouTube,
-  плейлисты, Discord Rich Presence и LAN-хаб для телефона.
 - `desktop-rs/` — новый клиент на Rust + Tauri + Svelte 5. Сейчас собирается
   каркас: окно, тема, навигация, настройки, MSI/NSIS. Плеер на mpv, хаб,
   Discord и автообновление переносятся по этапам.
@@ -356,13 +349,6 @@ app/src/main/java/app/onyx/          Android-клиент (Kotlin/Compose)
   update/                  — android.json, скачивание APK, PackageInstaller
   audio/                   — эквалайзер и визуализатор
   ui/                      — темы, стеклянные компоненты, экраны, онбординг
-
-desktop/src/main/kotlin/app/onyx/desktop/   Windows-клиент (Kotlin/Compose)
-  media/                   — VLC-плеер, библиотека, плейлисты, спектр
-  youtube/                 — yt-dlp, innerTube, прокси
-  discord/                 — Rich Presence, обложки
-  hub/                     — TCP 8787 + UDP 8788, синхронизация с телефоном
-  ui/                      — 7 экранов, темы, glass/blur
 
 desktop-rs/                           Windows-клиент (Rust + Tauri + Svelte 5)
   src/                     — Svelte-фронтенд

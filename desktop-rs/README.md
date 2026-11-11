@@ -1,7 +1,6 @@
 # ONYX Desktop (Rust + Tauri + Svelte)
 
-Новый ПК-клиент. Старая Kotlin/Compose-версия остаётся в `../desktop/` как
-эталон функционала и дизайна, пока паритет не достигнут.
+Новый ПК-клиент на Rust + Tauri + Svelte 5. Android-клиент остаётся в `../app/`.
 
 ## Что уже есть
 
@@ -64,8 +63,8 @@ desktop-rs/
    запускать с `--input-ipc-server=\\.\pipe\onyx-mpv-<pid>`, подключить
    `player_load`/`player_state`/`player_toggle` к JSON IPC.
 2. **Библиотека**: `walkdir` + `lofty`, кэш в `%APPDATA%\ONYX\library.json`.
-3. **Экраны**: перенести 7 экранов из `../desktop/src/main/kotlin/.../ui/`,
-   сверяя скриншоты.
+3. **Экраны**: перенести 7 экранов из Android-клиента (`../app/src/main/java/app/onyx/ui/`),
+   адаптировав под ПК и сверив скриншоты.
 4. **YouTube**: `yt-dlp.exe` sidecar, innerTube, локальный прокси.
 5. **Discord**: IPC-канал, тот же payload (artist в state, album в `large_text`).
 6. **Hub**: протокол должен совпадать с Android-клиентом (`SyncModels.kt`).
