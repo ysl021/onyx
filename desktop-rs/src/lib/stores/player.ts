@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { writable } from "svelte/store";
+import { get, writable } from "svelte/store";
+import { settings } from "./settings";
 
 export type PlayerState = {
   title: string;
@@ -19,6 +20,24 @@ export const player = writable<PlayerState>({
   positionMs: 0,
   durationMs: 0,
 });
+
+export const cover = writable<string | null>(null);
+
+export async function setCoverFor(path: string) {
+  try {
+    cover.set(await invoke<string | null>("track_cover", { path }));
+  } catch {
+    cover.set(null);
+  }
+}
+
+export async function playTrack(path: string) {
+  const volume = get(settings).volume;
+  await invoke("player_volume", { volume }).catch(() => {});
+  await invoke("player_load", { path });
+  await refreshPlayer();
+  await setCoverFor(path);
+}
 
 export async function refreshPlayer() {
   try {
@@ -49,8 +68,11 @@ export async function openAudioFile() {
     ],
   });
   if (typeof selected === "string") {
+    const volume = get(settings).volume;
+    await invoke("player_volume", { volume }).catch(() => {});
     await invoke("player_load", { path: selected });
     await refreshPlayer();
+    await setCoverFor(selected);
   }
 }
 

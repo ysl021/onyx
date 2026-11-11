@@ -28,6 +28,7 @@ pub struct PlayerHandle {
 struct Inner {
     child: Option<Child>,
     pipe: Option<File>,
+    volume: u8,
     state: PlayerState,
 }
 
@@ -37,6 +38,7 @@ impl PlayerHandle {
             inner: Arc::new(Mutex::new(Inner {
                 child: None,
                 pipe: None,
+                volume: 100,
                 state: PlayerState::default(),
             })),
         }
@@ -71,9 +73,17 @@ impl PlayerHandle {
     }
 
     pub fn set_volume(&self, volume: u8) -> Result<(), String> {
-        self.send(&serde_json::json!({
-            "command": ["set_property", "volume", volume.min(100)]
-        }))
+        let volume = volume.min(100);
+        let mut inner = self.inner.lock().map_err(|error| error.to_string())?;
+        inner.volume = volume;
+        if let Some(pipe) = inner.pipe.as_mut() {
+            let line = format!(
+                "{{\"command\":[\"set_property\",\"volume\",{volume}]}}\n"
+            );
+            pipe.write_all(line.as_bytes())
+                .map_err(|error| error.to_string())?;
+        }
+        Ok(())
     }
 
     fn send(&self, value: &Value) -> Result<(), String> {
@@ -98,8 +108,20 @@ impl PlayerHandle {
         )?;
         let pipe_path = format!(r"\\.\pipe\onyx-mpv-{}", std::process::id());
         let ipc = format!("--input-ipc-server={pipe_path}");
+        let volume = self
+            .inner
+            .lock()
+            .map(|inner| inner.volume)
+            .unwrap_or(100);
+        let volume_arg = format!("--volume={volume}");
         let child = Command::new(&mpv)
-            .args(["--no-video", "--idle=yes", "--force-window=no", ipc.as_str()])
+            .args([
+                "--no-video",
+                "--idle=yes",
+                "--force-window=no",
+                ipc.as_str(),
+                volume_arg.as_str(),
+            ])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())

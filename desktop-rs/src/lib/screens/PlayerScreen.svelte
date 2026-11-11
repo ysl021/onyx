@@ -2,7 +2,7 @@
   import { derived, get } from "svelte/store";
   import Glass from "../components/Glass.svelte";
   import Icon from "../components/Icon.svelte";
-  import { openAudioFile, player, seekTo, togglePlayer } from "../stores/player";
+  import { cover, openAudioFile, player, seekTo, togglePlayer } from "../stores/player";
   import { saveSettings, setVolume, settings } from "../stores/settings";
 
   let { width }: { width: number } = $props();
@@ -81,7 +81,11 @@
 {#snippet hero(compact: boolean)}
   <div class="hero" class:compact>
     <button class="cover" aria-label="Открыть текст песни">
-      <Icon name="music-note" size={compact ? 42 : 56} />
+      {#if $cover}
+        <img src={$cover} alt="" />
+      {:else}
+        <Icon name="music-note" size={compact ? 42 : 56} />
+      {/if}
     </button>
     <div class="title">{$player.title || "Ничего не играет"}</div>
     <div class="artist">{$player.artist || "Выберите трек в библиотеке"}</div>
@@ -327,6 +331,8 @@
     place-items: center;
     width: min(68%, 240px);
     aspect-ratio: 1;
+    padding: 0;
+    overflow: hidden;
     border-radius: 26px;
     border: 1px solid rgba(255, 255, 255, 0.05);
     background:
@@ -334,6 +340,13 @@
       var(--deep);
     color: var(--faint);
     transition: transform 180ms ease;
+  }
+
+  .cover img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
   }
 
   .cover:hover {

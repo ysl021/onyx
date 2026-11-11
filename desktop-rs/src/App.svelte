@@ -2,10 +2,11 @@
   import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
   import NavDock from "./lib/components/NavDock.svelte";
+  import MusicScreen from "./lib/screens/MusicScreen.svelte";
   import PlaceholderScreen from "./lib/screens/PlaceholderScreen.svelte";
   import PlayerScreen from "./lib/screens/PlayerScreen.svelte";
   import SettingsScreen from "./lib/screens/SettingsScreen.svelte";
-  import { refreshPlayer, startPolling } from "./lib/stores/player";
+  import { cover, refreshPlayer, startPolling } from "./lib/stores/player";
   import { loadSettings, settings } from "./lib/stores/settings";
 
   let active = $state("player");
@@ -38,6 +39,11 @@
 </script>
 
 <div class="shell" data-panel={$settings.panelPosition}>
+  {#if $cover}
+    <div class="backdrop" style={`background-image:url(${$cover})`}></div>
+    <div class="scrim"></div>
+  {/if}
+
   <NavDock
     position={$settings.panelPosition}
     active={active}
@@ -47,6 +53,8 @@
   <main class="content">
     {#if active === "player"}
       <PlayerScreen {width} />
+    {:else if active === "music"}
+      <MusicScreen />
     {:else if active === "settings"}
       <SettingsScreen {version} onBack={() => (active = "player")} />
     {:else}
@@ -63,9 +71,34 @@
   }
 
   .content {
+    position: relative;
+    z-index: 1;
     height: 100%;
     overflow-y: auto;
     overflow-x: hidden;
+  }
+
+  .backdrop {
+    position: absolute;
+    inset: -60px;
+    background-size: cover;
+    background-position: center;
+    filter: blur(48px) saturate(120%);
+    opacity: 0.42;
+    transform: scale(1.1);
+    pointer-events: none;
+  }
+
+  .scrim {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      180deg,
+      rgba(5, 5, 6, 0.5),
+      rgba(5, 5, 6, 0.8) 55%,
+      rgba(5, 5, 6, 0.92)
+    );
+    pointer-events: none;
   }
 
   [data-panel="top"] .content {
