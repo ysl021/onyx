@@ -170,6 +170,40 @@ def itunes_cover(title: str, artist: str) -> str | None:
     return None
 
 
+def deezer_artist_cover(title: str, artist: str, album: str) -> str | None:
+    """
+    Fallback for tracks the Deezer search index does not return: find the artist,
+    then scan their album track lists for a title match. Bounded by a deadline so
+    it can never block the presence worker for long.
+    """
+    if not artist:
+        return None
+    found = _json(
+        "https://api.deezer.com/search/artist?limit=5&q=" + urllib.parse.quote(artist)
+    )
+    deadline = time.time() + 8
+    for hit in (found or {}).get("data", []):
+        if not _similar(artist, hit.get("name") or ""):
+            continue
+        albums = _json(f"https://api.deezer.com/artist/{hit['id']}/albums?limit=100")
+        items = (albums or {}).get("data", [])
+        # Albums named after the track are the most likely home for it.
+        items.sort(key=lambda al: 0 if _similar(title, al.get("title") or "") else 1)
+        for entry in items[:40]:
+            if time.time() > deadline:
+                return None
+            detail = _json(f"https://api.deezer.com/album/{entry['id']}")
+            for track in ((detail or {}).get("tracks") or {}).get("data", []):
+                if _similar(title, track.get("title") or ""):
+                    return (
+                        (detail or {}).get("cover_xl")
+                        or (detail or {}).get("cover_big")
+                        or entry.get("cover_xl")
+                        or entry.get("cover_big")
+                    )
+    return None
+
+
 def _variants(title: str, artist: str) -> list[tuple[str, str]]:
     """YouTube imports often swap title/artist or append '- Topic'."""
     raw = [(title, artist), (artist, title)]
@@ -204,6 +238,11 @@ def lookup_cover(title: str, artist: str, album: str, link: str) -> str | None:
     for attempt_title, attempt_artist in _variants(title, artist):
         cover = deezer_cover(attempt_title, attempt_artist, album) \
             or itunes_cover(attempt_title, attempt_artist)
+        if cover:
+            return cover
+    # Search indexes often miss small releases; scan the artist's albums instead.
+    for attempt_title, attempt_artist in _variants(title, artist):
+        cover = deezer_artist_cover(attempt_title, attempt_artist, album)
         if cover:
             return cover
     return None
@@ -268,6 +307,14 @@ def build_args(data: dict) -> dict | None:
         return None
     artist = (data.get("artist") or "").strip()
     album = (data.get("album") or "").strip()
+    # "YouTube" is a source label, not an album. Artist pages also often send
+    # the artist name as the album, which duplicated the state line.
+    if album and (
+        album.casefold() in ("youtube", "youtube music")
+        or _normalize(album) == _normalize(title)
+        or (artist and _normalize(album) == _normalize(artist))
+    ):
+        album = ""
     playing = bool(data.get("playing"))
     duration = max(0, int(data.get("durationMs") or 0))
     position = max(0, int(data.get("positionMs") or 0))
@@ -275,7 +322,11 @@ def build_args(data: dict) -> dict | None:
         position = min(position, duration)
     link = (data.get("url") or GITHUB).strip()
 
-    state_line = " • ".join(part for part in (artist, album) if part)[:128]
+    state_parts: list[str] = []
+    for part in (artist, album):
+        if part and _normalize(part) not in {_normalize(p) for p in state_parts}:
+            state_parts.append(part)
+    state_line = " • ".join(state_parts)[:128]
     key = cover_key(title, artist, album, link)
     with lookup_lock:
         cover = cover_cache.get(key)
@@ -288,7 +339,7 @@ def build_args(data: dict) -> dict | None:
         details=title[:128],
         state=state_line or "ONYX",
         large_image=cover or "onyx_large",
-        large_text=(album or "ONYX")[:128],
+        large_text=(album or artist or "ONYX")[:128],
         small_image="playing" if playing else "pause",
         small_text="ONYX",
         buttons=[{
@@ -297,7 +348,8 @@ def build_args(data: dict) -> dict | None:
         }],
     )
 
-    # Both timestamps are what make Discord draw the progress bar.
+    # The original working bridge used Unix SECONDS here; keep that format so
+    # Discord draws its Spotify-style progress bar.
     if playing:
         start = int(time.time() - position / 1000)
         args["start"] = start
