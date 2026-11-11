@@ -18,11 +18,33 @@ captures/
 
 # Local secrets
 secrets.properties
+keystore.properties
 
 # Local toolchain and reference sources (huge, GPLv3 upstream)
 tools/
+
+# Desktop player: bundled VLC runtime is downloaded on demand
+desktop/libs/
+
+# WinUI 3 spike build output
+winui/
+vlc-help.txt
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Generated release manifest (CI writes it per release)
+android.json
+
+# Tauri generates mobile icon sets; the Windows bundle only needs .ico/.png
+desktop-rs/src-tauri/icons/android/
+desktop-rs/src-tauri/icons/ios/
 
 # OS
 .DS_Store
 Thumbs.db
 .tmpshots/
+
+# Local test library
+testmusic/
