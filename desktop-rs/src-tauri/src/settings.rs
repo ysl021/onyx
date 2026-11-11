@@ -5,13 +5,15 @@ use std::path::PathBuf;
 /// The PC settings live in the same place as the Kotlin build
 /// (`%APPDATA%\ONYX\settings.json`) so the new client can reuse them.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
+#[serde(default, rename_all = "camelCase")]
 pub struct Settings {
     pub volume: u8,
     pub discord_enabled: bool,
     pub hub_port: u16,
     pub theme: String,
     pub language: String,
+    /// bottom | top | left | right
+    pub panel_position: String,
     pub music_folders: Vec<String>,
 }
 
@@ -23,6 +25,7 @@ impl Default for Settings {
             hub_port: 8787,
             theme: "dark".into(),
             language: "ru".into(),
+            panel_position: "bottom".into(),
             music_folders: Vec::new(),
         }
     }

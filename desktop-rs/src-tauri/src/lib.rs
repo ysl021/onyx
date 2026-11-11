@@ -19,6 +19,7 @@ pub fn run() {
             commands::player_toggle,
             commands::player_load,
             commands::player_seek,
+            commands::player_volume,
         ])
         .run(tauri::generate_context!())
         .expect("error while running ONYX");

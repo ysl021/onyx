@@ -70,6 +70,12 @@ impl PlayerHandle {
         self.send(&serde_json::json!({ "command": ["seek", seconds, "absolute"] }))
     }
 
+    pub fn set_volume(&self, volume: u8) -> Result<(), String> {
+        self.send(&serde_json::json!({
+            "command": ["set_property", "volume", volume.min(100)]
+        }))
+    }
+
     fn send(&self, value: &Value) -> Result<(), String> {
         let mut inner = self.inner.lock().map_err(|e| e.to_string())?;
         let pipe = inner.pipe.as_mut().ok_or("mpv is not running")?;

@@ -37,3 +37,8 @@ pub fn player_load(player: State<'_, PlayerHandle>, path: String) -> Result<(), 
 pub fn player_seek(player: State<'_, PlayerHandle>, seconds: f64) -> Result<(), String> {
     player.seek(seconds)
 }
+
+#[tauri::command]
+pub fn player_volume(player: State<'_, PlayerHandle>, volume: u8) -> Result<(), String> {
+    player.set_volume(volume)
+}

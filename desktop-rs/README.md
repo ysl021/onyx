@@ -5,11 +5,12 @@
 ## Что уже есть
 
 - Окно Tauri 2 с тёмной темой ONYX (палитра из `Theme.kt`).
-- Svelte 5 + TypeScript + Vite, боковая навигация по 7 разделам.
-- Каркас плеера (плейсхолдер), IPC-команды:
-  - `app_version`
-  - `load_settings` / `save_settings`
-  - `player_state` / `player_toggle` / `player_load`
+- Svelte 5 + TypeScript + Vite, **нижний стеклянный док** по умолчанию.
+  Положение панели (снизу / сверху / слева / справа) меняется в
+  «Настройках» и сохраняется в `settings.json`.
+- Плеер на mpv: выбор файла, play/pause, перемотка, громкость, прогресс.
+- `mpv.exe` встроен как Tauri sidecar (`externalBin`), поэтому установщик
+  работает без отдельной установки mpv.
 - Настройки читаются и пишутся в тот же `%APPDATA%\ONYX\settings.json`,
   что и Kotlin-версия.
 - Сборка MSI и NSIS через `tauri build`.
@@ -19,13 +20,20 @@
 - Rust (stable) и `cargo`.
 - Node.js 20.19+ / 22.12+ и npm.
 - WebView2 Runtime (на Windows 10/11 обычно уже установлен).
-- Для плеера позже: `mpv.exe` и `yt-dlp.exe` как sidecar-бинарники.
+- `mpv.exe` для сборки: положить в
+  `src-tauri/binaries/mpv-x86_64-pc-windows-msvc.exe`. Бинарник большой,
+  поэтому в git не входит; `tauri build` без него упадёт.
+- Позже: `yt-dlp.exe` как sidecar для YouTube.
 
 ## Команды
 
 ```powershell
 cd desktop-rs
 npm install
+# один раз: скопировать mpv.exe в sidecar
+New-Item -ItemType Directory -Force src-tauri/binaries
+Copy-Item "C:\Program Files\MPV Player\mpv.exe" `
+  "src-tauri/binaries/mpv-x86_64-pc-windows-msvc.exe"
 npm run tauri dev      # dev-режим с горячей перезагрузкой
 npm run tauri build    # MSI + NSIS в src-tauri/target/release/bundle/
 ```
@@ -40,29 +48,30 @@ npm run tauri build    # MSI + NSIS в src-tauri/target/release/bundle/
 ```
 desktop-rs/
   src/                     Svelte-фронтенд
-    App.svelte             оболочка и навигация
-    app.css                палитра, шрифты, glass
-    lib/components/        Glass и другие компоненты
-    lib/stores/            состояние плеера
+    App.svelte             оболочка, нижний док и переключение экранов
+    app.css                палитра, шрифты, glass, общие кнопки
+    lib/components/        Glass, Icon, NavDock
+    lib/screens/           PlayerScreen, SettingsScreen, PlaceholderScreen
+    lib/stores/            player и settings
   src-tauri/
     src/main.rs            точка входа
     src/lib.rs             Tauri builder и IPC
     src/commands.rs        команды для фронтенда
     src/settings.rs        %APPDATA%\ONYX\settings.json
-    src/player.rs          каркас mpv sidecar + IPC
+    src/player.rs          mpv sidecar + JSON IPC
     src/hub.rs             TODO: TCP 8787 + UDP 8788
     src/discord.rs         TODO: Rich Presence
     src/update.rs          TODO: Tauri updater
-    tauri.conf.json        окно, бандлы, идентификатор
+    resources/             mpv-NOTICE.txt (лицензия sidecar)
+    tauri.conf.json        окно, бандлы, externalBin
     capabilities/          разрешения Tauri
 ```
 
 ## Дальше по этапам
 
-1. **mpv**: положить `mpv.exe` в `src-tauri/binaries/` (Tauri externalBin),
-   запускать с `--input-ipc-server=\\.\pipe\onyx-mpv-<pid>`, подключить
-   `player_load`/`player_state`/`player_toggle` к JSON IPC.
-2. **Библиотека**: `walkdir` + `lofty`, кэш в `%APPDATA%\ONYX\library.json`.
+1. ~~**mpv**: sidecar, `--input-ipc-server`, play/pause, seek.~~ Готово.
+2. **Библиотека**: `walkdir` + `lofty`, кэш в `%APPDATA%\ONYX\library.json`,
+   обложки и экран «Музыка».
 3. **Экраны**: перенести 7 экранов из Android-клиента (`../app/src/main/java/app/onyx/ui/`),
    адаптировав под ПК и сверив скриншоты.
 4. **YouTube**: `yt-dlp.exe` sidecar, innerTube, локальный прокси.
