@@ -1,16 +1,45 @@
 # ONYX
 
-Личный пульт управления музыкой для Android: медиаплеер, переключение вывода звука,
-Galaxy Buds 3 Pro (шумодав, ANC на одно ухо, батареи), другие Bluetooth-наушники
-и тексты Spicy Lyrics / Musixmatch / Genius / LRCLIB.
+Личный пульт управления музыкой для **Android и Windows**: медиаплеер, переключение вывода звука,
+Galaxy Buds 3 Pro (шумодав, ANC на одно ухо, батареи), другие Bluetooth-наушники,
+тексты Spicy Lyrics / Musixmatch / Genius / LRCLIB и синхронизация телефона с ПК.
 
 Чёрно-белый интерфейс, стекло, крупная типографика, OLED-фон, тёмная и светлая темы.
+
+Текущая версия — **0.9.0**. В репозитории три клиента:
+
+- **Android** — Kotlin/Compose, `app/`, основная версия для телефона.
+- **Windows, Kotlin/Compose** — `desktop/`, рабочая версия и эталон дизайна/функционала.
+- **Windows, Rust + Tauri + Svelte** — `desktop-rs/`, новый клиент; каркас уже собирается
+  в MSI/NSIS, плеер и хаб переносятся по этапам.
 
 Репозиторий: [ysl021/onyx](https://github.com/ysl021/onyx) (public, GPLv3).
 Релизы: [ysl021/onyx/releases](https://github.com/ysl021/onyx/releases).
 
 Промо-видео: [promo/onyx-teaser.mp4](promo/onyx-teaser.mp4) — вертикальный тизер 1080×1920
 для Telegram и GitHub Releases.
+
+## Версии, обновления и миграция
+
+- **0.9.0** — актуальный релиз. Подписан отдельным release-ключом, умеет
+  автообновление: проверяет `android.json` на GitHub Releases, качает APK,
+  сверяет SHA-256 и ставит через `PackageInstaller`.
+- **0.8.10** — переходная сборка (pre-release). Подписана старым debug-ключом,
+  поэтому встаёт поверх 0.8.9 без удаления. Нужна только для экспорта данных
+  перед переходом на 0.9.0; автообновление в ней отключено.
+
+### Переход с 0.8.x на 0.9.0
+
+Смена подписи означает, что 0.9.0 не встанет поверх старой debug-версии.
+Один раз нужно переустановить приложение:
+
+1. Установи **0.8.10** поверх текущей версии.
+2. Настройки → Основные → Данные → **Экспорт данных**, сохрани JSON.
+3. Удали ONYX.
+4. Установи **0.9.0**.
+5. Настройки → Основные → Данные → **Импорт данных**, выбери JSON и подтверди замену.
+6. Заново добавь папки с музыкой: Android отзывает доступ к SAF-папкам при удалении.
+7. Дальше обновления приходят сами, переустанавливать больше не нужно.
 
 ## Что уже умеет
 
@@ -49,6 +78,13 @@ Galaxy Buds 3 Pro (шумодав, ANC на одно ухо, батареи), д
 - **Анимации**: splash ONYX, переходы вкладок, press-анимации, Ken Burns обложки,
   стеклянный док с размытием.
 - **Quick Settings**: плитки «Шумодав» и «ANC на одно ухо».
+- **Обновления**: встроенная проверка `android.json`, скачивание APK, SHA-256 и
+  установка через `PackageInstaller`; онбординг при первом запуске.
+- **Данные**: экспорт/импорт плейлистов, избранного и настроек в JSON.
+- **Связка с ПК**: LAN-хаб (TCP 8787 + UDP 8788), передача плейлистов/лайков,
+  локальных файлов и presence; Discord Rich Presence на ПК.
+- **Windows-клиенты**: Kotlin/Compose (`desktop/`) и новый Rust + Tauri + Svelte
+  (`desktop-rs/`), оба в этом репозитории.
 
 ## Лицензия
 
@@ -78,16 +114,51 @@ $env:JAVA_HOME="C:\Program Files\Eclipse Adoptium\jdk-17.0.21.9-hotspot"
 
 APK: `app\build\outputs\apk\debug\app-debug.apk`
 
-Релизная сборка (R8 + shrinkResources, подпись локальным debug-ключом для установки поверх):
+Релизная сборка (R8 + shrinkResources, подпись отдельным release-ключом):
 
 ```powershell
 .\gradlew.bat assembleRelease
 ```
 
-APK: `app\build\outputs\apk\release\app-release.apk`. Ключи в репозиторий не попадают.
+APK: `app\build\outputs\apk\release\app-release.apk`.
 
-Версия хранится в одном месте: `version.properties` (`versionName`), а `versionCode`
-считается из числа git-коммитов и растёт сам — вручную его править не нужно.
+Подпись настраивается через `keystore.properties` (в `.gitignore`):
+
+```properties
+storeFile=keystore/onyx-release.jks
+storePassword=...
+keyAlias=onyx
+keyPassword=...
+```
+
+Переходная сборка 0.8.10, которая должна встать поверх старой debug-версии:
+
+```powershell
+.\gradlew.bat assembleRelease -PdebugSigning
+```
+
+Версия хранится в `version.properties` (`versionName`). `versionCode` считается
+из неё: `major*1_000_000 + minor*1_000 + patch` (0.9.0 → 9000).
+
+### ПК (Windows)
+
+Kotlin/Compose-версия:
+
+```powershell
+$env:JAVA_HOME="C:\Program Files\Eclipse Adoptium\jdk-17.0.21.9-hotspot"
+.\gradlew.bat :desktop:run
+```
+
+Rust + Tauri + Svelte:
+
+```powershell
+cd desktop-rs
+npm install
+npm run tauri dev
+npm run tauri build
+```
+
+MSI/NSIS: `desktop-rs/src-tauri/target/release/bundle/`.
 
 ### NewPipeExtractor
 
@@ -115,13 +186,17 @@ copy extractor\build\libs\extractor-v0.27.0.jar ..\app\libs\NewPipeExtractor-0.2
 1. Открой [Releases](https://github.com/ysl021/onyx/releases).
 2. Скачай `app-release.apk` последней версии.
 3. Разреши установку из неизвестных источников и установи APK.
-4. Обновления ставятся поверх: данные, темы, настройки и кэш текстов сохраняются.
+4. Дальше ONYX сам проверяет `android.json` и предлагает обновление; данные,
+   темы, настройки и кэш текстов сохраняются.
+5. Если ставишь **0.9.0 впервые поверх 0.8.x** — сначала установи 0.8.10,
+   экспортируй данные, удали приложение и поставь 0.9.0
+   (см. «Переход с 0.8.x на 0.9.0»).
 
 Ничего клонировать, собирать или настраивать не нужно.
 
-> После обновления с 0.5.x на 0.6.0 значок ONYX на рабочем столе может исчезнуть:
-> система привязывает его к старому компоненту. Добавь ONYX заново из меню приложений —
-> данные и настройки сохранятся.
+> После смены иконки или крупного обновления значок ONYX на рабочем столе может
+> исчезнуть: система привязывает его к старому компоненту. Добавь ONYX заново из
+> меню приложений — данные и настройки сохранятся.
 
 ## Кастомные темы
 
@@ -152,11 +227,14 @@ copy extractor\build\libs\extractor-v0.27.0.jar ..\app\libs\NewPipeExtractor-0.2
 
 ## Первый запуск
 
-1. **Доступ к уведомлениям** — Настройки → Доступы → «Открыть». Без него приложение не видит,
-   что играет. На некоторых прошивках Samsung пункт называется «Доступ к уведомлениям».
-2. **Bluetooth-разрешения** — выдаются по кнопке в настройках (Android 12+).
-3. **Батарея** — отключи оптимизацию, иначе система может убивать foreground-сервис наушников.
-4. **Buds** — наушники должны быть сопряжены. Автоподключения нет: открой карточку
+1. **Онбординг** — при первом запуске ONYX сам предложит три шага: доступ к
+   уведомлениям, папка с музыкой и разрешение на установку обновлений.
+2. **Доступ к уведомлениям** — Настройки → Доступы → «Открыть». Без него приложение не видит,
+   что играет. Если переключатель серый (Android 13+): Настройки приложения → ⋮ →
+   «Разрешить ограниченные настройки», затем включить доступ.
+3. **Bluetooth-разрешения** — выдаются по кнопке в настройках (Android 12+).
+4. **Батарея** — отключи оптимизацию, иначе система может убивать foreground-сервис наушников.
+5. **Buds** — наушники должны быть сопряжены. Автоподключения нет: открой карточку
    «Наушники» и нажми «Подключить Buds». Если SPP-канал перехватывает Samsung-менеджер,
    выключи пакет (см. ниже) и нажми ↻.
 
@@ -244,6 +322,17 @@ ONYX поля для ключа больше нет.
 Длинные видео скачиваются целиком перед нарезкой, поэтому нужно свободное место
 в кэше.
 
+## ПК-версия (Windows)
+
+- `desktop/` — Kotlin/Compose, рабочая версия: локальный плеер на VLC, YouTube,
+  плейлисты, Discord Rich Presence и LAN-хаб для телефона.
+- `desktop-rs/` — новый клиент на Rust + Tauri + Svelte 5. Сейчас собирается
+  каркас: окно, тема, навигация, настройки, MSI/NSIS. Плеер на mpv, хаб,
+  Discord и автообновление переносятся по этапам.
+- Хаб: TCP 8787 + UDP 8788. Телефон и ПК должны быть в одной Wi-Fi сети.
+- Discord: вторая строка — исполнители, альбом — только во всплывающей
+  подсказке обложки.
+
 ## Эквалайзер и визуализатор
 
 - **Эквалайзер**: Настройки → «Звук» → «Открыть эквалайзер». Пресеты устройства + ручные полосы.
@@ -253,19 +342,34 @@ ONYX поля для ключа больше нет.
 ## Структура
 
 ```
-app/src/main/java/app/onyx/
+app/src/main/java/app/onyx/          Android-клиент (Kotlin/Compose)
   AppController.kt         — связывает медиа, маршруты, Spotify, тексты, звук, локальный плеер
   MainActivity.kt          — edge-to-edge, разрешения, запуск
   OnyxApp.kt               — навигация, глобальный фон, splash
-  core/                    — DataStore-настройки, OkHttp
+  core/                    — DataStore-настройки, OkHttp, backup/restore
   media/                   — MediaSession, NotificationListener, MediaRouter2, заряд BT-наушников
   buds/                    — SPP-протокол, RFCOMM-клиент, foreground-сервис
   spotify/                 — OAuth PKCE (app-scoped), токены, очередь, повтор
   lyrics/                  — Spicy Lyrics, Musixmatch, Spotify, Genius, LRCLIB, перевод, кэш
   music/                   — SAF-библиотека, Media3 ExoPlayer, MediaSessionService, плейлисты
   youtube/                 — NewPipeExtractor, поиск, таймкоды, загрузка, нарезка, теги, сервис
+  update/                  — android.json, скачивание APK, PackageInstaller
   audio/                   — эквалайзер и визуализатор
-  ui/                      — темы, стеклянные компоненты, экраны
+  ui/                      — темы, стеклянные компоненты, экраны, онбординг
+
+desktop/src/main/kotlin/app/onyx/desktop/   Windows-клиент (Kotlin/Compose)
+  media/                   — VLC-плеер, библиотека, плейлисты, спектр
+  youtube/                 — yt-dlp, innerTube, прокси
+  discord/                 — Rich Presence, обложки
+  hub/                     — TCP 8787 + UDP 8788, синхронизация с телефоном
+  ui/                      — 7 экранов, темы, glass/blur
+
+desktop-rs/                           Windows-клиент (Rust + Tauri + Svelte 5)
+  src/                     — Svelte-фронтенд
+  src-tauri/src/           — Rust: player, settings, hub, discord, update
+  src-tauri/tauri.conf.json
+
+bridge/                    — Python-мост для старого режима
 ```
 
 ## Ограничения
