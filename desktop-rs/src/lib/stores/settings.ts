@@ -6,20 +6,32 @@ export type PanelPosition = "bottom" | "top" | "left" | "right";
 export type Settings = {
   volume: number;
   discordEnabled: boolean;
+  discordClientId: string;
   hubPort: number;
+  hubName: string;
   theme: string;
   language: string;
   panelPosition: PanelPosition;
+  audioDevice: string;
+  coverBackdrop: boolean;
+  youtubeProxy: string;
+  volumeStep: number;
   musicFolders: string[];
 };
 
 const defaults: Settings = {
   volume: 80,
   discordEnabled: false,
+  discordClientId: "1568847197397717073",
   hubPort: 8787,
+  hubName: "",
   theme: "dark",
   language: "ru",
   panelPosition: "bottom",
+  audioDevice: "auto",
+  coverBackdrop: false,
+  youtubeProxy: "",
+  volumeStep: 5,
   musicFolders: [],
 };
 
@@ -65,5 +77,14 @@ export async function setVolume(volume: number) {
     await invoke("player_volume", { volume });
   } catch {
     // mpv may not be running yet.
+  }
+}
+
+export async function setAudioDevice(audioDevice: string) {
+  await saveSettings({ ...get(settings), audioDevice });
+  try {
+    await invoke("player_set_audio_device", { device: audioDevice });
+  } catch {
+    // mpv starts with the next track.
   }
 }

@@ -25,15 +25,21 @@
 
 :root {
   --black: #050506;
-  --deep: #0a0a0c;
-  --surface: #101013;
-  --elevated: #17171b;
-  --white: #f6f6f7;
-  --dim: #8c8c93;
-  --faint: #5b5b63;
-  --line: rgba(255, 255, 255, 0.12);
-  --line-strong: rgba(255, 255, 255, 0.2);
-  --accent: #ededef;
+  --deep: #0b0b0d;
+  --surface: #111113;
+  --card: rgba(17, 17, 19, 0.72);
+  --card-strong: rgba(20, 20, 23, 0.86);
+  --elevated: #1a1a1d;
+  --white: #f4f4f2;
+  --dim: #8e8e93;
+  --faint: #5f5f66;
+  --line: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.16);
+  --accent: #f2f2f0;
+  --radius-card: 26px;
+  --radius-pill: 999px;
+  --page-pad: 20px;
+  --dock-height: 86px;
   color-scheme: dark;
   font-family: "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
   background: var(--black);
@@ -53,10 +59,7 @@ body,
 
 body {
   overflow: hidden;
-  background:
-    radial-gradient(1100px 700px at 72% -12%, rgba(237, 237, 239, 0.08), transparent 62%),
-    radial-gradient(900px 600px at 8% 112%, rgba(237, 237, 239, 0.04), transparent 60%),
-    var(--black);
+  background: var(--black);
 }
 
 button {
@@ -67,151 +70,314 @@ button {
   cursor: pointer;
 }
 
-::selection {
-  background: rgba(237, 237, 239, 0.25);
+input,
+select,
+textarea {
+  font: inherit;
 }
 
-/* Frosted glass, values taken from desktop/.../ui/Glass.kt */
-.glass {
+::selection {
+  background: rgba(242, 242, 240, 0.25);
+}
+
+/* Shared card surface, close to the Android Settings/Player cards. */
+.glass,
+.card {
   position: relative;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 28px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0.008)),
-    rgba(16, 16, 19, 0.45);
-  backdrop-filter: blur(36px) saturate(140%);
-  -webkit-backdrop-filter: blur(36px) saturate(140%);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--card);
+  backdrop-filter: blur(24px) saturate(120%);
+  -webkit-backdrop-filter: blur(24px) saturate(120%);
 }
 
-.glass::before {
+.glass::before,
+.card::before {
   content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.035), transparent 42%);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.022), transparent 46%);
 }
 
-.glass::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0.015;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
-}
-
-.glass > * {
+.glass > *,
+.card > * {
   position: relative;
   z-index: 1;
 }
 
 .glass.strong {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.012)),
-    rgba(16, 16, 19, 0.55);
+  background: var(--card-strong);
+  border-color: var(--line);
+}
+
+/* Dock uses a little more blur and a slightly lighter fill. */
+.glass.dock,
+.glass.rail {
+  background: rgba(18, 18, 21, 0.78);
   border-color: rgba(255, 255, 255, 0.09);
-}
-
-.glass.strong::before {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.04), transparent 42%);
-}
-
-/* Light theme, values from Theme.kt's LightOnyx. */
-[data-theme="light"] {
-  --black: #f4f4f1;
-  --deep: #ededea;
-  --surface: #ffffff;
-  --elevated: #f8f8f5;
-  --white: #0a0a0c;
-  --dim: #5b5b63;
-  --faint: #8c8c93;
-  --line: rgba(0, 0, 0, 0.12);
-  --line-strong: rgba(0, 0, 0, 0.2);
-  --accent: #141416;
-}
-
-[data-theme="light"] body {
-  background:
-    radial-gradient(1100px 700px at 72% -12%, rgba(10, 10, 12, 0.06), transparent 62%),
-    radial-gradient(900px 600px at 8% 112%, rgba(10, 10, 12, 0.03), transparent 60%),
-    var(--black);
-}
-
-[data-theme="light"] .glass {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.36)),
-    rgba(244, 244, 241, 0.45);
-  border-color: rgba(0, 0, 0, 0.08);
-}
-
-[data-theme="light"] .glass.strong {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.56)),
-    rgba(244, 244, 241, 0.5);
-  border-color: rgba(0, 0, 0, 0.08);
-}
-
-[data-theme="light"] .glass::before {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.5), transparent 42%);
-}
-
-[data-theme="light"] .glass.strong::before {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.7), transparent 42%);
-}
-
-[data-theme="light"] .pill.selected {
-  color: #ffffff;
-}
-
-[data-theme="light"] .dock-inner button.active,
-[data-theme="light"] .rail-inner button.active {
-  color: #ffffff;
+  backdrop-filter: blur(34px) saturate(140%);
+  -webkit-backdrop-filter: blur(34px) saturate(140%);
 }
 
 .section-label {
   color: var(--faint);
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: 1.8px;
+  letter-spacing: 2.4px;
   text-transform: uppercase;
 }
 
+.eyebrow {
+  color: var(--faint);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 2.6px;
+  text-transform: uppercase;
+}
+
+.page-title {
+  margin: 4px 0 0;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.6px;
+  line-height: 1.1;
+}
+
+.page-sub {
+  margin-top: 4px;
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 17px;
+}
+
+.muted {
+  color: var(--dim);
+  font-size: 13px;
+  line-height: 19px;
+}
+
+/* Pills: the active one is white with black text, as on the phone. */
 .pill {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 7px;
-  padding: 8px 13px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.055);
+  min-height: 42px;
+  padding: 0 17px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.03);
   color: var(--dim);
   font-size: 13px;
   font-weight: 500;
-  transition: background 160ms ease, color 160ms ease;
+  white-space: nowrap;
+  transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
 }
 
 .pill:hover {
   color: var(--white);
-  background: rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .pill.selected {
   background: var(--accent);
+  border-color: transparent;
   color: #08080a;
+  font-weight: 600;
+}
+
+.pill.selected:hover {
+  background: #ffffff;
+  color: #08080a;
+}
+
+.pill:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .circle {
   display: grid;
   place-items: center;
-  width: 38px;
-  height: 38px;
-  border-radius: 999px;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 auto;
   border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
   color: var(--dim);
-  transition: background 160ms ease, color 160ms ease;
+  transition: background 160ms ease, color 160ms ease, transform 140ms ease;
 }
 
 .circle:hover {
   color: var(--white);
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.circle.small {
+  width: 34px;
+  height: 34px;
+}
+
+.circle.selected {
+  background: var(--accent);
+  border-color: transparent;
+  color: #08080a;
+}
+
+/* Large search field used on Music and YouTube. */
+.search-field {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 58px;
+  padding: 0 18px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--dim);
+}
+
+.search-field input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  color: var(--white);
+  font-size: 15px;
+  outline: none;
+}
+
+.search-field input::placeholder {
+  color: var(--faint);
+}
+
+/* Toggle switch, 44x26, white when on. */
+.toggle {
+  position: relative;
+  width: 44px;
+  height: 26px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  transition: background 180ms ease;
+}
+
+.toggle::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  background: #ffffff;
+  transition: transform 180ms ease;
+}
+
+.toggle.on {
+  background: var(--accent);
+}
+
+.toggle.on::after {
+  transform: translateX(18px);
+  background: #08080a;
+}
+
+/* Generic full-page scroll column. */
+.page {
+  width: 100%;
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 22px var(--page-pad) calc(var(--dock-height) + 48px);
+}
+
+.page-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.icon-btn {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  color: var(--faint);
+  transition: color 160ms ease, background 160ms ease;
+}
+
+.icon-btn:hover {
+  color: var(--white);
+  background: rgba(255, 255, 255, 0.07);
+}
+
+/* The dock only overlays the bottom edge when it is actually at the bottom. */
+[data-panel="left"] .page,
+[data-panel="right"] .page,
+[data-panel="top"] .page {
+  padding-bottom: 36px;
+}
+
+[data-panel="left"] .toolbar-wrap,
+[data-panel="right"] .toolbar-wrap,
+[data-panel="top"] .toolbar-wrap {
+  bottom: 24px;
+}
+
+/* Light theme: keep the same structure, invert the surfaces. */
+[data-theme="light"] {
+  --black: #f4f4f1;
+  --deep: #ededea;
+  --surface: #ffffff;
+  --card: rgba(255, 255, 255, 0.72);
+  --card-strong: rgba(255, 255, 255, 0.86);
+  --elevated: #f8f8f5;
+  --white: #0a0a0c;
+  --dim: #5b5b63;
+  --faint: #8c8c93;
+  --line: rgba(0, 0, 0, 0.1);
+  --line-strong: rgba(0, 0, 0, 0.2);
+  --accent: #141416;
+}
+
+[data-theme="light"] .glass,
+[data-theme="light"] .card {
+  background: var(--card);
+  border-color: var(--line);
+}
+
+[data-theme="light"] .glass.dock,
+[data-theme="light"] .glass.rail {
+  background: rgba(250, 250, 247, 0.82);
+  border-color: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .glass::before,
+[data-theme="light"] .card::before {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.5), transparent 46%);
+}
+
+[data-theme="light"] .pill.selected {
+  color: #ffffff;
+}
+
+[data-theme="light"] .circle.selected {
+  color: #ffffff;
+}
+
+[data-theme="light"] .dock-inner button.active,
+[data-theme="light"] .rail-inner button.active {
+  color: #ffffff;
 }

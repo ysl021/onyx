@@ -1,30 +1,72 @@
 # ONYX Desktop (Rust + Tauri + Svelte)
 
-Новый ПК-клиент на Rust + Tauri + Svelte 5. Android-клиент остаётся в `../app/`.
+ПК-клиент ONYX на Rust + Tauri 2 + Svelte 5. Android-клиент остаётся в
+`../app/` на Kotlin/Compose.
 
 ## Что уже есть
 
-- Окно Tauri 2 с тёмной темой ONYX (палитра из `Theme.kt`).
-- Svelte 5 + TypeScript + Vite, **нижний стеклянный док** по умолчанию.
-  Положение панели (снизу / сверху / слева / справа) меняется в
-  «Настройках» и сохраняется в `settings.json`.
-- Плеер на mpv: выбор файла, play/pause, перемотка, громкость, прогресс.
-- Локальная библиотека: несколько папок, теги и обложки через `lofty`,
-  список треков и запуск по клику. Папки берутся из `musicFolders` в
-  `settings.json` (в Kotlin-версии это `folders`).
-- `mpv.exe` встроен как Tauri sidecar (`externalBin`), поэтому установщик
-  работает без отдельной установки mpv.
-- Очередь, следующий/предыдущий, таймер сна, любимые треки.
-- Плейлисты: создание, переименование, удаление, добавление текущего трека,
-  запуск плейлиста.
-- Текст: LRCLIB, синхронные строки, подсветка, перемотка по строке,
-  размер и смещение.
-- YouTube: поиск через yt-dlp и стриминг в mpv. Нужен VPN/прокси
-  (Happ/Clash/v2rayN); без него вкладка покажет ошибку.
-- Настройки: панель, тема (тёмная/светлая), громкость, папки музыки.
-- Настройки читаются и пишутся в тот же `%APPDATA%\ONYX\settings.json`,
-  что и Kotlin-версия.
-- Сборка MSI и NSIS через `tauri build`.
+**Дизайн**
+- Телефонная раскладка: одна колонка, тёмные карточки, белые активные
+  пилюли, uppercase-лейблы, стеклянный док.
+- Док снизу по умолчанию; положение (снизу / сверху / слева / справа)
+  меняется в «Настройках».
+- Активная вкладка — белая пилюля, как на телефоне.
+- Фон под обложку текущего трека — отдельный переключатель в
+  «Настройки → Внешний вид».
+- Тёмная и светлая темы.
+
+**Плеер**
+- mpv sidecar, play/pause, seek, громкость с настраиваемым шагом.
+- Реальный список устройств вывода (`mpv --audio-device=help`), выбор
+  сохраняется в `settings.json`.
+- Очередь, следующий/предыдущий, повтор трека, перемешивание, удаление
+  из очереди.
+- Таймер сна, любимые треки.
+- Обложка, Ken Burns, размытый фон (опционально).
+
+**Библиотека**
+- Несколько папок, `walkdir` + `lofty`, теги и обложки.
+- Поиск, фильтр по папкам, вкладки «Треки / Любимые».
+- Редактирование тегов (title/artist/album) прямо в приложении.
+- Экспорт и импорт плейлистов, любимых и настроек в JSON.
+
+**Плейлисты**
+- Создание, переименование, описание, удаление.
+- Закреплённые плейлисты, сортировка (как добавлял / название /
+  длительность / исполнитель), фильтр треков.
+- Локальные треки и YouTube-треки в одном плейлисте.
+- «Скачать все» в шапке плейлиста ставит все `yt:`-треки в очередь
+  загрузок.
+- Обложка плейлиста берётся у первого трека или YouTube-превью.
+
+**Текст**
+- LRCLIB, синхронные строки, подсветка, перемотка по строке.
+- Размер шрифта и смещение, обновление текста.
+- Плавающий тулбар над доком.
+
+**YouTube**
+- Поиск через yt-dlp, «Только музыка», недавние запросы, «Микс по
+  ссылке».
+- Стриминг в mpv, очередь, лайк, переход к исполнителю.
+- Скачивание в очередь, нарезка фрагментов через mpv, прогресс,
+  отмена, открытие папки.
+- Прокси: авто-определение (Happ 20808, v2rayN 10809, Clash 7890,
+  SOCKS 10808/1080) с реальной проверкой CONNECT/TLS; ручной прокси в
+  «Настройки → Интеграции».
+
+**Визуал**
+- Настоящий PCM из второго mpv (`--ao=pcm`) + FFT на 64 полосы.
+- Кольцо спектра, обложка в центре, транспорт.
+
+**Интеграции**
+- Хаб ONYX: HTTP 8787 + UDP 8788, сопряжение по коду, presence,
+  плейлисты/лайки/файлы, протокол совместим с Android (`SyncModels.kt`).
+- Discord Rich Presence: трек, исполнитель, альбом, прогресс.
+  Обложка ищется сначала локально, потом по треку, потом по альбому
+  (Deezer / iTunes), кэшируется в `cover-cache.json`. Локальная
+  обложка загружается на pomf/catbox.
+- Автообновление: `tauri-plugin-updater`, minisign-подпись,
+  `latest.json` на GitHub Releases.
 
 ## Требования
 
@@ -32,8 +74,7 @@
 - Node.js 20.19+ / 22.12+ и npm.
 - WebView2 Runtime (на Windows 10/11 обычно уже установлен).
 - `mpv.exe` для сборки: положить в
-  `src-tauri/binaries/mpv-x86_64-pc-windows-msvc.exe`. Бинарник большой,
-  поэтому в git не входит; `tauri build` без него упадёт.
+  `src-tauri/binaries/mpv-x86_64-pc-windows-msvc.exe`.
 - `yt-dlp.exe` для YouTube: положить в
   `src-tauri/binaries/yt-dlp-x86_64-pc-windows-msvc.exe`.
 
@@ -42,72 +83,83 @@
 ```powershell
 cd desktop-rs
 npm install
-# один раз: скопировать sidecar-бинарники
+
+# один раз: sidecar-бинарники
 New-Item -ItemType Directory -Force src-tauri/binaries
 Copy-Item "C:\Program Files\MPV Player\mpv.exe" `
   "src-tauri/binaries/mpv-x86_64-pc-windows-msvc.exe"
 Copy-Item "..\desktop\libs\yt-dlp.exe" `
   "src-tauri/binaries/yt-dlp-x86_64-pc-windows-msvc.exe"
-npm run tauri dev      # dev-режим с горячей перезагрузкой
-npm run tauri build    # MSI + NSIS в src-tauri/target/release/bundle/
+
+npm run tauri dev      # dev-режим
+npm run tauri build    # MSI + NSIS + .sig в src-tauri/target/release/bundle/
 ```
 
-Готовые установщики:
+Для подписанной сборки:
 
-- `src-tauri/target/release/bundle/msi/ONYX_0.9.0_x64_ru-RU.msi`
-- `src-tauri/target/release/bundle/nsis/ONYX_0.9.0_x64-setup.exe`
+```powershell
+$env:TAURI_SIGNING_PRIVATE_KEY = "$env:USERPROFILE\.onyx\onyx-updater.key"
+$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = Get-Content "$env:USERPROFILE\.onyx\onyx-updater.password" -Raw
+npm run tauri build
+```
+
+## Автообновление
+
+- Публичный ключ лежит в `src-tauri/tauri.conf.json`.
+- Приватный ключ и пароль — в `%USERPROFILE%\.onyx\` (не в git).
+- Endpoint: `https://github.com/ysl021/onyx/releases/download/desktop-latest/latest.json`.
+- Публикация одной командой:
+
+```powershell
+.\scripts\publish-desktop.ps1
+```
+
+Скрипт собирает MSI/NSIS, создаёт `latest.json` с подписью и
+загружает всё в релиз `desktop-latest` через `gh`.
 
 ## Структура
 
 ```
 desktop-rs/
   src/                     Svelte-фронтенд
-    App.svelte             оболочка, нижний док и переключение экранов
-    app.css                палитра, шрифты, glass, общие кнопки
-    lib/components/        Glass, Icon, NavDock
-    lib/screens/           Player, Lyrics, Playlists, Music, YouTube, Settings
-    lib/stores/            player, settings, library, queue, favorites, sleep,
-                           playlists, lyrics, youtube
+    App.svelte             оболочка, док, фон, переключение экранов
+    app.css                палитра, шрифты, glass, общие компоненты
+    lib/components/        Glass, Icon, NavDock, Cover
+    lib/screens/           Player, Lyrics, Playlists, Music, YouTube,
+                           Visualizer, Settings
+    lib/stores/            player, settings, library, queue, favorites,
+                           sleep, playlists, lyrics, youtube
   src-tauri/
     src/main.rs            точка входа
-    src/lib.rs             Tauri builder и IPC
+    src/lib.rs             Tauri builder, IPC, setup
     src/commands.rs        команды для фронтенда
     src/settings.rs        %APPDATA%\ONYX\settings.json
     src/player.rs          mpv sidecar + JSON IPC
-    src/library.rs         walkdir + lofty, теги и обложки
+    src/library.rs         walkdir + lofty, теги, обложки, запись тегов
     src/playlists.rs       rust-playlists.json
+    src/favorites.rs       rust-favorites.json
     src/lyrics.rs          LRCLIB + LRC
-    src/youtube.rs         yt-dlp поиск/стриминг, авто-прокси
-    src/hub.rs             TODO: TCP 8787 + UDP 8788
-    src/discord.rs         TODO: Rich Presence
-    src/update.rs          TODO: Tauri updater
-    resources/             mpv-NOTICE.txt (лицензия sidecar)
-    tauri.conf.json        окно, бандлы, externalBin
+    src/youtube.rs         yt-dlp, прокси, очередь загрузок
+    src/visualizer.rs      PCM + FFT
+    src/hub.rs             HTTP 8787 + UDP 8788
+    src/discord.rs         Discord IPC + Rich Presence
+    src/covers.rs          поиск обложек, кэш, загрузка на pomf/catbox
+    src/update.rs          заметки по автообновлению
+    resources/             mpv-NOTICE.txt
+    tauri.conf.json        окно, бандлы, externalBin, updater
     capabilities/          разрешения Tauri
+  scripts/
+    publish-desktop.ps1    сборка + latest.json + GitHub release
 ```
-
-## Дальше по этапам
-
-1. ~~**mpv**: sidecar, `--input-ipc-server`, play/pause, seek.~~ Готово.
-2. ~~**Библиотека**: `walkdir` + `lofty`, теги, обложки, экран «Музыка».~~ Готово.
-3. ~~**Плеер**: очередь, следующий/предыдущий, таймер сна, любимые.~~ Готово.
-4. ~~**Текст**: LRCLIB, синхронные строки, подсветка.~~ Готово.
-5. ~~**Плейлисты**: создание, добавление, запуск.~~ Готово.
-6. ~~**YouTube**: поиск и стриминг через yt-dlp.~~ Готово (нужен прокси).
-7. **Визуал**: FFT-спектр из PCM-потока mpv.
-8. **YouTube**: скачивание и нарезка, очередь загрузок.
-9. **Discord**: IPC-канал, тот же payload (artist в state, album в `large_text`).
-10. **Hub**: протокол должен совпадать с Android-клиентом (`SyncModels.kt`).
-11. **Автообновление**: `tauri-plugin-updater`, minisign-ключи, `latest.json`
-    на GitHub Releases.
-12. **MSI**: Authenticode-подпись (опционально), иконка, версия из
-    `../version.properties`.
 
 ## Важно
 
 - Android-клиент остаётся на Kotlin/Compose и не входит в этот проект.
 - Hub-протокол и `%APPDATA%\ONYX` нельзя ломать: иначе телефон и старые
   настройки перестанут работать.
-- YouTube требует локальный прокси (Happ/Clash/v2rayN на
-  `127.0.0.1:20808`, `10809` или `7890`). Без него поиск завершится
-  ошибкой через 20 секунд.
+- YouTube требует локальный прокси. Если авто-определение не находит
+  рабочий, укажи его вручную в «Настройки → Интеграции»:
+  `http://127.0.0.1:20808` или `socks5://127.0.0.1:10808`.
+- Поиск YouTube завершается ошибкой за ~10 секунд, если прокси не
+  отвечает; неудачный результат кэшируется на 30 секунд, чтобы не
+  дёргать сеть на каждый запрос.

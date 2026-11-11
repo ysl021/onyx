@@ -1,42 +1,79 @@
 <script lang="ts">
+  import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
-  import { open } from "@tauri-apps/plugin-dialog";
   import Glass from "../components/Glass.svelte";
   import Icon from "../components/Icon.svelte";
+  import Cover from "../components/Cover.svelte";
   import {
     loadTracks,
-    scanFolder,
     scanSavedFolders,
     scanning,
     tracks,
   } from "../stores/library";
-  import { playTrack, player } from "../stores/player";
+  import {
+    currentPath,
+    playTrack,
+  } from "../stores/player";
   import { setQueue } from "../stores/queue";
-  import { loadSettings, settings } from "../stores/settings";
+  import {
+    favoriteIdOf,
+    favorites,
+    loadFavorites,
+    toggleFavorite,
+  } from "../stores/favorites";
+  import { settings } from "../stores/settings";
+  import type { Track } from "../stores/library";
 
+  let query = $state("");
+  let selectedFolder = $state<string | null>(null);
+  let tab = $state<"tracks" | "favorites">("tracks");
   let error = $state("");
+  let missingFolders = $state<string[]>([]);
+  let editTrack = $state<Track | null>(null);
+  let editTitle = $state("");
+  let editArtist = $state("");
+  let editAlbum = $state("");
 
-  onMount(async () => {
-    await loadSettings();
-    await loadTracks();
-    if ($tracks.length === 0 && $settings.musicFolders.length > 0) {
-      await scanSavedFolders();
-    }
+  onMount(() => {
+    loadTracks();
+    loadFavorites();
+    refreshMissing();
   });
 
-  async function chooseFolder() {
-    error = "";
+  async function refreshMissing() {
     try {
-      const selected = await open({ directory: true, multiple: false });
-      if (typeof selected === "string") {
-        const found = await scanFolder(selected);
-        if (found.length === 0) {
-          error = "В выбранной папке нет аудиофайлов.";
-        }
-      }
-    } catch (e) {
-      error = String(e);
+      missingFolders = await invoke<string[]>("missing_folders", {
+        folders: $settings.musicFolders,
+      });
+    } catch {
+      missingFolders = [];
     }
+  }
+
+  const visible = $derived(
+    $tracks.filter((track) => {
+      if (
+        selectedFolder &&
+        !track.path
+          .toLowerCase()
+          .startsWith(selectedFolder.toLowerCase())
+      ) {
+        return false;
+      }
+      if (tab === "favorites" && !$favorites.includes(favoriteIdOf(track))) {
+        return false;
+      }
+      const needle = query.trim().toLowerCase();
+      if (!needle) return true;
+      return `${track.title} ${track.artist} ${track.album}`
+        .toLowerCase()
+        .includes(needle);
+    }),
+  );
+
+  function folderName(folder: string) {
+    const parts = folder.split(/[\\/]/).filter(Boolean);
+    return parts[parts.length - 1] ?? folder;
   }
 
   function fmt(ms: number) {
@@ -44,184 +81,391 @@
     return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
   }
 
+  async function refresh() {
+    try {
+      await scanSavedFolders();
+      await refreshMissing();
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
   async function play(index: number) {
-    const track = $tracks[index];
+    const track = visible[index];
     if (!track) return;
-    setQueue($tracks, index);
+    setQueue(visible, index);
     try {
       await playTrack(track.path, track);
     } catch (e) {
       error = String(e);
     }
   }
+
+  function startEdit(track: Track) {
+    editTrack = track;
+    editTitle = track.title;
+    editArtist = track.artist;
+    editAlbum = track.album;
+  }
+
+  async function saveEdit() {
+    if (!editTrack) return;
+    try {
+      await invoke("track_update_tags", {
+        path: editTrack.path,
+        title: editTitle,
+        artist: editArtist,
+        album: editAlbum,
+      });
+      tracks.update((list) =>
+        list.map((track) =>
+          track.path === editTrack?.path
+            ? {
+                ...track,
+                title: editTitle || track.title,
+                artist: editArtist,
+                album: editAlbum,
+              }
+            : track,
+        ),
+      );
+      editTrack = null;
+    } catch (e) {
+      error = String(e);
+    }
+  }
 </script>
 
-<div class="music">
-  <header class="music-head">
+<div class="page music-page">
+  <header class="head">
     <div>
-      <div class="eyebrow">Библиотека</div>
-      <h1>Музыка</h1>
-      <div class="count">{$tracks.length} треков</div>
+      <h1 class="page-title">Музыка</h1>
+      <div class="page-sub">{$settings.musicFolders.length} папки</div>
     </div>
-    <div class="head-actions">
-      <button class="pill" onclick={chooseFolder} disabled={$scanning}>
-        <Icon name="library-music" size={14} />
-        {$scanning ? "Сканируем…" : "Выбрать папку"}
-      </button>
-    </div>
+    <button
+      class="circle"
+      aria-label="Обновить библиотеку"
+      onclick={refresh}
+      disabled={$scanning}
+    >
+      <Icon name="refresh" size={19} />
+    </button>
   </header>
+
+  <div class="folder-pills">
+    <button
+      class="pill"
+      class:selected={selectedFolder === null}
+      onclick={() => (selectedFolder = null)}
+    >
+      Все
+    </button>
+    {#each $settings.musicFolders as folder (folder)}
+      <button
+        class="pill"
+        class:selected={selectedFolder === folder}
+        onclick={() => (selectedFolder = folder)}
+      >
+        {folderName(folder)}
+      </button>
+    {/each}
+  </div>
+
+  <div class="search-field">
+    <Icon name="search" size={20} />
+    <input bind:value={query} placeholder="Поиск" />
+  </div>
+
+  {#each missingFolders as folder (folder)}
+    <div class="warning">
+      Нет доступа к папке «{folderName(folder)}». Добавь её заново.
+    </div>
+  {/each}
+
+  <div class="tabs">
+    <button
+      class="pill"
+      class:selected={tab === "tracks"}
+      onclick={() => (tab = "tracks")}
+    >
+      Треки
+    </button>
+    <button
+      class="pill"
+      class:selected={tab === "favorites"}
+      onclick={() => (tab = "favorites")}
+    >
+      Любимые
+    </button>
+  </div>
 
   {#if error}
     <div class="error">{error}</div>
   {/if}
 
-  {#if $tracks.length === 0}
-    <div class="card-slot">
-      <Glass padding={18}>
-        <div class="section-label">Локальная музыка</div>
-        <p class="card-text">
-          Папки не выбраны. Добавь папку с треками — ONYX просканирует её и покажет
-          список.
-        </p>
-        <button class="pill selected" onclick={chooseFolder}>Выбрать папку</button>
-      </Glass>
-    </div>
-  {:else}
-    <Glass class="list" padding={8}>
-      {#each $tracks as track, index (track.id)}
-        <button
-          class="row"
-          class:playing={$player.title === track.title && $player.artist === track.artist}
-          onclick={() => play(index)}
-        >
-          <div class="thumb">
-            <Icon name="music-note" size={18} />
-          </div>
-          <div class="row-meta">
-            <div class="row-title">{track.title}</div>
-            <div class="row-sub">
-              {[track.artist, track.album].filter(Boolean).join(" · ")}
-            </div>
-          </div>
-          <div class="row-time">{fmt(track.durationMs)}</div>
-        </button>
-      {/each}
+  {#if $scanning}
+    <div class="status">Сканирую папки…</div>
+  {/if}
+
+  {#if visible.length === 0}
+    <Glass class="card" padding={18}>
+      <div class="section-label">Пусто</div>
+      <p class="card-text">
+        {$tracks.length === 0
+          ? "Добавь папку с музыкой в настройках."
+          : "По этому фильтру ничего нет."}
+      </p>
     </Glass>
+  {:else}
+    <div class="track-list">
+      {#each visible as track, index (track.id)}
+        <div class="track-row">
+          <button class="track-main" onclick={() => play(index)}>
+            <Cover path={track.path} size={56} radius={10} />
+            <div class="track-meta">
+              <div
+                class="track-title"
+                class:playing={$currentPath === track.path}
+              >
+                {track.title}
+              </div>
+              <div class="track-artist">
+                {track.artist || "<unknown>"}
+              </div>
+            </div>
+            <div class="track-time">{fmt(track.durationMs)}</div>
+          </button>
+          <button
+            class="icon-btn"
+            class:liked={$favorites.includes(favoriteIdOf(track))}
+            aria-label="В любимые"
+            onclick={() => toggleFavorite(track)}
+          >
+            <Icon
+              name={$favorites.includes(favoriteIdOf(track)) ? "favorite" : "favorite-border"}
+              size={19}
+            />
+          </button>
+          <button
+            class="icon-btn"
+            aria-label="Изменить теги"
+            onclick={() => startEdit(track)}
+          >
+            <Icon name="edit" size={18} />
+          </button>
+        </div>
+      {/each}
+    </div>
   {/if}
 </div>
 
+{#if editTrack}
+  <div class="modal" role="presentation" onclick={() => (editTrack = null)}>
+    <div
+      class="modal-card"
+      role="dialog"
+      tabindex="-1"
+      onclick={(event) => event.stopPropagation()}
+      onkeydown={(event) => {
+        if (event.key === "Escape") editTrack = null;
+      }}
+    >
+      <div class="modal-head">
+        <div class="section-label">Теги трека</div>
+        <button class="icon-btn" aria-label="Закрыть" onclick={() => (editTrack = null)}>
+          <Icon name="close" size={16} />
+        </button>
+      </div>
+      <label class="field">
+        <span>Название</span>
+        <input bind:value={editTitle} />
+      </label>
+      <label class="field">
+        <span>Исполнитель</span>
+        <input bind:value={editArtist} />
+      </label>
+      <label class="field">
+        <span>Альбом</span>
+        <input bind:value={editAlbum} />
+      </label>
+      <button class="pill selected save" onclick={saveEdit}>Сохранить</button>
+    </div>
+  </div>
+{/if}
+
 <style>
-  .music {
-    max-width: 820px;
-    margin: 0 auto;
-    padding: 22px 18px 132px;
+  .music-page {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
   }
 
-  .music-head {
+  .head {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
     gap: 12px;
-    margin-bottom: 16px;
   }
 
-  .eyebrow {
-    color: var(--faint);
-    font-size: 10px;
-    letter-spacing: 2px;
-    text-transform: uppercase;
+  .folder-pills {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 2px;
   }
 
-  h1 {
-    margin: 4px 0 0;
-    font-size: 30px;
-    font-weight: 700;
-    letter-spacing: -0.6px;
+  .folder-pills .pill {
+    flex: 0 0 auto;
   }
 
-  .count {
-    margin-top: 4px;
-    color: var(--faint);
-    font-size: 11px;
-  }
-
-  .head-actions {
+  .tabs {
     display: flex;
     gap: 8px;
   }
 
+  .card-text {
+    margin: 10px 0 0;
+    color: var(--dim);
+    font-size: 12px;
+    line-height: 18px;
+  }
+
+  .status {
+    color: var(--faint);
+    font-size: 12px;
+  }
+
   .error {
-    margin-bottom: 12px;
     color: #ff8a5c;
     font-size: 12px;
   }
 
-  .card-slot {
-    margin-bottom: 14px;
-  }
-
-  .card-text {
-    margin: 10px 0 14px;
+  .warning {
     color: var(--dim);
-    font-size: 13px;
-    line-height: 19px;
+    font-size: 12px;
+    line-height: 18px;
   }
 
-  .row {
+  .track-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .track-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .track-main {
     display: flex;
     align-items: center;
     gap: 12px;
-    width: 100%;
-    padding: 8px 10px;
+    flex: 1;
+    min-width: 0;
+    padding: 7px 4px;
     border-radius: 14px;
     text-align: left;
     color: var(--white);
-    transition: background 160ms ease;
   }
 
-  .row:hover {
-    background: rgba(255, 255, 255, 0.05);
+  .track-main:hover {
+    background: rgba(255, 255, 255, 0.04);
   }
 
-  .row.playing {
-    background: rgba(255, 255, 255, 0.08);
-  }
-
-  .thumb {
-    display: grid;
-    place-items: center;
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    background: rgba(255, 255, 255, 0.05);
-    color: var(--faint);
-    flex: 0 0 auto;
-  }
-
-  .row-meta {
-    min-width: 0;
+  .track-meta {
     flex: 1;
+    min-width: 0;
   }
 
-  .row-title {
+  .track-title {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 14px;
+    font-size: 15px;
     font-weight: 500;
   }
 
-  .row-sub {
+  .track-title.playing {
+    color: var(--white);
+  }
+
+  .track-artist {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
     margin-top: 2px;
     color: var(--faint);
+    font-size: 12px;
+  }
+
+  .track-time {
+    color: var(--faint);
     font-size: 11px;
   }
 
-  .row-time {
+  .icon-btn.liked {
+    color: var(--white);
+  }
+
+  .modal {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(6px);
+  }
+
+  .modal-card {
+    width: min(440px, 100%);
+    padding: 18px;
+    border: 1px solid var(--line);
+    border-radius: 26px;
+    background: var(--card-strong);
+  }
+
+  .modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-top: 10px;
     color: var(--faint);
-    font-size: 11px;
+    font-size: 10px;
+    letter-spacing: 1.1px;
+    text-transform: uppercase;
+  }
+
+  .field input {
+    min-height: 44px;
+    padding: 0 13px;
+    border: 1px solid var(--line);
+    border-radius: 13px;
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--white);
+    font-size: 14px;
+    letter-spacing: normal;
+    text-transform: none;
+    outline: none;
+  }
+
+  .field input:focus {
+    border-color: var(--line-strong);
+  }
+
+  .save {
+    width: 100%;
+    margin-top: 16px;
   }
 </style>

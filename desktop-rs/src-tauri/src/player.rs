@@ -14,6 +14,7 @@ pub struct PlayerState {
     pub title: String,
     pub artist: String,
     pub album: String,
+    pub path: String,
     pub playing: bool,
     pub position_ms: u64,
     pub duration_ms: u64,
@@ -23,6 +24,21 @@ pub struct PlayerState {
 /// exposes with `--input-ipc-server`.
 pub struct PlayerHandle {
     inner: Arc<Mutex<Inner>>,
+}
+
+impl Clone for PlayerHandle {
+    fn clone(&self) -> Self {
+        Self {
+            inner: Arc::clone(&self.inner),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioDevice {
+    pub name: String,
+    pub description: String,
 }
 
 struct Inner {
@@ -63,13 +79,41 @@ impl PlayerHandle {
             }))?;
         }
         self.send(&serde_json::json!({ "command": ["loadfile", path] }))?;
+        let mut state = PlayerState {
+            playing: true,
+            path: path.to_string(),
+            ..PlayerState::default()
+        };
+        if std::path::Path::new(path).exists() {
+            if let Some(track) = crate::library::read_track(std::path::Path::new(path)) {
+                state.title = track.title;
+                state.artist = track.artist;
+                state.album = track.album;
+                state.duration_ms = track.duration_ms;
+            }
+        }
         if let Ok(mut inner) = self.inner.lock() {
-            inner.state = PlayerState {
-                playing: true,
-                ..PlayerState::default()
-            };
+            inner.state = state;
         }
         Ok(())
+    }
+
+    /// YouTube tracks have no tags; the frontend passes the search metadata.
+    pub fn set_metadata(&self, title: &str, artist: &str, album: &str, duration_ms: u64) {
+        if let Ok(mut inner) = self.inner.lock() {
+            if !title.trim().is_empty() {
+                inner.state.title = title.to_string();
+            }
+            if !artist.trim().is_empty() {
+                inner.state.artist = artist.to_string();
+            }
+            if !album.trim().is_empty() {
+                inner.state.album = album.to_string();
+            }
+            if duration_ms > 0 {
+                inner.state.duration_ms = duration_ms;
+            }
+        }
     }
 
     pub fn toggle(&self) -> Result<(), String> {
@@ -98,6 +142,13 @@ impl PlayerHandle {
     pub fn pause(&self) -> Result<(), String> {
         self.send(&serde_json::json!({
             "command": ["set_property", "pause", true]
+        }))
+    }
+
+    pub fn set_audio_device(&self, device: &str) -> Result<(), String> {
+        self.ensure_mpv()?;
+        self.send(&serde_json::json!({
+            "command": ["set_property", "audio-device", device]
         }))
     }
 
@@ -198,9 +249,18 @@ impl PlayerHandle {
                         inner.state.playing = !data.as_bool().unwrap_or(false);
                     }
                     "metadata" => {
-                        inner.state.title = meta(&data, "title");
-                        inner.state.artist = meta(&data, "artist");
-                        inner.state.album = meta(&data, "album");
+                        let title = meta(&data, "title");
+                        let artist = meta(&data, "artist");
+                        let album = meta(&data, "album");
+                        if !title.is_empty() {
+                            inner.state.title = title;
+                        }
+                        if !artist.is_empty() {
+                            inner.state.artist = artist;
+                        }
+                        if !album.is_empty() {
+                            inner.state.album = album;
+                        }
                     }
                     _ => {}
                 }
@@ -242,7 +302,42 @@ fn meta(data: &Value, key: &str) -> String {
     String::new()
 }
 
-fn find_mpv() -> Option<PathBuf> {
+/// Lists the audio outputs mpv can use. Runs `mpv --audio-device=help`; the
+/// first entry is always `auto`.
+pub fn audio_devices() -> Vec<AudioDevice> {
+    let Some(mpv) = find_mpv() else {
+        return Vec::new();
+    };
+    let output = Command::new(&mpv)
+        .args(["--no-config", "--audio-device=help"])
+        .stdin(Stdio::null())
+        .output();
+    let Ok(output) = output else {
+        return Vec::new();
+    };
+    let text = String::from_utf8_lossy(&output.stdout);
+    let mut devices = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with("Available") || line.starts_with("List") {
+            continue;
+        }
+        let (name, description) = match line.rfind('(') {
+            Some(index) if line.ends_with(')') => (
+                line[..index].trim().to_string(),
+                line[index + 1..line.len() - 1].trim().to_string(),
+            ),
+            _ => (line.to_string(), line.to_string()),
+        };
+        if name.is_empty() {
+            continue;
+        }
+        devices.push(AudioDevice { name, description });
+    }
+    devices
+}
+
+pub(crate) fn find_mpv() -> Option<PathBuf> {
     let mut candidates = Vec::new();
     if let Ok(local) = std::env::var("LOCALAPPDATA") {
         candidates.push(PathBuf::from(local).join("ONYX").join("mpv").join("mpv.exe"));

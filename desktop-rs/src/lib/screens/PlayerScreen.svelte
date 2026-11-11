@@ -1,11 +1,15 @@
 <script lang="ts">
   import { derived, get } from "svelte/store";
+  import { invoke } from "@tauri-apps/api/core";
+  import { onMount } from "svelte";
   import Glass from "../components/Glass.svelte";
   import Icon from "../components/Icon.svelte";
-  import { favorites, toggleFavorite } from "../stores/favorites";
+  import Cover from "../components/Cover.svelte";
+  import { favorites, favoriteIdOf, toggleFavorite } from "../stores/favorites";
   import {
     cover,
     currentPath,
+    currentTrack,
     openAudioFile,
     player,
     playNext,
@@ -14,9 +18,16 @@
     seekTo,
     togglePlayer,
   } from "../stores/player";
-  import { queue, queueIndex } from "../stores/queue";
   import {
-    addTracksToPlaylist,
+    queue,
+    queueIndex,
+    repeatOne,
+    shuffle,
+    toggleRepeat,
+    toggleShuffle,
+  } from "../stores/queue";
+  import {
+    addTrackToPlaylist,
     createPlaylist,
     loadPlaylists,
     playlists,
@@ -26,14 +37,21 @@
     sleepRemainingMs,
     startSleepTimer,
   } from "../stores/sleep";
-  import { saveSettings, setVolume, settings } from "../stores/settings";
+  import {
+    setAudioDevice,
+    setVolume,
+    settings,
+  } from "../stores/settings";
 
-  let {
-    width,
-    onOpenLyrics,
-  }: { width: number; onOpenLyrics: () => void } = $props();
+  let { onOpenLyrics }: { onOpenLyrics: () => void } = $props();
   let error = $state("");
   let showPlaylistPicker = $state(false);
+  let showDevicePicker = $state(false);
+  let audioDevices = $state<{ name: string; description: string }[]>([]);
+
+  onMount(() => {
+    reloadDevices();
+  });
 
   const progress = derived(player, ($p) =>
     $p.durationMs > 0 ? Math.min(100, ($p.positionMs / $p.durationMs) * 100) : 0,
@@ -41,16 +59,65 @@
   const remaining = derived(player, ($p) =>
     Math.max(0, $p.durationMs - $p.positionMs),
   );
+  const upcoming = derived([queue, queueIndex], ([$q, $i]) =>
+    $q
+      .slice($i + 1)
+      .map((track, offset) => ({ track, index: $i + 1 + offset })),
+  );
+  const isFavorite = $derived(
+    $currentTrack ? $favorites.includes(favoriteIdOf($currentTrack)) : false,
+  );
+  const currentDevice = $derived(
+    audioDevices.find((device) => device.name === $settings.audioDevice) ?? null,
+  );
+  const primaryDevice = $derived(currentDevice ?? audioDevices[0] ?? null);
+  const currentDeviceLabel = $derived(
+    $settings.audioDevice === "auto"
+      ? "Система (авто)"
+      : currentDevice?.description || $settings.audioDevice,
+  );
+
+  async function reloadDevices() {
+    try {
+      audioDevices = await invoke<{ name: string; description: string }[]>(
+        "audio_devices",
+      );
+    } catch {
+      audioDevices = [];
+    }
+  }
 
   function fmt(ms: number) {
     const total = Math.max(0, Math.floor(ms / 1000));
     return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
   }
 
+  function shortDevice(value: string) {
+    const cleaned = value.replace(/\s+/g, " ").trim();
+    return cleaned.length > 28 ? `${cleaned.slice(0, 27)}…` : cleaned;
+  }
+
   async function pickFile() {
     error = "";
     try {
       await openAudioFile();
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
+  async function chooseDevice(name: string) {
+    showDevicePicker = false;
+    try {
+      await setAudioDevice(name);
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
+  async function openSoundSettings() {
+    try {
+      await invoke("open_sound_settings");
     } catch (e) {
       error = String(e);
     }
@@ -80,14 +147,19 @@
     await setVolume(value);
   }
 
-  async function toggleDiscord() {
-    const current = get(settings);
-    await saveSettings({ ...current, discordEnabled: !current.discordEnabled });
-  }
-
   async function addToPlaylist(id: string) {
     const path = $currentPath;
-    if (path) await addTracksToPlaylist(id, [path]);
+    const track = get(currentTrack);
+    const current = get(player);
+    if (!path) return;
+    await addTrackToPlaylist(id, {
+      id: path,
+      title: track?.title || current.title,
+      artist: track?.artist || current.artist,
+      album: track?.album || current.album,
+      durationMs: track?.durationMs || current.durationMs,
+      thumbnail: track?.artwork ?? null,
+    });
     showPlaylistPicker = false;
   }
 
@@ -97,75 +169,82 @@
     await createPlaylist("Мой плейлист");
     const list = get(playlists);
     const created = list[list.length - 1];
-    if (created) await addTracksToPlaylist(created.id, [path]);
+    if (created) await addToPlaylist(created.id);
     showPlaylistPicker = false;
+  }
+
+  function removeFromQueue(index: number) {
+    const current = get(queueIndex);
+    queue.update((list) => list.filter((_, position) => position !== index));
+    if (index < current) {
+      queueIndex.update((value) => Math.max(0, value - 1));
+    }
   }
 </script>
 
-{#snippet header()}
-  <header class="header">
+<div class="page player-page">
+  <header class="head">
     <div class="brand">
       <div class="wordmark">ONYX</div>
       <div class="tagline">music control center</div>
     </div>
-    <div class="header-actions">
+    <div class="head-actions">
       <button class="circle" aria-label="Открыть файл" title="Открыть файл" onclick={pickFile}>
-        <Icon name="library-music" size={17} />
+        <Icon name="library-music" size={19} />
       </button>
-      <button class="pill" class:selected={$settings.discordEnabled} onclick={toggleDiscord}>
-        <Icon name="cast" size={14} />
-        Discord
-        {#if $settings.discordEnabled}<span class="dot"></span>{/if}
+      <button
+        class="circle selected"
+        aria-label="Вывод звука"
+        title="Вывод звука"
+        onclick={() => (showDevicePicker = true)}
+      >
+        <Icon name="cast" size={19} />
       </button>
     </div>
   </header>
-{/snippet}
 
-{#snippet hero(compact: boolean)}
-  <div class="hero" class:compact>
+  <section class="hero" class:playing={$player.playing}>
     <button class="cover" aria-label="Открыть текст песни" onclick={onOpenLyrics}>
       {#if $cover}
         <img src={$cover} alt="" />
       {:else}
-        <Icon name="music-note" size={compact ? 42 : 56} />
+        <Icon name="music-note" size={64} />
       {/if}
     </button>
-    <div class="title">{$player.title || "Ничего не играет"}</div>
-    <div class="artist">{$player.artist || "Выберите трек в библиотеке"}</div>
+    <h1 class="title">{$player.title || "Ничего не играет"}</h1>
+    <div class="artist">{$player.artist || "Запусти музыку на телефоне"}</div>
     {#if $player.album}
       <div class="album">{$player.album}</div>
     {/if}
     <div class="hero-actions">
       <button class="pill" onclick={onOpenLyrics}>
-        <Icon name="translate" size={14} />
+        <Icon name="translate" size={15} />
         Текст песни
       </button>
       <button
         class="circle"
-        class:liked={$currentPath ? $favorites.includes($currentPath) : false}
+        class:selected={isFavorite}
         aria-label="В любимые"
         onclick={() => {
-          const path = $currentPath;
-          if (path) toggleFavorite(path);
+          if ($currentTrack) toggleFavorite($currentTrack);
         }}
       >
-        <Icon
-          name={$currentPath && $favorites.includes($currentPath) ? "favorite" : "favorite-border"}
-          size={17}
-        />
+        <Icon name={isFavorite ? "favorite" : "favorite-border"} size={18} />
       </button>
-      <button class="circle" aria-label="В плейлист" onclick={() => {
-        loadPlaylists();
-        showPlaylistPicker = true;
-      }}>
-        <Icon name="playlist-add" size={17} />
+      <button
+        class="circle"
+        aria-label="В плейлист"
+        onclick={() => {
+          loadPlaylists();
+          showPlaylistPicker = true;
+        }}
+      >
+        <Icon name="playlist-add" size={18} />
       </button>
     </div>
-  </div>
-{/snippet}
+  </section>
 
-{#snippet controls()}
-  <div class="controls">
+  <section class="controls">
     <div
       class="slider"
       role="slider"
@@ -190,7 +269,7 @@
         <Icon name="skip-previous" size={24} />
       </button>
       <button class="play" aria-label={$player.playing ? "Пауза" : "Играть"} onclick={togglePlayer}>
-        <Icon name={$player.playing ? "pause" : "play"} size={32} />
+        <Icon name={$player.playing ? "pause" : "play"} size={34} />
       </button>
       <button class="skip" aria-label="Следующий трек" onclick={playNext}>
         <Icon name="skip-next" size={24} />
@@ -199,21 +278,34 @@
     {#if error}
       <div class="error">{error}</div>
     {/if}
-  </div>
-{/snippet}
+  </section>
 
-{#snippet outputCard()}
   <Glass class="card" padding={18}>
     <div class="section-label">Вывод звука</div>
-    <div class="device-row">
-      <button class="pill selected">
-        <Icon name="computer" size={14} />
+    <div class="device-pills">
+      <button
+        class="pill"
+        class:selected={$settings.audioDevice === "auto"}
+        onclick={() => chooseDevice("auto")}
+      >
+        <Icon name="computer" size={15} />
         Система
       </button>
-      <button class="pill">
-        <Icon name="headphones" size={14} />
-        Наушники
-      </button>
+      {#if primaryDevice}
+        <button
+          class="pill device-pill"
+          class:selected={$settings.audioDevice === primaryDevice.name}
+          onclick={() => chooseDevice(primaryDevice.name)}
+        >
+          <Icon name="headphones" size={15} />
+          <span class="device-text">{shortDevice(primaryDevice.description)}</span>
+        </button>
+      {/if}
+      <button class="pill" onclick={() => (showDevicePicker = true)}>Ещё</button>
+    </div>
+    <div class="volume-head">
+      <span>Громкость</span>
+      <span>{$settings.volume}%</span>
     </div>
     <div class="volume-row">
       <Icon name="volume" size={16} />
@@ -221,23 +313,49 @@
         type="range"
         min="0"
         max="100"
+        step={$settings.volumeStep}
         value={$settings.volume}
         oninput={changeVolume}
         aria-label="Громкость"
       />
-      <span>{$settings.volume}%</span>
     </div>
   </Glass>
-{/snippet}
 
-{#snippet sleepCard()}
   <Glass class="card" padding={18}>
-    <div class="section-label">
-      Таймер сна{#if $sleepRemainingMs > 0} · {fmt($sleepRemainingMs)}{/if}
+    <div class="card-head">
+      <div class="section-label">Наушники</div>
+      <button class="icon-btn" aria-label="Обновить устройства" onclick={reloadDevices}>
+        <Icon name="refresh" size={17} />
+      </button>
     </div>
+    <div class="device-info">
+      <Icon name="headphones" size={22} />
+      <div class="device-meta">
+        <div class="device-name">{currentDeviceLabel}</div>
+        <div class="device-sub">Подключено · вывод ONYX</div>
+      </div>
+    </div>
+    <p class="card-text">
+      Звук идёт через mpv. Выбор устройства сохраняется и применяется к
+      следующему треку.
+    </p>
+    <div class="pill-row">
+      <button class="pill" onclick={openSoundSettings}>Настройки звука</button>
+      <button class="pill" onclick={() => (showDevicePicker = true)}>Выбрать устройство</button>
+    </div>
+  </Glass>
+
+  <Glass class="card" padding={18}>
+    <div class="card-head">
+      <div class="section-label">
+        Таймер сна{#if $sleepRemainingMs > 0} · {fmt($sleepRemainingMs)}{/if}
+      </div>
+      <Icon name="moon" size={17} />
+    </div>
+    <p class="card-text">Минуты до автоматической паузы:</p>
     <div class="pill-row">
       {#each [15, 30, 45, 60] as minutes}
-        <button class="pill" onclick={() => startSleepTimer(minutes)}>{minutes} мин</button>
+        <button class="pill" onclick={() => startSleepTimer(minutes)}>{minutes}</button>
       {/each}
       <button
         class="pill"
@@ -248,58 +366,53 @@
       </button>
     </div>
   </Glass>
-{/snippet}
 
-{#snippet queueCard()}
-  <Glass class="card" padding={18}>
+  <Glass class="card queue-card" padding={18}>
     <div class="queue-head">
       <div class="section-label">Очередь</div>
-      <div class="queue-count">{$queue.length}</div>
+      <div class="queue-count">{$queue.length} трек(ов)</div>
     </div>
-    {#if $queue.length === 0}
-      <div class="queue-empty">Очередь пуста. Запусти трек из «Музыки».</div>
+    <div class="queue-actions">
+      <button class="pill" class:selected={$repeatOne} onclick={toggleRepeat}>
+        <Icon name="repeat" size={15} />
+        Повтор трека
+      </button>
+      <button class="pill" class:selected={$shuffle} onclick={toggleShuffle}>
+        <Icon name="shuffle" size={15} />
+        Перемешать
+      </button>
+    </div>
+    {#if $upcoming.length === 0}
+      <div class="queue-empty">
+        {$queue.length === 0
+          ? "Очередь пуста. Запусти трек из «Музыки»."
+          : "Это последний трек в очереди."}
+      </div>
     {:else}
       <div class="queue-list">
-        {#each $queue.slice($queueIndex + 1, $queueIndex + 6) as track, offset}
-          <button class="queue-row" onclick={() => playQueueAt($queueIndex + 1 + offset)}>
-            <div class="queue-meta">
-              <div class="queue-title">{track.title}</div>
-              <div class="queue-sub">{track.artist}</div>
-            </div>
-            <div class="queue-time">{fmt(track.durationMs)}</div>
-          </button>
+        {#each $upcoming as item (item.index)}
+          <div class="queue-row">
+            <button class="queue-main" onclick={() => playQueueAt(item.index)}>
+              <Cover path={item.track.path} size={40} radius={9} />
+              <div class="queue-meta">
+                <div class="queue-title">{item.track.title}</div>
+                <div class="queue-sub">{item.track.artist}</div>
+              </div>
+              <div class="queue-time">{fmt(item.track.durationMs)}</div>
+            </button>
+            <button
+              class="icon-btn queue-remove"
+              aria-label="Убрать из очереди"
+              onclick={() => removeFromQueue(item.index)}
+            >
+              <Icon name="close" size={15} />
+            </button>
+          </div>
         {/each}
-        {#if $queueIndex + 1 >= $queue.length}
-          <div class="queue-empty">Это последний трек в очереди.</div>
-        {/if}
       </div>
     {/if}
   </Glass>
-{/snippet}
-
-{#if width >= 1400}
-  <div class="wide">
-    <div class="wide-hero">
-      {@render header()}
-      {@render hero(true)}
-      {@render controls()}
-    </div>
-    <div class="wide-side">
-      {@render outputCard()}
-      {@render sleepCard()}
-      {@render queueCard()}
-    </div>
-  </div>
-{:else}
-  <div class="phone">
-    {@render header()}
-    {@render hero(false)}
-    {@render controls()}
-    {@render outputCard()}
-    {@render sleepCard()}
-    {@render queueCard()}
-  </div>
-{/if}
+</div>
 
 {#if showPlaylistPicker}
   <div class="modal" role="presentation" onclick={() => (showPlaylistPicker = false)}>
@@ -314,7 +427,7 @@
     >
       <div class="modal-head">
         <div class="section-label">В плейлист</div>
-        <button class="circle" aria-label="Закрыть" onclick={() => (showPlaylistPicker = false)}>
+        <button class="icon-btn" aria-label="Закрыть" onclick={() => (showPlaylistPicker = false)}>
           <Icon name="close" size={16} />
         </button>
       </div>
@@ -337,128 +450,98 @@
   </div>
 {/if}
 
+{#if showDevicePicker}
+  <div class="modal" role="presentation" onclick={() => (showDevicePicker = false)}>
+    <div
+      class="modal-card"
+      role="dialog"
+      tabindex="-1"
+      onclick={(event) => event.stopPropagation()}
+      onkeydown={(event) => {
+        if (event.key === "Escape") showDevicePicker = false;
+      }}
+    >
+      <div class="modal-head">
+        <div class="section-label">Устройство вывода</div>
+        <button class="icon-btn" aria-label="Закрыть" onclick={() => (showDevicePicker = false)}>
+          <Icon name="close" size={16} />
+        </button>
+      </div>
+      <div class="modal-list">
+        <button class="modal-row" onclick={() => chooseDevice("auto")}>
+          <Icon name="computer" size={18} />
+          <span class="modal-name">Система (авто)</span>
+          {#if $settings.audioDevice === "auto"}<Icon name="check" size={16} />{/if}
+        </button>
+        {#each audioDevices as device (device.name)}
+          <button class="modal-row" onclick={() => chooseDevice(device.name)}>
+            <Icon name="headphones" size={18} />
+            <span class="modal-name">{device.description || device.name}</span>
+            {#if $settings.audioDevice === device.name}<Icon name="check" size={16} />{/if}
+          </button>
+        {/each}
+      </div>
+    </div>
+  </div>
+{/if}
+
 <style>
-  .phone {
+  .player-page {
     display: flex;
     flex-direction: column;
-    align-items: center;
-    gap: 16px;
-    padding: 16px 18px 132px;
+    gap: 18px;
   }
 
-  .phone :global(.card) {
-    width: 100%;
-    max-width: 720px;
-  }
-
-  .wide {
+  .head {
     display: flex;
-    justify-content: center;
     align-items: flex-start;
-    gap: 28px;
-    padding: 22px 28px 116px;
-    max-width: 100%;
-    box-sizing: border-box;
-  }
-
-  .wide-hero {
-    flex: 0 0 380px;
-    width: 380px;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 14px;
-  }
-
-  .wide-side {
-    flex: 0 0 480px;
-    width: 480px;
-    min-width: 0;
-    max-width: 480px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-  }
-
-  .wide-side :global(.card) {
-    width: 100%;
-  }
-
-  .header {
-    width: 100%;
-    max-width: 720px;
-    min-width: 0;
-    display: flex;
-    align-items: center;
     justify-content: space-between;
     gap: 12px;
-  }
-
-  .wide-hero .header {
-    max-width: 380px;
-  }
-
-  .brand {
-    min-width: 0;
+    padding-top: 2px;
   }
 
   .wordmark {
-    font-size: 26px;
+    font-size: 30px;
     font-weight: 900;
     letter-spacing: 6px;
     line-height: 1;
-    white-space: nowrap;
   }
 
   .tagline {
-    margin-top: 5px;
+    margin-top: 7px;
     color: var(--faint);
     font-size: 9px;
     letter-spacing: 2.4px;
     text-transform: uppercase;
-    white-space: nowrap;
   }
 
-  .header-actions {
+  .head-actions {
     display: flex;
     align-items: center;
     gap: 8px;
   }
 
-  .dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 999px;
-    background: #57c77a;
-  }
-
   .hero {
-    width: 100%;
-    max-width: 720px;
     display: flex;
     flex-direction: column;
     align-items: center;
-  }
-
-  .wide-hero .hero {
-    max-width: 380px;
+    padding-top: 4px;
   }
 
   .cover {
     display: grid;
     place-items: center;
-    width: min(68%, 240px);
+    width: min(68%, 286px);
     aspect-ratio: 1;
     padding: 0;
     overflow: hidden;
-    border-radius: 26px;
+    border-radius: 28px;
     border: 1px solid rgba(255, 255, 255, 0.05);
     background:
-      radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.07), transparent 55%),
+      radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.08), transparent 55%),
       var(--deep);
     color: var(--faint);
-    transition: transform 180ms ease;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.4);
   }
 
   .cover img {
@@ -466,180 +549,202 @@
     height: 100%;
     object-fit: cover;
     display: block;
+    animation: cover-drift 26s ease-in-out infinite alternate;
+    animation-play-state: paused;
   }
 
-  .cover:hover {
-    transform: scale(1.01);
+  .hero.playing .cover img {
+    animation-play-state: running;
   }
 
-  .wide-hero .cover {
-    width: 100%;
-    max-width: 280px;
+  @keyframes cover-drift {
+    0% {
+      transform: scale(1.02) translate3d(-1.2%, -0.8%, 0);
+    }
+    50% {
+      transform: scale(1.08) translate3d(1.4%, 1%, 0);
+    }
+    100% {
+      transform: scale(1.04) translate3d(-0.6%, 1.4%, 0);
+    }
   }
 
-  .hero.compact .cover {
-    max-width: 200px;
+  @media (prefers-reduced-motion: reduce) {
+    .cover img {
+      animation: none;
+    }
   }
 
   .title {
-    width: 92%;
-    margin-top: 18px;
-    color: var(--white);
-    font-size: 25px;
-    line-height: 30px;
-    font-weight: 700;
-    letter-spacing: -0.4px;
-    text-align: center;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-  }
-
-  .hero.compact .title {
-    margin-top: 10px;
-    font-size: 21px;
-    line-height: 25px;
-    -webkit-line-clamp: 1;
-  }
-
-  .artist {
-    width: 90%;
-    margin-top: 6px;
-    color: var(--dim);
-    font-size: 14px;
-    text-align: center;
+    max-width: 100%;
+    margin: 12px 0 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.6px;
+    text-align: center;
   }
 
-  .hero.compact .artist {
-    margin-top: 3px;
+  .artist {
+    margin-top: 5px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--dim);
+    font-size: 14px;
+    text-align: center;
   }
 
   .album {
     margin-top: 3px;
-    color: var(--faint);
-    font-size: 11px;
-    max-width: 90%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    color: var(--faint);
+    font-size: 11px;
+    text-align: center;
   }
 
   .hero-actions {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-top: 12px;
-  }
-
-  .hero.compact .hero-actions {
-    margin-top: 8px;
+    margin-top: 10px;
   }
 
   .controls {
-    width: 100%;
-    max-width: 720px;
-  }
-
-  .wide-hero .controls {
-    max-width: 380px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
   }
 
   .slider {
-    padding: 6px 0;
+    padding: 8px 0;
     cursor: pointer;
+    outline: none;
   }
 
   .track {
     position: relative;
-    height: 6px;
+    height: 4px;
     border-radius: 999px;
-    background: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.1);
   }
 
   .fill {
     height: 100%;
     border-radius: 999px;
-    background: var(--accent);
+    background: var(--white);
   }
 
   .thumb {
     position: absolute;
     top: 50%;
-    width: 3px;
-    height: 18px;
+    width: 12px;
+    height: 12px;
     border-radius: 999px;
-    background: var(--accent);
+    background: var(--white);
     transform: translate(-50%, -50%);
+    box-shadow: 0 0 0 4px rgba(5, 5, 6, 0.4);
   }
 
   .times {
     display: flex;
     justify-content: space-between;
-    margin-top: 2px;
     color: var(--faint);
     font-size: 11px;
-    letter-spacing: 0.6px;
   }
 
   .transport {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 22px;
-    margin-top: 10px;
+    gap: 18px;
+    margin-top: 8px;
   }
 
-  .skip {
-    display: grid;
-    place-items: center;
-    width: 54px;
-    height: 54px;
-    border-radius: 999px;
-    border: 1px solid var(--line);
-    color: var(--dim);
-    transition: color 160ms ease, background 160ms ease;
-  }
-
-  .skip:hover {
-    color: var(--white);
-    background: rgba(255, 255, 255, 0.05);
-  }
-
+  .skip,
   .play {
     display: grid;
     place-items: center;
-    width: 74px;
-    height: 74px;
     border-radius: 999px;
+    transition: transform 140ms ease, background 160ms ease;
+  }
+
+  .skip {
+    width: 56px;
+    height: 56px;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--white);
+  }
+
+  .play {
+    width: 82px;
+    height: 82px;
     background: var(--accent);
     color: #08080a;
   }
 
+  .skip:hover,
+  .play:hover {
+    transform: scale(1.03);
+  }
+
   .error {
-    margin-top: 12px;
+    margin-top: 8px;
     color: #ff8a5c;
     font-size: 12px;
     line-height: 17px;
     text-align: center;
   }
 
-  .device-row {
+  .card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .card-text {
+    margin: 10px 0 0;
+    color: var(--dim);
+    font-size: 12px;
+    line-height: 18px;
+  }
+
+  .device-pills {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
     margin-top: 12px;
   }
 
+  .device-pill {
+    max-width: 100%;
+  }
+
+  .device-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .volume-head {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 16px;
+    color: var(--faint);
+    font-size: 11px;
+  }
+
   .volume-row {
     display: flex;
     align-items: center;
     gap: 10px;
-    margin-top: 14px;
+    margin-top: 8px;
     color: var(--dim);
   }
 
@@ -648,25 +753,34 @@
     accent-color: var(--accent);
   }
 
-  .volume-row span {
-    min-width: 36px;
+  .device-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 14px;
+    color: var(--white);
+  }
+
+  .device-meta {
+    min-width: 0;
+  }
+
+  .device-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .device-sub {
+    margin-top: 2px;
     color: var(--faint);
     font-size: 11px;
-    text-align: right;
   }
 
-  .pill-row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 12px;
-  }
-
-  .queue-empty {
-    margin-top: 10px;
-    color: var(--faint);
-    font-size: 12px;
-    line-height: 17px;
+  :global(.queue-card) {
+    padding-bottom: 8px;
   }
 
   .queue-head {
@@ -681,6 +795,20 @@
     font-size: 11px;
   }
 
+  .queue-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .queue-empty {
+    margin-top: 14px;
+    color: var(--faint);
+    font-size: 12px;
+    line-height: 17px;
+  }
+
   .queue-list {
     display: flex;
     flex-direction: column;
@@ -691,16 +819,23 @@
   .queue-row {
     display: flex;
     align-items: center;
+    gap: 4px;
+  }
+
+  .queue-main {
+    display: flex;
+    align-items: center;
     gap: 10px;
-    width: 100%;
-    padding: 7px 8px;
+    flex: 1;
+    min-width: 0;
+    padding: 6px 4px;
     border-radius: 12px;
     text-align: left;
     color: var(--white);
   }
 
-  .queue-row:hover {
-    background: rgba(255, 255, 255, 0.05);
+  .queue-main:hover {
+    background: rgba(255, 255, 255, 0.04);
   }
 
   .queue-meta {
@@ -730,9 +865,13 @@
     font-size: 11px;
   }
 
-  .circle.liked {
-    color: var(--white);
-    border-color: rgba(255, 255, 255, 0.22);
+  .queue-remove {
+    opacity: 0;
+    transition: opacity 140ms ease;
+  }
+
+  .queue-row:hover .queue-remove {
+    opacity: 1;
   }
 
   .modal {
@@ -742,20 +881,18 @@
     display: grid;
     place-items: center;
     padding: 24px;
-    background: rgba(0, 0, 0, 0.55);
+    background: rgba(0, 0, 0, 0.6);
     backdrop-filter: blur(6px);
   }
 
   .modal-card {
-    width: min(420px, 100%);
-    max-height: 70vh;
+    width: min(440px, 100%);
+    max-height: 72vh;
     overflow-y: auto;
     padding: 18px;
-    border: 1px solid rgba(255, 255, 255, 0.09);
-    border-radius: 24px;
-    background:
-      linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.012)),
-      rgba(16, 16, 19, 0.85);
+    border: 1px solid var(--line);
+    border-radius: 26px;
+    background: var(--card-strong);
     backdrop-filter: blur(30px);
   }
 
@@ -778,8 +915,8 @@
     align-items: center;
     gap: 10px;
     width: 100%;
-    padding: 9px 10px;
-    border-radius: 12px;
+    padding: 10px;
+    border-radius: 14px;
     color: var(--white);
     text-align: left;
   }

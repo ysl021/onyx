@@ -78,6 +78,35 @@ impl Library {
     pub fn cover(&self, path: &str) -> Option<String> {
         read_cover(Path::new(path))
     }
+
+    pub fn update_tags(
+        &self,
+        path: &str,
+        title: &str,
+        artist: &str,
+        album: &str,
+    ) -> Result<(), String> {
+        let file = Path::new(path);
+        let mut tagged = lofty::read_from_path(file).map_err(|error| error.to_string())?;
+        let tag_type = tagged.primary_tag_type();
+        if tagged.primary_tag().is_none() {
+            tagged.insert_tag(lofty::tag::Tag::new(tag_type));
+        }
+        if let Some(tag) = tagged.primary_tag_mut() {
+            if !title.trim().is_empty() {
+                tag.set_title(title.trim().to_string());
+            }
+            if !artist.trim().is_empty() {
+                tag.set_artist(artist.trim().to_string());
+            }
+            if !album.trim().is_empty() {
+                tag.set_album(album.trim().to_string());
+            }
+        }
+        tagged
+            .save_to_path(file, lofty::config::WriteOptions::default())
+            .map_err(|error| error.to_string())
+    }
 }
 
 fn is_audio(path: &Path) -> bool {
@@ -90,7 +119,7 @@ fn is_audio(path: &Path) -> bool {
     )
 }
 
-fn read_track(path: &Path) -> Option<Track> {
+pub(crate) fn read_track(path: &Path) -> Option<Track> {
     let tagged = lofty::read_from_path(path).ok()?;
     let duration_ms = tagged.properties().duration().as_millis() as u64;
     let tag = tagged.primary_tag().or_else(|| tagged.first_tag());

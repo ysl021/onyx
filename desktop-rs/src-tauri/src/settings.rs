@@ -9,11 +9,17 @@ use std::path::PathBuf;
 pub struct Settings {
     pub volume: u8,
     pub discord_enabled: bool,
+    pub discord_client_id: String,
     pub hub_port: u16,
+    pub hub_name: String,
     pub theme: String,
     pub language: String,
     /// bottom | top | left | right
     pub panel_position: String,
+    pub audio_device: String,
+    pub cover_backdrop: bool,
+    pub youtube_proxy: String,
+    pub volume_step: u8,
     pub music_folders: Vec<String>,
 }
 
@@ -22,10 +28,16 @@ impl Default for Settings {
         Self {
             volume: 80,
             discord_enabled: false,
+            discord_client_id: crate::discord::DEFAULT_CLIENT_ID.into(),
             hub_port: 8787,
+            hub_name: String::new(),
             theme: "dark".into(),
             language: "ru".into(),
             panel_position: "bottom".into(),
+            audio_device: "auto".into(),
+            cover_backdrop: false,
+            youtube_proxy: String::new(),
+            volume_step: 5,
             music_folders: Vec::new(),
         }
     }

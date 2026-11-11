@@ -8,13 +8,15 @@
   import PlayerScreen from "./lib/screens/PlayerScreen.svelte";
   import PlaylistsScreen from "./lib/screens/PlaylistsScreen.svelte";
   import SettingsScreen from "./lib/screens/SettingsScreen.svelte";
+  import VisualizerScreen from "./lib/screens/VisualizerScreen.svelte";
   import YouTubeScreen from "./lib/screens/YouTubeScreen.svelte";
+  import { loadFavorites, migrateLegacyFavorites } from "./lib/stores/favorites";
+  import { loadTracks } from "./lib/stores/library";
   import { cover, refreshPlayer, startPolling } from "./lib/stores/player";
   import { loadSettings, settings } from "./lib/stores/settings";
 
   let active = $state("player");
   let version = $state("0.9.0");
-  let width = $state(1200);
 
   const titles: Record<string, string> = {
     lyrics: "Текст",
@@ -26,17 +28,15 @@
 
   onMount(() => {
     loadSettings();
+    loadFavorites();
+    loadTracks().then(() => migrateLegacyFavorites());
     refreshPlayer();
     const stopPolling = startPolling();
-    const onResize = () => (width = window.innerWidth);
-    onResize();
-    window.addEventListener("resize", onResize);
     invoke<string>("app_version")
       .then((value) => (version = value))
       .catch(() => {});
     return () => {
       stopPolling();
-      window.removeEventListener("resize", onResize);
     };
   });
 
@@ -47,7 +47,7 @@
 </script>
 
 <div class="shell" data-panel={$settings.panelPosition}>
-  {#if $cover}
+  {#if $settings.coverBackdrop && $cover}
     <div class="backdrop" style={`background-image:url(${$cover})`}></div>
     <div class="scrim"></div>
   {/if}
@@ -60,15 +60,20 @@
 
   <main class="content">
     {#if active === "player"}
-      <PlayerScreen {width} onOpenLyrics={() => (active = "lyrics")} />
+      <PlayerScreen onOpenLyrics={() => (active = "lyrics")} />
     {:else if active === "lyrics"}
-      <LyricsScreen />
+      <LyricsScreen onBack={() => (active = "player")} />
     {:else if active === "music"}
       <MusicScreen />
     {:else if active === "playlists"}
-      <PlaylistsScreen />
+      <PlaylistsScreen onBack={() => (active = "player")} />
     {:else if active === "youtube"}
-      <YouTubeScreen />
+      <YouTubeScreen
+        onBack={() => (active = "player")}
+        onOpenSettings={() => (active = "settings")}
+      />
+    {:else if active === "visualizer"}
+      <VisualizerScreen />
     {:else if active === "settings"}
       <SettingsScreen {version} onBack={() => (active = "player")} />
     {:else}
@@ -94,12 +99,12 @@
 
   .backdrop {
     position: absolute;
-    inset: -60px;
+    inset: -90px;
     background-size: cover;
     background-position: center;
-    filter: blur(48px) saturate(120%);
-    opacity: 0.42;
-    transform: scale(1.1);
+    filter: blur(64px) saturate(130%);
+    opacity: 0.5;
+    transform: scale(1.18);
     pointer-events: none;
   }
 
@@ -109,21 +114,21 @@
     background: linear-gradient(
       180deg,
       rgba(5, 5, 6, 0.5),
-      rgba(5, 5, 6, 0.8) 55%,
-      rgba(5, 5, 6, 0.92)
+      rgba(5, 5, 6, 0.82) 52%,
+      rgba(5, 5, 6, 0.94)
     );
     pointer-events: none;
   }
 
   [data-panel="top"] .content {
-    padding-top: 84px;
+    padding-top: 104px;
   }
 
   [data-panel="left"] .content {
-    padding-left: 130px;
+    padding-left: 120px;
   }
 
   [data-panel="right"] .content {
-    padding-right: 130px;
+    padding-right: 120px;
   }
 </style>

@@ -29,9 +29,15 @@
     <Glass strong padding={0} class="dock">
       <div class="dock-inner">
         {#each items as item}
-          <button class:active={active === item.key} onclick={() => onSelect(item.key)}>
-            <Icon name={item.icon} size={18} />
-            <span>{item.label}</span>
+          <button
+            class:active={active === item.key}
+            aria-label={item.label}
+            onclick={() => onSelect(item.key)}
+          >
+            <span class="item">
+              <Icon name={item.icon} size={22} />
+              <span class="label">{item.label}</span>
+            </span>
           </button>
         {/each}
       </div>
@@ -42,9 +48,15 @@
     <Glass strong padding={0} class="rail">
       <div class="rail-inner">
         {#each items as item}
-          <button class:active={active === item.key} onclick={() => onSelect(item.key)}>
-            <Icon name={item.icon} size={18} />
-            <span>{item.label}</span>
+          <button
+            class:active={active === item.key}
+            aria-label={item.label}
+            onclick={() => onSelect(item.key)}
+          >
+            <span class="item">
+              <Icon name={item.icon} size={21} />
+              <span class="label">{item.label}</span>
+            </span>
           </button>
         {/each}
       </div>
@@ -55,8 +67,8 @@
 <style>
   .dock-wrap {
     position: absolute;
-    left: 18px;
-    right: 18px;
+    left: 16px;
+    right: 16px;
     display: flex;
     justify-content: center;
     pointer-events: none;
@@ -73,41 +85,57 @@
 
   .dock-wrap :global(.dock) {
     pointer-events: auto;
-    width: min(720px, 100%);
-    border-radius: 24px;
+    width: min(760px, 100%);
+    border-radius: 30px;
   }
 
   .dock-inner {
     display: flex;
-    gap: 4px;
-    padding: 7px 8px;
+    align-items: center;
+    gap: 0;
+    height: 86px;
+    padding: 10px 12px;
   }
 
   .dock-inner button {
     flex: 1;
     display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 66px;
+    padding: 0;
+    color: var(--dim);
+  }
+
+  .item {
+    display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 3px;
-    padding: 8px 2px;
-    border-radius: 16px;
-    color: var(--dim);
+    justify-content: center;
+    gap: 5px;
+    width: 58px;
+    height: 66px;
+    border-radius: 22px;
     transition: background 160ms ease, color 160ms ease;
   }
 
-  .dock-inner button span {
-    font-size: 7px;
-    line-height: 9px;
-    font-weight: 500;
-    white-space: nowrap;
+  .dock-inner button:hover .item {
+    color: var(--white);
   }
 
-  .dock-inner button.active {
+  .dock-inner button.active .item {
     background: var(--accent);
     color: #08080a;
   }
 
-  .dock-inner button.active span {
+  .label {
+    font-size: 9px;
+    line-height: 11px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .dock-inner button.active .label {
     font-weight: 600;
   }
 
@@ -129,41 +157,36 @@
   }
 
   .rail-wrap :global(.rail) {
-    width: 96px;
-    border-radius: 28px;
+    width: 92px;
+    border-radius: 30px;
   }
 
   .rail-inner {
     display: flex;
     flex-direction: column;
     gap: 2px;
-    padding: 8px 6px;
+    padding: 10px 8px;
   }
 
   .rail-inner button {
     display: flex;
-    flex-direction: column;
     align-items: center;
-    gap: 3px;
-    padding: 8px 2px;
-    border-radius: 16px;
+    justify-content: center;
+    padding: 0;
     color: var(--dim);
-    transition: background 160ms ease, color 160ms ease;
   }
 
-  .rail-inner button span {
-    font-size: 7px;
-    line-height: 9px;
-    font-weight: 500;
-    white-space: nowrap;
+  .rail-inner .item {
+    width: 58px;
+    height: 62px;
   }
 
-  .rail-inner button.active {
+  .rail-inner button:hover .item {
+    color: var(--white);
+  }
+
+  .rail-inner button.active .item {
     background: var(--accent);
     color: #08080a;
-  }
-
-  .rail-inner button.active span {
-    font-weight: 600;
   }
 </style>

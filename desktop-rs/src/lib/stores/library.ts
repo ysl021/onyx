@@ -10,6 +10,7 @@ export type Track = {
   album: string;
   durationMs: number;
   hasCover: boolean;
+  artwork?: string | null;
 };
 
 export const tracks = writable<Track[]>([]);

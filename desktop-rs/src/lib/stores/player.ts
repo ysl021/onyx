@@ -2,7 +2,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { get, writable } from "svelte/store";
 import { tracks, type Track } from "./library";
-import { queue, queueIndex } from "./queue";
+import {
+  nextQueueIndex,
+  previousQueueIndex,
+  queue,
+  queueIndex,
+  repeatOne,
+} from "./queue";
 import { settings } from "./settings";
 
 export type PlayerState = {
@@ -52,7 +58,7 @@ export async function playTrack(path: string, track?: Track) {
 export async function playNext() {
   const list = get(queue);
   if (list.length === 0) return;
-  const index = (get(queueIndex) + 1) % list.length;
+  const index = nextQueueIndex(get(queueIndex), list.length);
   queueIndex.set(index);
   await playTrack(list[index].path, list[index]);
 }
@@ -60,7 +66,7 @@ export async function playNext() {
 export async function playPrevious() {
   const list = get(queue);
   if (list.length === 0) return;
-  const index = (get(queueIndex) - 1 + list.length) % list.length;
+  const index = previousQueueIndex(get(queueIndex), list.length);
   queueIndex.set(index);
   await playTrack(list[index].path, list[index]);
 }
@@ -123,8 +129,25 @@ export async function seekTo(seconds: number) {
   await refreshPlayer();
 }
 
-/** Poll mpv four times a second; returns the cleanup function. */
+/** Poll mpv twice a second and advance the queue when a track ends. */
 export function startPolling() {
-  const id = setInterval(refreshPlayer, 250);
+  let wasPlaying = false;
+  const id = setInterval(async () => {
+    await refreshPlayer();
+    const state = get(player);
+    const finished =
+      wasPlaying &&
+      !state.playing &&
+      state.durationMs > 0 &&
+      (state.positionMs >= state.durationMs - 1500 || state.positionMs === 0);
+    wasPlaying = state.playing;
+    if (!finished) return;
+    if (get(repeatOne)) {
+      const path = get(currentPath);
+      if (path) await playTrack(path, get(currentTrack) ?? undefined);
+    } else {
+      await playNext();
+    }
+  }, 500);
   return () => clearInterval(id);
 }
