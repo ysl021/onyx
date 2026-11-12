@@ -15,6 +15,9 @@ export type Settings = {
   audioDevice: string;
   coverBackdrop: boolean;
   youtubeProxy: string;
+  youtubeRoute: "auto" | "direct" | "relay" | "mirror";
+  youtubeRelayUrl: string;
+  youtubeMirrors: string;
   volumeStep: number;
   eqEnabled: boolean;
   eqBands: number[];
@@ -33,6 +36,9 @@ const defaults: Settings = {
   audioDevice: "auto",
   coverBackdrop: false,
   youtubeProxy: "",
+  youtubeRoute: "auto",
+  youtubeRelayUrl: "",
+  youtubeMirrors: "",
   volumeStep: 5,
   eqEnabled: false,
   eqBands: [0, 0, 0, 0, 0],
@@ -56,7 +62,20 @@ export async function loadSettings() {
     const eqBands = [0, 1, 2, 3, 4].map((index) =>
       Number(rawBands[index] ?? 0),
     );
-    settings.set({ ...defaults, ...loaded, panelPosition, theme, eqBands });
+    const rawRoute = String(loaded.youtubeRoute ?? "auto").toLowerCase();
+    const youtubeRoute = (["auto", "direct", "relay", "mirror"].includes(rawRoute)
+      ? rawRoute
+      : "auto") as Settings["youtubeRoute"];
+    settings.set({
+      ...defaults,
+      ...loaded,
+      panelPosition,
+      theme,
+      eqBands,
+      youtubeRoute,
+      youtubeRelayUrl: String(loaded.youtubeRelayUrl ?? ""),
+      youtubeMirrors: String(loaded.youtubeMirrors ?? ""),
+    });
   } catch {
     // Keep defaults until the Rust backend is available.
   }

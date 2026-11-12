@@ -3,7 +3,7 @@ use serde_json::Value;
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -73,11 +73,11 @@ impl PlayerHandle {
 
     pub fn load_with_proxy(&self, path: &str, proxy: Option<&str>) -> Result<(), String> {
         self.ensure_mpv()?;
-        if let Some(proxy) = proxy {
-            self.send(&serde_json::json!({
-                "command": ["set_property", "http-proxy", proxy]
-            }))?;
-        }
+        // Always set the property, including an empty value: a mirror stream
+        // must not inherit the proxy used by the previous YouTube track.
+        self.send(&serde_json::json!({
+            "command": ["set_property", "http-proxy", proxy.unwrap_or("")]
+        }))?;
         self.send(&serde_json::json!({ "command": ["loadfile", path] }))?;
         let mut state = PlayerState {
             playing: true,
@@ -194,7 +194,7 @@ impl PlayerHandle {
             .map(|inner| inner.volume)
             .unwrap_or(100);
         let volume_arg = format!("--volume={volume}");
-        let child = Command::new(&mpv)
+        let child = crate::process::hidden_command(&mpv)
             .args([
                 "--no-video",
                 "--idle=yes",
@@ -335,7 +335,7 @@ pub fn audio_devices() -> Vec<AudioDevice> {
     let Some(mpv) = find_mpv() else {
         return Vec::new();
     };
-    let output = Command::new(&mpv)
+    let output = crate::process::hidden_command(&mpv)
         .args(["--no-config", "--audio-device=help"])
         .stdin(Stdio::null())
         .output();

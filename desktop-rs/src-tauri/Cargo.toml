@@ -1,6 +1,6 @@
 [package]
 name = "onyx-desktop"
-version = "0.9.1"
+version = "0.9.5"
 description = "ONYX — music player and control center"
 edition = "2021"
 rust-version = "1.77"
@@ -28,3 +28,6 @@ reqwest = { version = "0.12", features = ["json", "rustls-tls", "blocking", "mul
 wait-timeout = "0.2"
 tiny_http = "0.12"
 if-addrs = "0.13"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_System_Pipes"] }

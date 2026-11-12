@@ -7,6 +7,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+#[cfg(windows)]
+use std::os::windows::io::AsRawHandle;
+#[cfg(windows)]
+use windows_sys::Win32::Foundation::HANDLE;
+#[cfg(windows)]
+use windows_sys::Win32::System::Pipes::PeekNamedPipe;
 
 /// ONYX's Discord application id (the same one the Kotlin desktop build uses).
 pub const DEFAULT_CLIENT_ID: &str = "1568847197397717073";
@@ -14,9 +20,25 @@ pub const DEFAULT_CLIENT_ID: &str = "1568847197397717073";
 /// Shared connection flag so the UI can show a real status dot instead of a
 /// hard-coded one. The presence worker is the only writer.
 static CONNECTED: AtomicBool = AtomicBool::new(false);
+static LAST_ERROR: Mutex<String> = Mutex::new(String::new());
 
 pub fn is_connected() -> bool {
     CONNECTED.load(Ordering::SeqCst)
+}
+
+pub fn last_error() -> String {
+    LAST_ERROR
+        .lock()
+        .map(|value| value.clone())
+        .unwrap_or_default()
+}
+
+fn set_error(message: impl Into<String>) {
+    let message = message.into();
+    if let Ok(mut guard) = LAST_ERROR.lock() {
+        *guard = message.clone();
+    }
+    crate::process::log(&format!("[discord] {message}"));
 }
 
 const OP_HANDSHAKE: u32 = 0;
@@ -65,12 +87,14 @@ impl DiscordRpc {
             while Instant::now() < deadline {
                 if ready.load(Ordering::SeqCst) {
                     rpc.connected.store(true, Ordering::SeqCst);
+                    crate::process::log(&format!("[discord] connected on pipe {slot}"));
                     return Some(rpc);
                 }
                 thread::sleep(Duration::from_millis(25));
             }
             rpc.close();
         }
+        set_error("Discord не запущен или IPC недоступен");
         None
     }
 
@@ -80,6 +104,7 @@ impl DiscordRpc {
 
     pub fn set_activity(&self, activity: Value) -> bool {
         if !self.is_connected() {
+            set_error("Discord не подключён");
             return false;
         }
         let payload = json!({
@@ -90,7 +115,11 @@ impl DiscordRpc {
                 "activity": activity
             }
         });
-        self.send(OP_FRAME, &payload.to_string())
+        let ok = self.send(OP_FRAME, &payload.to_string());
+        if !ok {
+            set_error("Не удалось отправить активность в Discord");
+        }
+        ok
     }
 
     pub fn clear(&self) {
@@ -138,8 +167,16 @@ fn spawn_reader(
     connected: Arc<AtomicBool>,
     ready: Arc<AtomicBool>,
 ) {
+    #[cfg(windows)]
+    let handle = reader.as_raw_handle() as usize;
     thread::spawn(move || {
         loop {
+            // On Windows a pending ReadFile blocks the next WriteFile on the
+            // same pipe. Only read when a full frame is actually available.
+            #[cfg(windows)]
+            if !wait_for_bytes(handle, 8) {
+                break;
+            }
             let mut header = [0u8; 8];
             if !read_exact(&mut reader, &mut header) {
                 break;
@@ -148,6 +185,10 @@ fn spawn_reader(
             let length =
                 u32::from_le_bytes([header[4], header[5], header[6], header[7]]) as usize;
             if length > 4 * 1024 * 1024 {
+                break;
+            }
+            #[cfg(windows)]
+            if !wait_for_bytes(handle, length as u32) {
                 break;
             }
             let mut data = vec![0u8; length];
@@ -163,16 +204,24 @@ fn spawn_reader(
                         }
                     }
                 }
-                OP_CLOSE => break,
+                OP_CLOSE => {
+                    crate::process::log("[discord] close frame");
+                    break;
+                }
                 OP_FRAME => {
+                    crate::process::log(&format!("[discord] frame {text}"));
                     if let Ok(value) = serde_json::from_str::<Value>(&text) {
                         match value.get("evt").and_then(Value::as_str) {
                             Some("READY") => {
                                 ready.store(true, Ordering::SeqCst);
                                 connected.store(true, Ordering::SeqCst);
+                                if let Ok(mut guard) = LAST_ERROR.lock() {
+                                    guard.clear();
+                                }
+                                crate::process::log("[discord] READY");
                             }
                             Some("ERROR") => {
-                                eprintln!("[discord] {value}");
+                                set_error(format!("Discord: {value}"));
                             }
                             _ => {}
                         }
@@ -183,6 +232,31 @@ fn spawn_reader(
         }
         connected.store(false, Ordering::SeqCst);
     });
+}
+
+#[cfg(windows)]
+fn wait_for_bytes(handle: usize, needed: u32) -> bool {
+    let handle = handle as HANDLE;
+    loop {
+        let mut available: u32 = 0;
+        let ok = unsafe {
+            PeekNamedPipe(
+                handle,
+                std::ptr::null_mut(),
+                0,
+                std::ptr::null_mut(),
+                &mut available,
+                std::ptr::null_mut(),
+            )
+        };
+        if ok == 0 {
+            return false;
+        }
+        if available >= needed {
+            return true;
+        }
+        thread::sleep(Duration::from_millis(15));
+    }
 }
 
 fn read_exact(file: &mut File, target: &mut [u8]) -> bool {
@@ -383,6 +457,7 @@ pub fn spawn_presence_worker(
                     duration,
                     cover_url.as_deref(),
                 );
+                crate::process::log(&format!("[discord] activity {activity}"));
                 if client.set_activity(activity) {
                     last_key = key;
                     last_playing = playing;
@@ -390,6 +465,8 @@ pub fn spawn_presence_worker(
                     last_position_at = now;
                     last_sent = now;
                     last_cover = cover_url;
+                } else {
+                    crate::process::log("[discord] set_activity failed");
                 }
             }
             thread::sleep(Duration::from_secs(1));

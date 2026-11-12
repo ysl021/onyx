@@ -55,6 +55,14 @@ body,
 #app {
   height: 100%;
   margin: 0;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+#app::-webkit-scrollbar {
+  display: none;
 }
 
 body {
@@ -298,7 +306,7 @@ textarea {
   width: 100%;
   max-width: 1180px;
   margin: 0 auto;
-  padding: 26px var(--page-pad) calc(var(--dock-height) + 48px);
+  padding: 26px var(--page-pad) 32px;
 }
 
 .page-list {

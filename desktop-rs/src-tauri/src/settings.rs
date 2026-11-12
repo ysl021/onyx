@@ -19,6 +19,11 @@ pub struct Settings {
     pub audio_device: String,
     pub cover_backdrop: bool,
     pub youtube_proxy: String,
+    /// auto | direct | relay | mirror
+    pub youtube_route: String,
+    pub youtube_relay_url: String,
+    /// Extra Piped/Invidious API bases, one per line or comma separated.
+    pub youtube_mirrors: String,
     pub volume_step: u8,
     pub eq_enabled: bool,
     pub eq_bands: Vec<f32>,
@@ -39,6 +44,9 @@ impl Default for Settings {
             audio_device: "auto".into(),
             cover_backdrop: false,
             youtube_proxy: String::new(),
+            youtube_route: "auto".into(),
+            youtube_relay_url: String::new(),
+            youtube_mirrors: String::new(),
             volume_step: 5,
             eq_enabled: false,
             eq_bands: vec![0.0; 5],
@@ -108,6 +116,11 @@ pub fn load() -> Settings {
     } else if device != settings.audio_device {
         settings.audio_device = device.to_string();
     }
+    let route = settings.youtube_route.trim().to_lowercase();
+    settings.youtube_route = match route.as_str() {
+        "direct" | "relay" | "mirror" => route,
+        _ => "auto".into(),
+    };
     settings
 }
 

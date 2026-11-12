@@ -93,6 +93,38 @@ pub fn proxy_works(candidate: &str) -> bool {
     response.starts_with("HTTP/") && response.contains(" 200") && tls_works(&mut stream)
 }
 
+/// A real YouTube check for the Settings button. CONNECT/TLS is not enough:
+/// a proxy can accept the tunnel and still fail on the actual API request.
+pub async fn proxy_check(proxy: &str) -> bool {
+    let proxy = proxy.trim().to_string();
+    if proxy.is_empty() {
+        return false;
+    }
+    let Some(ytdlp) = find_ytdlp() else {
+        return false;
+    };
+    let mut command = crate::process::hidden_command(&ytdlp);
+    command.args([
+        "ytsearch1:test music",
+        "--dump-single-json",
+        "--flat-playlist",
+        "--no-warnings",
+        "--no-progress",
+        "--skip-download",
+        "--socket-timeout",
+        "10",
+        "--proxy",
+        proxy.as_str(),
+    ]);
+    tauri::async_runtime::spawn_blocking(move || {
+        run_with_timeout(command, Duration::from_secs(15))
+            .map(|output| output.status.success())
+            .unwrap_or(false)
+    })
+    .await
+    .unwrap_or(false)
+}
+
 fn log_proxy(message: &str) {
     use std::io::Write;
     if let Ok(mut file) = std::fs::OpenOptions::new()
@@ -142,9 +174,10 @@ pub async fn search(query: &str, music_only: bool) -> Result<Vec<Video>, String>
     } else {
         query
     };
-    let proxy = active_proxy().ok_or(
-        "Включи VPN/прокси для YouTube (Happ/Clash) или укажи прокси в настройках.",
-    )?;
+    let proxy = tauri::async_runtime::spawn_blocking(active_proxy)
+        .await
+        .map_err(|error| error.to_string())?
+        .ok_or("Включи VPN/прокси для YouTube (Happ/Clash) или укажи прокси в настройках.")?;
     let ytdlp = find_ytdlp().ok_or("yt-dlp.exe не найден")?;
     let target = format!("ytsearch12:{query}");
     let args = vec![
@@ -152,14 +185,15 @@ pub async fn search(query: &str, music_only: bool) -> Result<Vec<Video>, String>
         "--dump-single-json".into(),
         "--flat-playlist".into(),
         "--no-warnings".into(),
+        "--no-progress".into(),
         "--skip-download".into(),
         "--proxy".into(),
         proxy,
     ];
-    let mut command = Command::new(&ytdlp);
+    let mut command = crate::process::hidden_command(&ytdlp);
     command.args(args);
     let output = tauri::async_runtime::spawn_blocking(move || {
-        run_with_timeout(command, Duration::from_secs(10))
+        run_with_timeout(command, Duration::from_secs(20))
     })
     .await
     .map_err(|error| error.to_string())??;
@@ -222,23 +256,25 @@ pub async fn playlist(url: &str) -> Result<Vec<Video>, String> {
     if url.is_empty() {
         return Ok(Vec::new());
     }
-    let proxy = active_proxy().ok_or(
-        "Включи VPN/прокси для YouTube (Happ/Clash) или укажи прокси в настройках.",
-    )?;
+    let proxy = tauri::async_runtime::spawn_blocking(active_proxy)
+        .await
+        .map_err(|error| error.to_string())?
+        .ok_or("Включи VPN/прокси для YouTube (Happ/Clash) или укажи прокси в настройках.")?;
     let ytdlp = find_ytdlp().ok_or("yt-dlp.exe не найден")?;
     let args = vec![
         url,
         "--dump-single-json".into(),
         "--flat-playlist".into(),
         "--no-warnings".into(),
+        "--no-progress".into(),
         "--skip-download".into(),
         "--proxy".into(),
         proxy,
     ];
-    let mut command = Command::new(&ytdlp);
+    let mut command = crate::process::hidden_command(&ytdlp);
     command.args(args);
     let output = tauri::async_runtime::spawn_blocking(move || {
-        run_with_timeout(command, Duration::from_secs(20))
+        run_with_timeout(command, Duration::from_secs(25))
     })
     .await
     .map_err(|error| error.to_string())??;
@@ -255,7 +291,7 @@ pub async fn resolve(id: &str, proxy: &str) -> Result<String, String> {
     let ytdlp = find_ytdlp().ok_or("yt-dlp.exe не найден")?;
     let url = format!("https://www.youtube.com/watch?v={id}");
     let proxy = proxy.to_string();
-    let mut command = Command::new(&ytdlp);
+    let mut command = crate::process::hidden_command(&ytdlp);
     command.args([
         "-g",
         "-f",
@@ -416,7 +452,7 @@ impl DownloadQueue {
                     let pid = state.pid;
                     state.cancel = true;
                     if let Some(pid) = pid {
-                        let _ = Command::new("taskkill")
+                        let _ = crate::process::hidden_command("taskkill")
                             .args(["/PID", &pid.to_string(), "/F"])
                             .output();
                     }
@@ -520,7 +556,7 @@ impl DownloadQueue {
 
         let template = temp.join(format!("{}.%(ext)s", job.video_id));
         let url = format!("https://www.youtube.com/watch?v={}", job.video_id);
-        let mut command = Command::new(&ytdlp);
+        let mut command = crate::process::hidden_command(&ytdlp);
         command.args([
             "-f",
             "bestaudio[ext=m4a]/bestaudio",
@@ -550,8 +586,8 @@ impl DownloadQueue {
             if let Ok(mut state) = watchdog_state.lock() {
                 if state.pid == Some(pid) {
                     state.timed_out = true;
-                    let _ = Command::new("taskkill")
-                        .args(["/PID", &pid.to_string(), "/F"])
+                    let _ = crate::process::hidden_command("taskkill")
+                        .args(["/PID", &pid.to_string(), "/T", "/F"])
                         .output();
                 }
             }
@@ -774,7 +810,7 @@ fn encode_with(
     start: f64,
     end: f64,
 ) -> Result<(), String> {
-    let mut command = Command::new(mpv);
+    let mut command = crate::process::hidden_command(mpv);
     command.args([
         "--no-config",
         "--no-video",
@@ -948,20 +984,51 @@ fn run_with_timeout(
     mut command: Command,
     timeout: Duration,
 ) -> Result<std::process::Output, String> {
-    let mut child = command
+    command
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|error| error.to_string())?;
-    match child
-        .wait_timeout(timeout)
-        .map_err(|error| error.to_string())?
-    {
-        Some(_) => child.wait_with_output().map_err(|error| error.to_string()),
+        .stderr(Stdio::piped());
+    let mut child = command.spawn().map_err(|error| error.to_string())?;
+    let pid = child.id();
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+    // Read both pipes while the process is still running. Waiting for the
+    // process first deadlocks as soon as yt-dlp fills the 64 KB pipe buffer.
+    let stdout_thread = thread::spawn(move || {
+        let mut buffer = Vec::new();
+        if let Some(mut pipe) = stdout {
+            let _ = pipe.read_to_end(&mut buffer);
+        }
+        buffer
+    });
+    let stderr_thread = thread::spawn(move || {
+        let mut buffer = Vec::new();
+        if let Some(mut pipe) = stderr {
+            let _ = pipe.read_to_end(&mut buffer);
+        }
+        buffer
+    });
+    let status = match child.wait_timeout(timeout).map_err(|error| error.to_string())? {
+        Some(status) => status,
         None => {
+            // yt-dlp.exe is a PyInstaller bootloader: killing the parent alone
+            // leaves the real Python process alive with the pipes open, which
+            // used to make a 15 s timeout take 80+ seconds.
+            let _ = crate::process::hidden_command("taskkill")
+                .args(["/PID", &pid.to_string(), "/T", "/F"])
+                .output();
             let _ = child.kill();
             let _ = child.wait();
-            Err("yt-dlp не ответил вовремя. Проверь VPN/прокси.".into())
+            let _ = stdout_thread.join();
+            let _ = stderr_thread.join();
+            return Err("yt-dlp не ответил вовремя. Проверь маршрут YouTube.".into());
         }
-    }
+    };
+    let stdout = stdout_thread.join().unwrap_or_default();
+    let stderr = stderr_thread.join().unwrap_or_default();
+    Ok(std::process::Output {
+        status,
+        stdout,
+        stderr,
+    })
 }

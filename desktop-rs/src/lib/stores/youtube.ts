@@ -28,15 +28,56 @@ export type DownloadJob = {
   createdAt: number;
 };
 
+export type RouteStatus = {
+  route: string;
+  label: string;
+  detail: string;
+  relay: string;
+  mirrors: string;
+};
+
 export const videos = writable<Video[]>([]);
+export const recommended = writable<Video[]>([]);
+export const home = writable<Video[]>([]);
+export const routeStatus = writable<RouteStatus | null>(null);
 export const searching = writable(false);
 export const playingId = writable<string | null>(null);
 export const downloads = writable<DownloadJob[]>([]);
+
+export async function loadRouteStatus() {
+  try {
+    routeStatus.set(await invoke<RouteStatus>("youtube_route_status"));
+  } catch {
+    routeStatus.set(null);
+  }
+}
+
+export async function loadRelated(video: Video) {
+  try {
+    const items = await invoke<Video[]>("youtube_related", {
+      videoId: video.id,
+      title: video.title,
+      artist: video.uploader,
+    });
+    recommended.set(items.filter((item) => item.id !== video.id).slice(0, 20));
+  } catch {
+    recommended.set([]);
+  }
+}
+
+export async function loadHome(seed?: string) {
+  try {
+    home.set(await invoke<Video[]>("youtube_home", { seed: seed ?? null }));
+  } catch {
+    home.set([]);
+  }
+}
 
 export async function search(query: string, musicOnly = true) {
   const clean = query.trim();
   if (!clean) return;
   searching.set(true);
+  recommended.set([]);
   try {
     videos.set(
       await invoke<Video[]>("youtube_search", {
@@ -46,6 +87,7 @@ export async function search(query: string, musicOnly = true) {
     );
   } finally {
     searching.set(false);
+    await loadRouteStatus();
   }
 }
 
@@ -77,6 +119,8 @@ export async function playVideo(video: Video) {
     });
     const volume = get(settings).volume;
     await invoke("player_volume", { volume }).catch(() => {});
+    loadRelated(video).catch(() => {});
+    loadRouteStatus().catch(() => {});
     await invoke("youtube_play", {
       id: video.id,
       title: video.title,

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
+  import { get } from "svelte/store";
   import { onDestroy, onMount } from "svelte";
   import Glass from "../components/Glass.svelte";
   import Icon from "../components/Icon.svelte";
@@ -9,17 +10,23 @@
     cancelDownload,
     clearDownloads,
     downloads,
+    home,
     loadDownloads,
+    loadHome,
     loadPlaylist,
+    loadRouteStatus,
     playVideo,
     playingId,
+    recommended,
     removeDownload,
+    routeStatus,
     searching,
     search,
     videos,
   } from "../stores/youtube";
   import type { Video } from "../stores/youtube";
   import { queue } from "../stores/queue";
+  import { currentTrack } from "../stores/player";
   import { toggleFavorite } from "../stores/favorites";
   import type { Track } from "../stores/library";
 
@@ -45,6 +52,12 @@
 
   onMount(() => {
     loadDownloads();
+    loadRouteStatus();
+    const track = get(currentTrack);
+    const seed = track
+      ? `${track.artist} ${track.title}`.trim()
+      : recent[0] ?? "";
+    loadHome(seed || undefined);
     polling = setInterval(() => {
       if (
         $downloads.some(
@@ -222,6 +235,19 @@
     }
   }
 
+  function routeLabel(route: string) {
+    switch (route) {
+      case "mirror":
+        return "Зеркало";
+      case "relay":
+        return "Ретранслятор";
+      case "direct":
+        return "Напрямую";
+      default:
+        return "Маршрут не найден";
+    }
+  }
+
   function statusLabel(status: string) {
     switch (status) {
       case "queued":
@@ -291,6 +317,17 @@
       Микс по ссылке
     </button>
     <span class="source">onyx</span>
+    {#if $routeStatus}
+      <button
+        class="pill route-pill"
+        class:selected={$routeStatus.route !== "none"}
+        title={$routeStatus.detail}
+        onclick={onOpenSettings}
+      >
+        <Icon name="cast" size={13} />
+        {routeLabel($routeStatus.route)}
+      </button>
+    {/if}
   </div>
 
   <div class="music-row">
@@ -410,6 +447,40 @@
         {/each}
       </div>
     {/if}
+
+    {#if $home.length > 0}
+      <div class="section-label">Рекомендации</div>
+      <div class="result-list">
+        {#each $home as video (video.id)}
+          <div class="result-row">
+            <button
+              class="result-main"
+              onclick={() => playVideo(video).catch((e) => (error = String(e)))}
+              disabled={$playingId === video.id}
+            >
+              <Cover src={video.thumbnail} size={56} radius={11} icon={18} />
+              <div class="result-meta">
+                <div class="result-title">{video.title}</div>
+                <div class="result-sub">
+                  {[video.uploader, fmt(video.durationMs)].filter(Boolean).join(" · ")}
+                </div>
+              </div>
+              <div class="play-icon">
+                <Icon name={$playingId === video.id ? "pause" : "play"} size={15} />
+              </div>
+            </button>
+            <div class="result-actions">
+              <button class="icon-btn" aria-label="В очередь" onclick={() => enqueue(video)}>
+                <Icon name="queue-music" size={17} />
+              </button>
+              <button class="icon-btn" aria-label="Скачать" onclick={() => openDownload(video)}>
+                <Icon name="download" size={17} />
+              </button>
+            </div>
+          </div>
+        {/each}
+      </div>
+    {/if}
   {:else}
     <div class="section-label">Результаты</div>
     <div class="result-list">
@@ -448,6 +519,40 @@
               onclick={() => toggleFavorite(videoTrack(video))}
             >
               <Icon name="favorite-border" size={17} />
+            </button>
+            <button class="icon-btn" aria-label="Скачать" onclick={() => openDownload(video)}>
+              <Icon name="download" size={17} />
+            </button>
+          </div>
+        </div>
+      {/each}
+    </div>
+  {/if}
+
+  {#if $recommended.length > 0}
+    <div class="section-label">Рекомендации</div>
+    <div class="result-list">
+      {#each $recommended as video (video.id)}
+        <div class="result-row">
+          <button
+            class="result-main"
+            onclick={() => playVideo(video).catch((e) => (error = String(e)))}
+            disabled={$playingId === video.id}
+          >
+            <Cover src={video.thumbnail} size={56} radius={11} icon={18} />
+            <div class="result-meta">
+              <div class="result-title">{video.title}</div>
+              <div class="result-sub">
+                {[video.uploader, fmt(video.durationMs)].filter(Boolean).join(" · ")}
+              </div>
+            </div>
+            <div class="play-icon">
+              <Icon name={$playingId === video.id ? "pause" : "play"} size={15} />
+            </div>
+          </button>
+          <div class="result-actions">
+            <button class="icon-btn" aria-label="В очередь" onclick={() => enqueue(video)}>
+              <Icon name="queue-music" size={17} />
             </button>
             <button class="icon-btn" aria-label="Скачать" onclick={() => openDownload(video)}>
               <Icon name="download" size={17} />
@@ -580,6 +685,13 @@
   .source {
     color: var(--faint);
     font-size: 12px;
+  }
+
+  .route-pill {
+    margin-left: auto;
+    min-height: 34px;
+    padding: 0 12px;
+    font-size: 11px;
   }
 
   .music-row {

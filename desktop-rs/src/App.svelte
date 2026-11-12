@@ -56,6 +56,7 @@
   <NavDock
     position={$settings.panelPosition}
     active={active}
+    inline
     onSelect={(key) => {
       if (key === "settings") settingsTab = "main";
       active = key;
@@ -96,6 +97,8 @@
 <style>
   .shell {
     position: relative;
+    display: flex;
+    flex-direction: column;
     height: 100%;
     overflow: hidden;
   }
@@ -103,9 +106,16 @@
   .content {
     position: relative;
     z-index: 1;
-    height: 100%;
+    flex: 1;
+    min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .content::-webkit-scrollbar {
+    display: none;
   }
 
   .backdrop {
@@ -131,15 +141,24 @@
     pointer-events: none;
   }
 
-  [data-panel="top"] .content {
-    padding-top: 104px;
+  .shell[data-panel="left"],
+  .shell[data-panel="right"] {
+    flex-direction: row;
   }
 
-  [data-panel="left"] .content {
-    padding-left: 120px;
+  .shell[data-panel="bottom"] .content {
+    order: 1;
   }
 
-  [data-panel="right"] .content {
-    padding-right: 120px;
+  .shell[data-panel="top"] .content {
+    order: 2;
+  }
+
+  .shell[data-panel="left"] .content {
+    order: 2;
+  }
+
+  .shell[data-panel="right"] .content {
+    order: 1;
   }
 </style>

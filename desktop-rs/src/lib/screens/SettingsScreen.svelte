@@ -69,10 +69,24 @@
   let audioDevices = $state<{ name: string; description: string }[]>([]);
   let polling: ReturnType<typeof setInterval> | null = null;
 
+  type RouteStatus = {
+    route: string;
+    label: string;
+    detail: string;
+    relay: string;
+    mirrors: string;
+  };
+
+  let routeStatus = $state<RouteStatus | null>(null);
+  let routeBusy = $state(false);
+
   onMount(() => {
     proxyValue = $settings.youtubeProxy;
     reloadDevices();
     refreshHub();
+    invoke<RouteStatus>("youtube_route_status")
+      .then((value) => (routeStatus = value))
+      .catch(() => {});
     polling = setInterval(refreshHub, 2000);
   });
 
@@ -175,10 +189,12 @@
   async function testDiscord() {
     discordStatus = "Проверяю…";
     try {
-      const ok = await invoke<boolean>("discord_test");
-      discordStatus = ok
+      const state = await invoke<{ connected: boolean; error: string }>(
+        "discord_state",
+      );
+      discordStatus = state.connected
         ? "Discord подключён"
-        : "Discord не запущен — открой приложение Discord";
+        : `Discord не подключён${state.error ? `: ${state.error}` : ""}`;
     } catch (e) {
       discordStatus = String(e);
     }
@@ -224,6 +240,51 @@
       }
     } catch (e) {
       proxyStatus = String(e);
+    }
+  }
+
+  function routeName(route: string) {
+    switch (route) {
+      case "mirror":
+        return "Зеркало";
+      case "relay":
+        return "Ретранслятор";
+      case "direct":
+        return "Напрямую";
+      default:
+        return "Не найден";
+    }
+  }
+
+  async function setRoute(route: "auto" | "direct" | "relay" | "mirror") {
+    await saveSettings({ ...$settings, youtubeRoute: route });
+    routeStatus = null;
+  }
+
+  async function saveRelay(value: string) {
+    await saveSettings({ ...$settings, youtubeRelayUrl: value.trim() });
+    routeStatus = null;
+  }
+
+  async function saveMirrors(value: string) {
+    await saveSettings({ ...$settings, youtubeMirrors: value.trim() });
+    routeStatus = null;
+  }
+
+  async function checkRoute() {
+    routeBusy = true;
+    try {
+      routeStatus = await invoke<RouteStatus>("youtube_route_check");
+    } catch (e) {
+      routeStatus = {
+        route: "none",
+        label: "Не найден",
+        detail: String(e),
+        relay: $settings.youtubeRelayUrl,
+        mirrors: $settings.youtubeMirrors,
+      };
+    } finally {
+      routeBusy = false;
     }
   }
 
@@ -702,8 +763,9 @@
     <Glass class="card" padding={18}>
       <div class="section-label">YouTube · прокси</div>
       <p class="card-text">
-        Пусто — авто-определение (Happ 20808, v2rayN 10809, Clash 7890). Можно
-        указать вручную: http://127.0.0.1:20808 или socks5://127.0.0.1:10808.
+        Нужен только для маршрута «Напрямую». Пусто — авто-определение (Happ
+        20808, v2rayN 10809, Clash 7890). «Проверить» делает реальный запрос
+        yt-dlp: прокси может принимать соединение, но не пускать YouTube.
       </p>
       <div class="field-row">
         <label class="wide">
@@ -721,6 +783,76 @@
       </div>
       {#if proxyStatus}
         <div class="status">{proxyStatus}</div>
+      {/if}
+    </Glass>
+
+    <Glass class="card" padding={18}>
+      <div class="section-label">YouTube · маршрут</div>
+      <p class="card-text">
+        Авто: ретранслятор → зеркало. Для VPN выбери «Напрямую». Зеркало
+        работает без VPN, но зависит от доступности инстанса. Ретранслятор —
+        свой сервер с JSON API.
+      </p>
+      <div class="pill-row">
+        <button
+          class="pill"
+          class:selected={$settings.youtubeRoute === "auto"}
+          onclick={() => setRoute("auto")}
+        >
+          Авто
+        </button>
+        <button
+          class="pill"
+          class:selected={$settings.youtubeRoute === "direct"}
+          onclick={() => setRoute("direct")}
+        >
+          Напрямую
+        </button>
+        <button
+          class="pill"
+          class:selected={$settings.youtubeRoute === "relay"}
+          onclick={() => setRoute("relay")}
+        >
+          Ретранслятор
+        </button>
+        <button
+          class="pill"
+          class:selected={$settings.youtubeRoute === "mirror"}
+          onclick={() => setRoute("mirror")}
+        >
+          Зеркало
+        </button>
+      </div>
+      <div class="field-row">
+        <label class="wide">
+          <span>URL ретранслятора</span>
+          <input
+            value={$settings.youtubeRelayUrl}
+            placeholder="https://relay.example.com"
+            onchange={(event) => saveRelay(event.currentTarget.value)}
+          />
+        </label>
+      </div>
+      <div class="field-row">
+        <label class="wide">
+          <span>Свои зеркала (через запятую)</span>
+          <input
+            value={$settings.youtubeMirrors}
+            placeholder="https://api.piped.example"
+            onchange={(event) => saveMirrors(event.currentTarget.value)}
+          />
+        </label>
+      </div>
+      <div class="pill-row">
+        <button class="pill" onclick={checkRoute} disabled={routeBusy}>
+          {routeBusy ? "Проверяю…" : "Проверить маршрут"}
+        </button>
+      </div>
+      {#if routeStatus}
+        <div class="status">
+          Маршрут: {routeName(routeStatus.route)}
+          {#if routeStatus.detail} · {routeStatus.detail}{/if}
+        </div>
       {/if}
     </Glass>
   {/if}

@@ -4,6 +4,7 @@ mod discord;
 mod favorites;
 mod hub;
 mod library;
+mod process;
 mod lyrics;
 mod player;
 mod playlists;
@@ -11,6 +12,7 @@ mod settings;
 mod update;
 mod visualizer;
 mod youtube;
+mod youtube_router;
 
 use std::sync::{Arc, Mutex};
 
@@ -93,6 +95,10 @@ pub fn run() {
             commands::favorites_toggle,
             commands::lyrics_fetch,
             commands::youtube_search,
+            commands::youtube_home,
+            commands::youtube_related,
+            commands::youtube_route_status,
+            commands::youtube_route_check,
             commands::youtube_play,
             commands::youtube_playlist,
             commands::youtube_proxy_status,
@@ -107,6 +113,7 @@ pub fn run() {
             commands::visualizer_bands,
             commands::discord_test,
             commands::discord_status,
+            commands::discord_state,
             commands::open_sound_settings,
             commands::export_data,
             commands::import_data,

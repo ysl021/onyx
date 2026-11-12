@@ -7,10 +7,12 @@
     position = "bottom",
     active,
     onSelect,
+    inline = false,
   }: {
     position?: PanelPosition;
     active: string;
     onSelect: (key: string) => void;
+    inline?: boolean;
   } = $props();
 
   const items = [
@@ -25,7 +27,7 @@
 </script>
 
 {#if position === "bottom" || position === "top"}
-  <div class="dock-wrap {position}">
+  <div class="dock-wrap {position}" class:inline>
     <Glass strong padding={0} class="dock">
       <div class="dock-inner">
         {#each items as item}
@@ -44,7 +46,7 @@
     </Glass>
   </div>
 {:else}
-  <div class="rail-wrap {position}">
+  <div class="rail-wrap {position}" class:inline>
     <Glass strong padding={0} class="rail">
       <div class="rail-inner">
         {#each items as item}
@@ -76,11 +78,11 @@
   }
 
   .dock-wrap.bottom {
-    bottom: 12px;
+    order: 2;
   }
 
   .dock-wrap.top {
-    top: 12px;
+    order: 1;
   }
 
   .dock-wrap :global(.dock) {
@@ -149,11 +151,11 @@
   }
 
   .rail-wrap.left {
-    left: 8px;
+    order: 1;
   }
 
   .rail-wrap.right {
-    right: 8px;
+    order: 2;
   }
 
   .rail-wrap :global(.rail) {
@@ -188,5 +190,33 @@
   .rail-inner button.active .item {
     background: var(--accent);
     color: #08080a;
+  }
+
+  .dock-wrap.inline {
+    position: static;
+    left: auto;
+    right: auto;
+    top: auto;
+    bottom: auto;
+    width: 100%;
+    padding: 6px 16px 12px;
+  }
+
+  .dock-wrap.inline :global(.dock) {
+    width: min(760px, 100%);
+  }
+
+  .rail-wrap.inline {
+    position: static;
+    left: auto;
+    right: auto;
+    top: auto;
+    bottom: auto;
+    width: 108px;
+    padding: 8px;
+  }
+
+  .rail-wrap.inline :global(.rail) {
+    width: 92px;
   }
 </style>

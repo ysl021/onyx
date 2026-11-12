@@ -7,6 +7,7 @@ use crate::playlists::{MergePlaylist, MergeTrack, Playlist, PlaylistStore, Playl
 use crate::settings::{self, Settings};
 use crate::visualizer::Visualizer;
 use crate::youtube::{DownloadJob, DownloadQueue, DownloadSection, Video};
+use serde::Serialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tauri::State;
@@ -179,7 +180,31 @@ pub async fn youtube_search(
     query: String,
     music_only: Option<bool>,
 ) -> Result<Vec<Video>, String> {
-    crate::youtube::search(&query, music_only.unwrap_or(true)).await
+    crate::youtube_router::search(&query, music_only.unwrap_or(true)).await
+}
+
+#[tauri::command]
+pub async fn youtube_home(seed: Option<String>) -> Result<Vec<Video>, String> {
+    crate::youtube_router::home(seed).await
+}
+
+#[tauri::command]
+pub async fn youtube_related(
+    video_id: String,
+    title: String,
+    artist: String,
+) -> Result<Vec<Video>, String> {
+    crate::youtube_router::related(&video_id, &title, &artist).await
+}
+
+#[tauri::command]
+pub fn youtube_route_status() -> crate::youtube_router::RouteStatus {
+    crate::youtube_router::status()
+}
+
+#[tauri::command]
+pub async fn youtube_route_check() -> crate::youtube_router::RouteStatus {
+    crate::youtube_router::check().await
 }
 
 #[tauri::command]
@@ -191,18 +216,20 @@ pub async fn youtube_play(
     artist: Option<String>,
     duration_ms: Option<u64>,
 ) -> Result<(), String> {
-    let proxy = crate::youtube::active_proxy().ok_or(
-        "Включи VPN/прокси для YouTube (Happ/Clash) или укажи прокси в настройках.",
-    )?;
-    let url = crate::youtube::resolve(&id, &proxy).await?;
-    player.load_with_proxy(&url, Some(&proxy))?;
+    let stream = crate::youtube_router::stream(
+        &id,
+        title.as_deref().unwrap_or(""),
+        artist.as_deref().unwrap_or(""),
+    )
+    .await?;
+    player.load_with_proxy(&stream.url, stream.proxy.as_deref())?;
     player.set_metadata(
         title.as_deref().unwrap_or(""),
         artist.as_deref().unwrap_or(""),
         "",
-        duration_ms.unwrap_or(0),
+        duration_ms.unwrap_or(stream.duration_ms),
     );
-    let _ = visualizer.prepare(&url, Some(&proxy));
+    let _ = visualizer.prepare(&stream.url, stream.proxy.as_deref());
     Ok(())
 }
 
@@ -252,8 +279,10 @@ pub fn visualizer_bands(
 }
 
 #[tauri::command]
-pub fn audio_devices() -> Vec<AudioDevice> {
-    crate::player::audio_devices()
+pub async fn audio_devices() -> Vec<AudioDevice> {
+    tauri::async_runtime::spawn_blocking(crate::player::audio_devices)
+        .await
+        .unwrap_or_default()
 }
 
 #[tauri::command]
@@ -278,21 +307,24 @@ pub fn discord_status() -> bool {
     crate::discord::is_connected()
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DiscordState {
+    pub connected: bool,
+    pub error: String,
+}
+
+#[tauri::command]
+pub fn discord_state() -> DiscordState {
+    DiscordState {
+        connected: crate::discord::is_connected(),
+        error: crate::discord::last_error(),
+    }
+}
+
 #[tauri::command]
 pub async fn discord_test() -> bool {
-    tauri::async_runtime::spawn_blocking(|| {
-        let client_id = {
-            let settings = settings::load();
-            if settings.discord_client_id.trim().is_empty() {
-                crate::discord::DEFAULT_CLIENT_ID.to_string()
-            } else {
-                settings.discord_client_id
-            }
-        };
-        crate::discord::DiscordRpc::connect(&client_id).is_some()
-    })
-    .await
-    .unwrap_or(false)
+    crate::discord::is_connected()
 }
 
 #[tauri::command]
@@ -390,13 +422,18 @@ pub fn open_sound_settings() -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn cover_lookup(
+pub async fn cover_lookup(
     title: String,
     artist: String,
     album: String,
     path: Option<String>,
 ) -> Option<String> {
-    crate::covers::resolve(&title, &artist, &album, path.as_deref())
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::covers::resolve(&title, &artist, &album, path.as_deref())
+    })
+    .await
+    .ok()
+    .flatten()
 }
 
 #[tauri::command]
@@ -496,14 +533,19 @@ pub async fn youtube_playlist(url: String) -> Result<Vec<Video>, String> {
 }
 
 #[tauri::command]
-pub fn youtube_proxy_status() -> Option<String> {
-    crate::youtube::invalidate_proxy();
-    crate::youtube::active_proxy()
+pub async fn youtube_proxy_status() -> Option<String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        crate::youtube::invalidate_proxy();
+        crate::youtube::active_proxy()
+    })
+    .await
+    .ok()
+    .flatten()
 }
 
 #[tauri::command]
-pub fn youtube_proxy_check(proxy: String) -> bool {
-    crate::youtube::proxy_works(proxy.trim())
+pub async fn youtube_proxy_check(proxy: String) -> bool {
+    crate::youtube::proxy_check(&proxy).await
 }
 
 #[tauri::command]

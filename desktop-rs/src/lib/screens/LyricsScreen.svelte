@@ -134,7 +134,7 @@
     flex-direction: column;
     gap: 14px;
     min-height: calc(100vh - 24px);
-    padding-bottom: calc(var(--dock-height) + 24px);
+    padding-bottom: 24px;
   }
 
   .head {
@@ -226,7 +226,7 @@
 
   .toolbar-wrap {
     position: sticky;
-    bottom: calc(var(--dock-height) + 22px);
+    bottom: 18px;
     margin-top: 0;
   }
 

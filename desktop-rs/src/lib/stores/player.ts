@@ -132,21 +132,28 @@ export async function seekTo(seconds: number) {
 /** Poll mpv twice a second and advance the queue when a track ends. */
 export function startPolling() {
   let wasPlaying = false;
+  let busy = false;
   const id = setInterval(async () => {
-    await refreshPlayer();
-    const state = get(player);
-    const finished =
-      wasPlaying &&
-      !state.playing &&
-      state.durationMs > 0 &&
-      (state.positionMs >= state.durationMs - 1500 || state.positionMs === 0);
-    wasPlaying = state.playing;
-    if (!finished) return;
-    if (get(repeatOne)) {
-      const path = get(currentPath);
-      if (path) await playTrack(path, get(currentTrack) ?? undefined);
-    } else {
-      await playNext();
+    if (busy) return;
+    busy = true;
+    try {
+      await refreshPlayer();
+      const state = get(player);
+      const finished =
+        wasPlaying &&
+        !state.playing &&
+        state.durationMs > 0 &&
+        (state.positionMs >= state.durationMs - 1500 || state.positionMs === 0);
+      wasPlaying = state.playing;
+      if (!finished) return;
+      if (get(repeatOne)) {
+        const path = get(currentPath);
+        if (path) await playTrack(path, get(currentTrack) ?? undefined);
+      } else {
+        await playNext();
+      }
+    } finally {
+      busy = false;
     }
   }, 500);
   return () => clearInterval(id);

@@ -374,7 +374,7 @@
           <div class="queue-empty">Очередь пуста</div>
         {:else}
           <div class="queue-list">
-            {#each $queue as track, index (index)}
+            {#each $queue.slice(0, 50) as track, index (index)}
               <div class="queue-row" class:current={index === $queueIndex}>
                 <span class="queue-num">{String(index + 1).padStart(2, "0")}</span>
                 <button class="queue-main" onclick={() => playQueueAt(index)}>
@@ -399,6 +399,9 @@
               </div>
             {/each}
           </div>
+          {#if $queue.length > 50}
+            <div class="queue-more">+{$queue.length - 50} треков дальше…</div>
+          {/if}
         {/if}
       </Glass>
     </aside>
@@ -479,7 +482,7 @@
 <style>
   .player-page {
     max-width: 1280px;
-    padding: 34px 40px calc(var(--dock-height) + 44px);
+    padding: 34px 40px 28px;
   }
 
   .player-grid {
@@ -493,6 +496,9 @@
     display: flex;
     flex-direction: column;
     min-width: 0;
+    position: sticky;
+    top: 0;
+    align-self: start;
   }
 
   .head {
@@ -959,6 +965,12 @@
     width: 28px;
   }
 
+  .queue-more {
+    margin-top: 8px;
+    color: var(--faint);
+    font-size: 10px;
+  }
+
   @media (max-width: 1080px) {
     .player-grid {
       grid-template-columns: minmax(0, 1fr);
@@ -967,11 +979,15 @@
 
     .player-page {
       max-width: 820px;
-      padding: 22px var(--page-pad) calc(var(--dock-height) + 48px);
+      padding: 22px var(--page-pad) 24px;
     }
 
     .head {
       margin-bottom: 10px;
+    }
+
+    .left {
+      position: static;
     }
   }
 
