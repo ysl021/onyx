@@ -106,6 +106,7 @@ pub fn run() {
             commands::visualizer_stop,
             commands::visualizer_bands,
             commands::discord_test,
+            commands::discord_status,
             commands::open_sound_settings,
             commands::export_data,
             commands::import_data,

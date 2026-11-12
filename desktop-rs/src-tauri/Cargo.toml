@@ -1,6 +1,6 @@
 [package]
 name = "onyx-desktop"
-version = "0.9.0"
+version = "0.9.1"
 description = "ONYX — music player and control center"
 edition = "2021"
 rust-version = "1.77"

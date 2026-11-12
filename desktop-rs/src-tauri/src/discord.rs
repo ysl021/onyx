@@ -11,6 +11,14 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 /// ONYX's Discord application id (the same one the Kotlin desktop build uses).
 pub const DEFAULT_CLIENT_ID: &str = "1568847197397717073";
 
+/// Shared connection flag so the UI can show a real status dot instead of a
+/// hard-coded one. The presence worker is the only writer.
+static CONNECTED: AtomicBool = AtomicBool::new(false);
+
+pub fn is_connected() -> bool {
+    CONNECTED.load(Ordering::SeqCst)
+}
+
 const OP_HANDSHAKE: u32 = 0;
 const OP_FRAME: u32 = 1;
 const OP_CLOSE: u32 = 2;
@@ -232,6 +240,7 @@ pub fn spawn_presence_worker(
                 // Keep the IPC connection alive: closing it would leave the
                 // reader thread holding a handle, and a second connection with
                 // the same client id makes Discord drop both.
+                CONNECTED.store(false, Ordering::SeqCst);
                 if let Some(client) = rpc.as_ref() {
                     client.clear();
                 }
@@ -247,17 +256,21 @@ pub fn spawn_presence_worker(
                 settings.discord_client_id.trim()
             };
             if rpc.as_ref().map(|client| !client.is_connected()).unwrap_or(true) {
+                CONNECTED.store(false, Ordering::SeqCst);
                 if let Some(client) = rpc.take() {
                     client.close();
                 }
                 rpc = DiscordRpc::connect(client_id);
+                CONNECTED.store(rpc.is_some(), Ordering::SeqCst);
                 last_key.clear();
                 last_cover = None;
             }
             let Some(client) = rpc.as_ref() else {
+                CONNECTED.store(false, Ordering::SeqCst);
                 thread::sleep(Duration::from_secs(3));
                 continue;
             };
+            CONNECTED.store(client.is_connected(), Ordering::SeqCst);
 
             let state = player.state();
             let state_path = state.path.clone();

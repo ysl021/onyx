@@ -356,7 +356,16 @@ pub fn audio_devices() -> Vec<AudioDevice> {
             ),
             _ => (line.to_string(), line.to_string()),
         };
-        if name.is_empty() || name == "auto" || name == "no" {
+        // mpv prints the autoselect device as `'auto' (Autoselect device)`.
+        // Strip the quotes, otherwise the Settings screen shows a device
+        // literally called `'auto'`.
+        let name = name
+            .trim()
+            .trim_matches('\'')
+            .trim_matches('"')
+            .trim()
+            .to_string();
+        if name.is_empty() || name.eq_ignore_ascii_case("auto") || name.eq_ignore_ascii_case("no") {
             continue;
         }
         devices.push(AudioDevice { name, description });

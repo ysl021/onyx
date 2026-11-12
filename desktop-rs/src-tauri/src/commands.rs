@@ -274,6 +274,11 @@ pub fn player_set_eq(
 }
 
 #[tauri::command]
+pub fn discord_status() -> bool {
+    crate::discord::is_connected()
+}
+
+#[tauri::command]
 pub async fn discord_test() -> bool {
     tauri::async_runtime::spawn_blocking(|| {
         let client_id = {

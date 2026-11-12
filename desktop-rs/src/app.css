@@ -38,7 +38,7 @@
   --accent: #f2f2f0;
   --radius-card: 26px;
   --radius-pill: 999px;
-  --page-pad: 20px;
+  --page-pad: 28px;
   --dock-height: 86px;
   color-scheme: dark;
   font-family: "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -296,9 +296,9 @@ textarea {
 /* Generic full-page scroll column. */
 .page {
   width: 100%;
-  max-width: 820px;
+  max-width: 1180px;
   margin: 0 auto;
-  padding: 22px var(--page-pad) calc(var(--dock-height) + 48px);
+  padding: 26px var(--page-pad) calc(var(--dock-height) + 48px);
 }
 
 .page-list {

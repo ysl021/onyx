@@ -38,6 +38,7 @@
     startSleepTimer,
   } from "../stores/sleep";
   import {
+    saveSettings,
     setAudioDevice,
     setVolume,
     settings,
@@ -48,21 +49,36 @@
   let showPlaylistPicker = $state(false);
   let showDevicePicker = $state(false);
   let audioDevices = $state<{ name: string; description: string }[]>([]);
+  let discordOnline = $state(false);
+  let discordPoll: ReturnType<typeof setInterval> | null = null;
 
   onMount(() => {
     reloadDevices();
+    invoke<boolean>("discord_status")
+      .then((value) => (discordOnline = value))
+      .catch(() => {});
+    discordPoll = setInterval(() => {
+      invoke<boolean>("discord_status")
+        .then((value) => (discordOnline = value))
+        .catch(() => {});
+    }, 3000);
+    return () => {
+      if (discordPoll) clearInterval(discordPoll);
+    };
   });
+
+  async function toggleDiscord() {
+    await saveSettings({
+      ...$settings,
+      discordEnabled: !$settings.discordEnabled,
+    });
+  }
 
   const progress = derived(player, ($p) =>
     $p.durationMs > 0 ? Math.min(100, ($p.positionMs / $p.durationMs) * 100) : 0,
   );
   const remaining = derived(player, ($p) =>
     Math.max(0, $p.durationMs - $p.positionMs),
-  );
-  const upcoming = derived([queue, queueIndex], ([$q, $i]) =>
-    $q
-      .slice($i + 1)
-      .map((track, offset) => ({ track, index: $i + 1 + offset })),
   );
   const isFavorite = $derived(
     $currentTrack ? $favorites.includes(favoriteIdOf($currentTrack)) : false,
@@ -71,11 +87,6 @@
     audioDevices.find((device) => device.name === $settings.audioDevice) ?? null,
   );
   const primaryDevice = $derived(currentDevice ?? audioDevices[0] ?? null);
-  const currentDeviceLabel = $derived(
-    $settings.audioDevice === "auto"
-      ? "Система (авто)"
-      : currentDevice?.description || $settings.audioDevice,
-  );
 
   async function reloadDevices() {
     try {
@@ -110,14 +121,6 @@
     showDevicePicker = false;
     try {
       await setAudioDevice(name);
-    } catch (e) {
-      error = String(e);
-    }
-  }
-
-  async function openSoundSettings() {
-    try {
-      await invoke("open_sound_settings");
     } catch (e) {
       error = String(e);
     }
@@ -183,235 +186,223 @@
 </script>
 
 <div class="page player-page">
-  <header class="head">
-    <div class="brand">
-      <div class="wordmark">ONYX</div>
-      <div class="tagline">music control center</div>
-    </div>
-    <div class="head-actions">
-      <button class="circle" aria-label="Открыть файл" title="Открыть файл" onclick={pickFile}>
-        <Icon name="library-music" size={19} />
-      </button>
-      <button
-        class="circle selected"
-        aria-label="Вывод звука"
-        title="Вывод звука"
-        onclick={() => (showDevicePicker = true)}
-      >
-        <Icon name="cast" size={19} />
-      </button>
-    </div>
-  </header>
+  <div class="player-grid">
+    <section class="left">
+      <header class="head">
+        <div class="brand">
+          <div class="wordmark">ONYX</div>
+          <div class="tagline">music control center</div>
+        </div>
+        <div class="head-actions">
+          <button
+            class="pill discord-pill"
+            class:selected={$settings.discordEnabled}
+            onclick={toggleDiscord}
+            title="Discord Rich Presence"
+          >
+            <Icon name="cast" size={16} />
+            Discord
+          </button>
+          {#if $settings.discordEnabled}
+            <span class="status-dot" class:online={discordOnline}></span>
+          {/if}
+          <button
+            class="icon-btn open-file"
+            aria-label="Открыть файл"
+            title="Открыть файл"
+            onclick={pickFile}
+          >
+            <Icon name="library-music" size={18} />
+          </button>
+        </div>
+      </header>
 
-  <section class="hero" class:playing={$player.playing}>
-    <button class="cover" aria-label="Открыть текст песни" onclick={onOpenLyrics}>
-      {#if $cover}
-        <img src={$cover} alt="" />
-      {:else}
-        <Icon name="music-note" size={64} />
-      {/if}
-    </button>
-    <h1 class="title">{$player.title || "Ничего не играет"}</h1>
-    <div class="artist">{$player.artist || "Запусти музыку на телефоне"}</div>
-    {#if $player.album}
-      <div class="album">{$player.album}</div>
-    {/if}
-    <div class="hero-actions">
-      <button class="pill" onclick={onOpenLyrics}>
-        <Icon name="translate" size={15} />
-        Текст песни
-      </button>
-      <button
-        class="circle"
-        class:selected={isFavorite}
-        aria-label="В любимые"
-        onclick={() => {
-          if ($currentTrack) toggleFavorite($currentTrack);
-        }}
-      >
-        <Icon name={isFavorite ? "favorite" : "favorite-border"} size={18} />
-      </button>
-      <button
-        class="circle"
-        aria-label="В плейлист"
-        onclick={() => {
-          loadPlaylists();
-          showPlaylistPicker = true;
-        }}
-      >
-        <Icon name="playlist-add" size={18} />
-      </button>
-    </div>
-  </section>
-
-  <section class="controls">
-    <div
-      class="slider"
-      role="slider"
-      tabindex="0"
-      aria-valuemin="0"
-      aria-valuemax={$player.durationMs}
-      aria-valuenow={$player.positionMs}
-      onclick={seek}
-      onkeydown={seekKey}
-    >
-      <div class="track">
-        <div class="fill" style={`width:${$progress}%`}></div>
-        <div class="thumb" style={`left:${$progress}%`}></div>
-      </div>
-    </div>
-    <div class="times">
-      <span>{fmt($player.positionMs)}</span>
-      <span>-{fmt($remaining)}</span>
-    </div>
-    <div class="transport">
-      <button class="skip" aria-label="Предыдущий трек" onclick={playPrevious}>
-        <Icon name="skip-previous" size={24} />
-      </button>
-      <button class="play" aria-label={$player.playing ? "Пауза" : "Играть"} onclick={togglePlayer}>
-        <Icon name={$player.playing ? "pause" : "play"} size={34} />
-      </button>
-      <button class="skip" aria-label="Следующий трек" onclick={playNext}>
-        <Icon name="skip-next" size={24} />
-      </button>
-    </div>
-    {#if error}
-      <div class="error">{error}</div>
-    {/if}
-  </section>
-
-  <Glass class="card" padding={18}>
-    <div class="section-label">Вывод звука</div>
-    <div class="device-pills">
-      <button
-        class="pill"
-        class:selected={$settings.audioDevice === "auto"}
-        onclick={() => chooseDevice("auto")}
-      >
-        <Icon name="computer" size={15} />
-        Система
-      </button>
-      {#if primaryDevice}
-        <button
-          class="pill device-pill"
-          class:selected={$settings.audioDevice === primaryDevice.name}
-          onclick={() => chooseDevice(primaryDevice.name)}
-        >
-          <Icon name="headphones" size={15} />
-          <span class="device-text">{shortDevice(primaryDevice.description)}</span>
+      <section class="hero" class:playing={$player.playing}>
+        <button class="cover" aria-label="Открыть текст песни" onclick={onOpenLyrics}>
+          {#if $cover}
+            <img src={$cover} alt="" />
+          {:else}
+            <Icon name="music-note" size={64} />
+          {/if}
         </button>
-      {/if}
-      <button class="pill" onclick={() => (showDevicePicker = true)}>Ещё</button>
-    </div>
-    <div class="volume-head">
-      <span>Громкость</span>
-      <span>{$settings.volume}%</span>
-    </div>
-    <div class="volume-row">
-      <Icon name="volume" size={16} />
-      <input
-        type="range"
-        min="0"
-        max="100"
-        step={$settings.volumeStep}
-        value={$settings.volume}
-        oninput={changeVolume}
-        aria-label="Громкость"
-      />
-    </div>
-  </Glass>
-
-  <Glass class="card" padding={18}>
-    <div class="card-head">
-      <div class="section-label">Наушники</div>
-      <button class="icon-btn" aria-label="Обновить устройства" onclick={reloadDevices}>
-        <Icon name="refresh" size={17} />
-      </button>
-    </div>
-    <div class="device-info">
-      <Icon name="headphones" size={22} />
-      <div class="device-meta">
-        <div class="device-name">{currentDeviceLabel}</div>
-        <div class="device-sub">Подключено · вывод ONYX</div>
-      </div>
-    </div>
-    <p class="card-text">
-      Звук идёт через mpv. Выбор устройства сохраняется и применяется к
-      следующему треку.
-    </p>
-    <div class="pill-row">
-      <button class="pill" onclick={openSoundSettings}>Настройки звука</button>
-      <button class="pill" onclick={() => (showDevicePicker = true)}>Выбрать устройство</button>
-    </div>
-  </Glass>
-
-  <Glass class="card" padding={18}>
-    <div class="card-head">
-      <div class="section-label">
-        Таймер сна{#if $sleepRemainingMs > 0} · {fmt($sleepRemainingMs)}{/if}
-      </div>
-      <Icon name="moon" size={17} />
-    </div>
-    <p class="card-text">Минуты до автоматической паузы:</p>
-    <div class="pill-row">
-      {#each [15, 30, 45, 60] as minutes}
-        <button class="pill" onclick={() => startSleepTimer(minutes)}>{minutes}</button>
-      {/each}
-      <button
-        class="pill"
-        class:selected={$sleepRemainingMs > 0}
-        onclick={cancelSleepTimer}
-      >
-        Выкл
-      </button>
-    </div>
-  </Glass>
-
-  <Glass class="card queue-card" padding={18}>
-    <div class="queue-head">
-      <div class="section-label">Очередь</div>
-      <div class="queue-count">{$queue.length} трек(ов)</div>
-    </div>
-    <div class="queue-actions">
-      <button class="pill" class:selected={$repeatOne} onclick={toggleRepeat}>
-        <Icon name="repeat" size={15} />
-        Повтор трека
-      </button>
-      <button class="pill" class:selected={$shuffle} onclick={toggleShuffle}>
-        <Icon name="shuffle" size={15} />
-        Перемешать
-      </button>
-    </div>
-    {#if $upcoming.length === 0}
-      <div class="queue-empty">
-        {$queue.length === 0
-          ? "Очередь пуста. Запусти трек из «Музыки»."
-          : "Это последний трек в очереди."}
-      </div>
-    {:else}
-      <div class="queue-list">
-        {#each $upcoming as item (item.index)}
-          <div class="queue-row">
-            <button class="queue-main" onclick={() => playQueueAt(item.index)}>
-              <Cover path={item.track.path} size={40} radius={9} />
-              <div class="queue-meta">
-                <div class="queue-title">{item.track.title}</div>
-                <div class="queue-sub">{item.track.artist}</div>
-              </div>
-              <div class="queue-time">{fmt(item.track.durationMs)}</div>
+        <h1 class="title">{$player.title || "Ничего не играет"}</h1>
+        <div class="artist">{$player.artist || "Выберите трек в библиотеке"}</div>
+        {#if $player.album}
+          <div class="album">{$player.album}</div>
+        {/if}
+        {#if $currentTrack}
+          <div class="hero-actions">
+            <button class="pill" onclick={onOpenLyrics}>
+              <Icon name="translate" size={15} />
+              Текст песни
             </button>
             <button
-              class="icon-btn queue-remove"
-              aria-label="Убрать из очереди"
-              onclick={() => removeFromQueue(item.index)}
+              class="circle"
+              class:selected={isFavorite}
+              aria-label="В любимые"
+              onclick={() => {
+                if ($currentTrack) toggleFavorite($currentTrack);
+              }}
             >
-              <Icon name="close" size={15} />
+              <Icon name={isFavorite ? "favorite" : "favorite-border"} size={18} />
+            </button>
+            <button
+              class="circle"
+              aria-label="В плейлист"
+              onclick={() => {
+                loadPlaylists();
+                showPlaylistPicker = true;
+              }}
+            >
+              <Icon name="playlist-add" size={18} />
             </button>
           </div>
-        {/each}
-      </div>
-    {/if}
-  </Glass>
+        {/if}
+      </section>
+
+      <section class="controls">
+        <div
+          class="slider"
+          role="slider"
+          tabindex="0"
+          aria-valuemin="0"
+          aria-valuemax={$player.durationMs}
+          aria-valuenow={$player.positionMs}
+          onclick={seek}
+          onkeydown={seekKey}
+        >
+          <div class="track">
+            <div class="fill" style={`width:${$progress}%`}></div>
+            <div class="thumb" style={`left:${$progress}%`}></div>
+          </div>
+        </div>
+        <div class="times">
+          <span>{fmt($player.positionMs)}</span>
+          <span>-{fmt($remaining)}</span>
+        </div>
+        <div class="transport">
+          <button class="skip" aria-label="Предыдущий трек" onclick={playPrevious}>
+            <Icon name="skip-previous" size={24} />
+          </button>
+          <button class="play" aria-label={$player.playing ? "Пауза" : "Играть"} onclick={togglePlayer}>
+            <Icon name={$player.playing ? "pause" : "play"} size={34} />
+          </button>
+          <button class="skip" aria-label="Следующий трек" onclick={playNext}>
+            <Icon name="skip-next" size={24} />
+          </button>
+        </div>
+        {#if error}
+          <div class="error">{error}</div>
+        {/if}
+      </section>
+    </section>
+
+    <aside class="right">
+      <Glass class="card output-card" padding={20}>
+        <div class="section-label">Вывод звука</div>
+        <div class="device-pills">
+          <button
+            class="pill"
+            class:selected={$settings.audioDevice === "auto"}
+            onclick={() => (showDevicePicker = true)}
+          >
+            <Icon name="computer" size={15} />
+            Система
+          </button>
+          {#if primaryDevice && $settings.audioDevice !== "auto"}
+            <button
+              class="pill device-pill"
+              class:selected
+              onclick={() => (showDevicePicker = true)}
+            >
+              <Icon name="headphones" size={15} />
+              <span class="device-text">{shortDevice(primaryDevice.description)}</span>
+            </button>
+          {/if}
+        </div>
+        <div class="volume-head">
+          <span>Громкость</span>
+          <span>{$settings.volume}%</span>
+        </div>
+        <div class="volume-row">
+          <input
+            type="range"
+            min="0"
+            max="100"
+            step={$settings.volumeStep}
+            value={$settings.volume}
+            style={`--volume:${$settings.volume}%`}
+            oninput={changeVolume}
+            aria-label="Громкость"
+          />
+        </div>
+      </Glass>
+
+      <Glass class="card sleep-card" padding={20}>
+        <div class="card-head">
+          <div class="section-label">Таймер сна</div>
+          <Icon name="moon" size={17} />
+        </div>
+        {#if $sleepRemainingMs > 0}
+          <div class="sleep-remaining">{fmt($sleepRemainingMs)}</div>
+          <p class="card-text">Музыка встанет на паузу по окончании</p>
+          <button class="pill" onclick={cancelSleepTimer}>Отключить</button>
+        {:else}
+          <p class="card-text">Минуты до автоматической паузы:</p>
+          <div class="sleep-pills">
+            {#each [15, 30, 45, 60] as minutes}
+              <button class="pill" onclick={() => startSleepTimer(minutes)}>{minutes}</button>
+            {/each}
+          </div>
+        {/if}
+      </Glass>
+
+      <Glass class="card queue-card" padding={20}>
+        <div class="queue-head">
+          <div class="section-label">Дальше в очереди</div>
+          <div class="queue-brand">ONYX</div>
+        </div>
+        <div class="queue-actions">
+          <button class="pill" class:selected={$repeatOne} onclick={toggleRepeat}>
+            {$repeatOne ? "Повтор трека" : "Повтор"}
+          </button>
+          <button class="pill" class:selected={$shuffle} onclick={toggleShuffle}>
+            Перемешать
+          </button>
+        </div>
+        {#if $queue.length === 0}
+          <div class="queue-empty">Очередь пуста</div>
+        {:else}
+          <div class="queue-list">
+            {#each $queue as track, index (index)}
+              <div class="queue-row" class:current={index === $queueIndex}>
+                <span class="queue-num">{String(index + 1).padStart(2, "0")}</span>
+                <button class="queue-main" onclick={() => playQueueAt(index)}>
+                  <Cover path={track.path} size={38} radius={9} />
+                  <div class="queue-meta">
+                    <div class="queue-title">{track.title}</div>
+                    <div class="queue-sub">{track.artist || track.album}</div>
+                  </div>
+                  <div class="queue-time">{track.durationMs > 0 ? fmt(track.durationMs) : ""}</div>
+                </button>
+                {#if index !== $queueIndex}
+                  <button
+                    class="icon-btn queue-remove"
+                    aria-label="Убрать из очереди"
+                    onclick={() => removeFromQueue(index)}
+                  >
+                    <Icon name="close" size={15} />
+                  </button>
+                {:else}
+                  <span class="queue-remove-space"></span>
+                {/if}
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </Glass>
+    </aside>
+  </div>
 </div>
 
 {#if showPlaylistPicker}
@@ -487,9 +478,21 @@
 
 <style>
   .player-page {
+    max-width: 1280px;
+    padding: 34px 40px calc(var(--dock-height) + 44px);
+  }
+
+  .player-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+    gap: 88px;
+    align-items: start;
+  }
+
+  .left {
     display: flex;
     flex-direction: column;
-    gap: 18px;
+    min-width: 0;
   }
 
   .head {
@@ -497,41 +500,65 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: 12px;
-    padding-top: 2px;
+    margin-bottom: 18px;
   }
 
   .wordmark {
-    font-size: 30px;
+    font-size: 34px;
     font-weight: 900;
-    letter-spacing: 6px;
+    letter-spacing: 7px;
     line-height: 1;
   }
 
   .tagline {
-    margin-top: 7px;
+    margin-top: 8px;
     color: var(--faint);
     font-size: 9px;
-    letter-spacing: 2.4px;
-    text-transform: uppercase;
+    letter-spacing: 2.6px;
   }
 
   .head-actions {
     display: flex;
     align-items: center;
     gap: 8px;
+    padding-top: 1px;
+  }
+
+  .discord-pill {
+    min-height: 44px;
+    padding: 0 18px;
+  }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    flex: 0 0 auto;
+    border-radius: 999px;
+    background: #6b6b73;
+    box-shadow: 0 0 0 3px rgba(107, 107, 115, 0.14);
+  }
+
+  .status-dot.online {
+    background: #57c77a;
+    box-shadow: 0 0 0 3px rgba(87, 199, 122, 0.14);
+  }
+
+  .open-file {
+    width: 36px;
+    height: 36px;
   }
 
   .hero {
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding-top: 4px;
+    padding-top: 2px;
   }
 
   .cover {
     display: grid;
     place-items: center;
-    width: min(68%, 286px);
+    width: min(84%, 342px, calc(100vh - 480px));
     aspect-ratio: 1;
     padding: 0;
     overflow: hidden;
@@ -577,18 +604,18 @@
 
   .title {
     max-width: 100%;
-    margin: 12px 0 0;
+    margin: 14px 0 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 26px;
+    font-size: 27px;
     font-weight: 700;
     letter-spacing: -0.6px;
     text-align: center;
   }
 
   .artist {
-    margin-top: 5px;
+    margin-top: 6px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -611,13 +638,14 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-top: 10px;
+    margin-top: 14px;
   }
 
   .controls {
     display: flex;
     flex-direction: column;
     gap: 4px;
+    margin-top: 18px;
   }
 
   .slider {
@@ -661,8 +689,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 18px;
-    margin-top: 8px;
+    gap: 22px;
+    margin-top: 10px;
   }
 
   .skip,
@@ -674,16 +702,16 @@
   }
 
   .skip {
-    width: 56px;
-    height: 56px;
+    width: 54px;
+    height: 54px;
     border: 1px solid var(--line);
     background: rgba(255, 255, 255, 0.03);
     color: var(--white);
   }
 
   .play {
-    width: 82px;
-    height: 82px;
+    width: 76px;
+    height: 76px;
     background: var(--accent);
     color: #08080a;
   }
@@ -699,6 +727,13 @@
     font-size: 12px;
     line-height: 17px;
     text-align: center;
+  }
+
+  .right {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    min-width: 0;
   }
 
   .card-head {
@@ -735,52 +770,74 @@
   .volume-head {
     display: flex;
     justify-content: space-between;
-    margin-top: 16px;
+    margin-top: 18px;
     color: var(--faint);
-    font-size: 11px;
+    font-size: 12px;
   }
 
-  .volume-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-top: 8px;
-    color: var(--dim);
-  }
-
-  .volume-row input {
-    flex: 1;
-    accent-color: var(--accent);
-  }
-
-  .device-info {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-top: 14px;
+  .volume-head span:last-child {
     color: var(--white);
-  }
-
-  .device-meta {
-    min-width: 0;
-  }
-
-  .device-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 15px;
     font-weight: 600;
   }
 
-  .device-sub {
-    margin-top: 2px;
-    color: var(--faint);
-    font-size: 11px;
+  .volume-row {
+    margin-top: 9px;
   }
 
-  :global(.queue-card) {
-    padding-bottom: 8px;
+  .volume-row input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 100%;
+    height: 14px;
+    margin: 0;
+    border-radius: 999px;
+    background: linear-gradient(
+      to right,
+      var(--white) 0%,
+      var(--white) var(--volume),
+      rgba(255, 255, 255, 0.12) var(--volume),
+      rgba(255, 255, 255, 0.12) 100%
+    );
+    outline: none;
+    cursor: pointer;
+  }
+
+  .volume-row input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 999px;
+    background: #ffffff;
+    border: 4px solid #0b0b0d;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.15);
+  }
+
+  .volume-row input[type="range"]::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    border-radius: 999px;
+    background: #ffffff;
+    border: 4px solid #0b0b0d;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.15);
+  }
+
+  .sleep-pills {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .sleep-pills .pill {
+    width: 100%;
+    padding: 0 8px;
+  }
+
+  .sleep-remaining {
+    margin-top: 12px;
+    font-size: 32px;
+    font-weight: 900;
+    letter-spacing: -0.5px;
   }
 
   .queue-head {
@@ -790,36 +847,54 @@
     gap: 8px;
   }
 
-  .queue-count {
+  .queue-brand {
     color: var(--faint);
-    font-size: 11px;
+    font-size: 10px;
   }
 
   .queue-actions {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
     gap: 8px;
     margin-top: 12px;
   }
 
+  .queue-actions .pill {
+    width: 100%;
+    padding: 0 10px;
+  }
+
   .queue-empty {
-    margin-top: 14px;
+    margin-top: 16px;
     color: var(--faint);
     font-size: 12px;
-    line-height: 17px;
   }
 
   .queue-list {
     display: flex;
     flex-direction: column;
     gap: 2px;
-    margin-top: 10px;
+    margin-top: 12px;
   }
 
   .queue-row {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 2px;
+    min-height: 50px;
+    padding: 0 2px;
+    border-radius: 12px;
+  }
+
+  .queue-row.current {
+    background: rgba(255, 255, 255, 0.07);
+  }
+
+  .queue-num {
+    width: 24px;
+    padding-left: 4px;
+    color: var(--faint);
+    font-size: 10px;
   }
 
   .queue-main {
@@ -828,7 +903,7 @@
     gap: 10px;
     flex: 1;
     min-width: 0;
-    padding: 6px 4px;
+    padding: 5px 4px;
     border-radius: 12px;
     text-align: left;
     color: var(--white);
@@ -851,6 +926,10 @@
     font-weight: 500;
   }
 
+  .queue-row.current .queue-title {
+    font-weight: 600;
+  }
+
   .queue-sub {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -862,16 +941,38 @@
 
   .queue-time {
     color: var(--faint);
-    font-size: 11px;
+    font-size: 10px;
   }
 
   .queue-remove {
     opacity: 0;
+    width: 28px;
+    height: 28px;
     transition: opacity 140ms ease;
   }
 
   .queue-row:hover .queue-remove {
     opacity: 1;
+  }
+
+  .queue-remove-space {
+    width: 28px;
+  }
+
+  @media (max-width: 1080px) {
+    .player-grid {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 24px;
+    }
+
+    .player-page {
+      max-width: 820px;
+      padding: 22px var(--page-pad) calc(var(--dock-height) + 48px);
+    }
+
+    .head {
+      margin-bottom: 10px;
+    }
   }
 
   .modal {
