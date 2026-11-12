@@ -50,7 +50,8 @@ jobs:
           } > keystore.properties
 
       - name: Build release APK
-        run: ./gradlew :app:assembleRelease --console=plain
+        # The repo is checked out on Windows, so the gradlew exec bit is lost.
+        run: bash ./gradlew :app:assembleRelease --console=plain
 
       - name: Build update manifest
         id: manifest
