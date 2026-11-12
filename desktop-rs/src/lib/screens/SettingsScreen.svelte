@@ -62,7 +62,6 @@
   let hubBusy = $state(false);
   let hubError = $state("");
   let discordStatus = $state("");
-  let updateStatus = $state("");
   let dataStatus = $state("");
   let proxyStatus = $state("");
   let proxyValue = $state("");
@@ -288,25 +287,6 @@
     }
   }
 
-  async function checkUpdates() {
-    updateStatus = "Проверяю…";
-    try {
-      const { check } = await import("@tauri-apps/plugin-updater");
-      const update = await check();
-      if (!update) {
-        updateStatus = "Установлена последняя версия";
-        return;
-      }
-      updateStatus = `Скачиваю ${update.version}…`;
-      await update.downloadAndInstall();
-      updateStatus = "Готово, перезапускаю…";
-      const { relaunch } = await import("@tauri-apps/plugin-process");
-      await relaunch();
-    } catch (e) {
-      updateStatus = String(e);
-    }
-  }
-
   async function addFolder() {
     const selected = await open({ directory: true, multiple: false });
     if (typeof selected !== "string") return;
@@ -340,6 +320,13 @@
     await saveSettings({
       ...$settings,
       coverBackdrop: !$settings.coverBackdrop,
+    });
+  }
+
+  async function toggleConfirmDelete() {
+    await saveSettings({
+      ...$settings,
+      confirmDelete: !$settings.confirmDelete,
     });
   }
 
@@ -547,6 +534,24 @@
     </Glass>
 
     <Glass class="card" padding={18}>
+      <div class="setting-row">
+        <div>
+          <div class="setting-title">Подтверждать удаление треков</div>
+          <div class="setting-sub">
+            Показывать окно перед удалением файлов с диска. Если выключить —
+            треки удаляются сразу.
+          </div>
+        </div>
+        <button
+          class="toggle"
+          class:on={$settings.confirmDelete}
+          aria-label="Подтверждать удаление треков"
+          onclick={toggleConfirmDelete}
+        ></button>
+      </div>
+    </Glass>
+
+    <Glass class="card" padding={18}>
       <div class="section-label">Данные</div>
       <p class="card-text">
         Экспорт и импорт плейлистов, любимых и настроек в JSON. Файлы Spotify и
@@ -563,18 +568,9 @@
 
     <Glass class="card" padding={18}>
       <div class="section-label">Обновления</div>
-      <div class="setting-row">
-        <div>
-          <div class="setting-title">Версия {version}</div>
-          <div class="setting-sub">Проверка обновлений ONYX Desktop</div>
-        </div>
-      </div>
-      <div class="pill-row">
-        <button class="pill" onclick={checkUpdates}>Проверить обновления</button>
-      </div>
-      {#if updateStatus}
-        <div class="status">{updateStatus}</div>
-      {/if}
+      <p class="card-text">
+        Автообновление отключено до релиза 1.0. Версия {version} собрана локально.
+      </p>
     </Glass>
 
     <Glass class="card" padding={18}>

@@ -39,7 +39,6 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(player)
         .manage(Arc::clone(&library))
@@ -82,6 +81,9 @@ pub fn run() {
             commands::library_scan,
             commands::track_cover,
             commands::track_update_tags,
+            commands::tracks_update_album,
+            commands::tracks_update_artist,
+            commands::tracks_delete,
             commands::missing_folders,
             commands::playlists_load,
             commands::playlist_create,

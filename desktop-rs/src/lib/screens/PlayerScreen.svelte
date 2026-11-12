@@ -19,11 +19,11 @@
     togglePlayer,
   } from "../stores/player";
   import {
+    cycleRepeat,
     queue,
     queueIndex,
-    repeatOne,
+    repeatMode,
     shuffle,
-    toggleRepeat,
     toggleShuffle,
   } from "../stores/queue";
   import {
@@ -66,6 +66,18 @@
       if (discordPoll) clearInterval(discordPoll);
     };
   });
+
+  const sameAlbum = $derived(
+    $queue.length > 0 &&
+      $queue.every(
+        (track) => track.album && track.album === $queue[0].album,
+      ),
+  );
+
+  async function changeRepeat() {
+    cycleRepeat();
+    await saveSettings({ ...$settings, repeat: get(repeatMode) });
+  }
 
   async function toggleDiscord() {
     await saveSettings({
@@ -363,8 +375,18 @@
           <div class="queue-brand">ONYX</div>
         </div>
         <div class="queue-actions">
-          <button class="pill" class:selected={$repeatOne} onclick={toggleRepeat}>
-            {$repeatOne ? "Повтор трека" : "Повтор"}
+          <button
+            class="pill"
+            class:selected={$repeatMode !== "off"}
+            onclick={changeRepeat}
+          >
+            {$repeatMode === "off"
+              ? "Повтор"
+              : $repeatMode === "one"
+                ? "Повтор трека"
+                : sameAlbum
+                  ? "Повтор альбома"
+                  : "Повтор плейлиста"}
           </button>
           <button class="pill" class:selected={$shuffle} onclick={toggleShuffle}>
             Перемешать
@@ -378,7 +400,7 @@
               <div class="queue-row" class:current={index === $queueIndex}>
                 <span class="queue-num">{String(index + 1).padStart(2, "0")}</span>
                 <button class="queue-main" onclick={() => playQueueAt(index)}>
-                  <Cover path={track.path} size={38} radius={9} />
+                  <Cover path={track.path} src={track.artwork} size={38} radius={9} />
                   <div class="queue-meta">
                     <div class="queue-title">{track.title}</div>
                     <div class="queue-sub">{track.artist || track.album}</div>

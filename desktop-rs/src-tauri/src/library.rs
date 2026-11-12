@@ -1,7 +1,8 @@
-use base64::Engine;
 use lofty::prelude::*;
 use serde::Serialize;
-use std::path::Path;
+use std::collections::HashMap;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use walkdir::WalkDir;
 
@@ -21,12 +22,14 @@ pub struct Track {
 /// with `lofty`. The track list is kept in memory for the UI.
 pub struct Library {
     tracks: Mutex<Vec<Track>>,
+    cover_cache: Mutex<HashMap<String, Option<String>>>,
 }
 
 impl Library {
     pub fn new() -> Self {
         Self {
             tracks: Mutex::new(Vec::new()),
+            cover_cache: Mutex::new(HashMap::new()),
         }
     }
 
@@ -76,7 +79,16 @@ impl Library {
     }
 
     pub fn cover(&self, path: &str) -> Option<String> {
-        read_cover(Path::new(path))
+        if let Ok(cache) = self.cover_cache.lock() {
+            if let Some(value) = cache.get(path) {
+                return value.clone();
+            }
+        }
+        let value = read_cover(Path::new(path));
+        if let Ok(mut cache) = self.cover_cache.lock() {
+            cache.insert(path.to_string(), value.clone());
+        }
+        value
     }
 
     pub fn update_tags(
@@ -105,7 +117,68 @@ impl Library {
         }
         tagged
             .save_to_path(file, lofty::config::WriteOptions::default())
-            .map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())?;
+        if let Ok(mut cache) = self.cover_cache.lock() {
+            cache.remove(path);
+        }
+        Ok(())
+    }
+
+    pub fn update_album_bulk(&self, paths: &[String], album: &str) -> Result<usize, String> {
+        let mut updated = 0usize;
+        let mut errors = Vec::new();
+        for path in paths {
+            match self.update_tags(path, "", "", album) {
+                Ok(()) => updated += 1,
+                Err(error) => errors.push(format!("{}: {error}", Path::new(path).file_name().and_then(|name| name.to_str()).unwrap_or(path))),
+            }
+        }
+        if errors.is_empty() {
+            Ok(updated)
+        } else {
+            Err(format!("Обновлено {updated}. Ошибки: {}", errors.join("; ")))
+        }
+    }
+
+    pub fn update_artist_bulk(&self, paths: &[String], artist: &str) -> Result<usize, String> {
+        let mut updated = 0usize;
+        let mut errors = Vec::new();
+        for path in paths {
+            match self.update_tags(path, "", artist, "") {
+                Ok(()) => updated += 1,
+                Err(error) => errors.push(format!("{}: {error}", Path::new(path).file_name().and_then(|name| name.to_str()).unwrap_or(path))),
+            }
+        }
+        if errors.is_empty() {
+            Ok(updated)
+        } else {
+            Err(format!("Обновлено {updated}. Ошибки: {}", errors.join("; ")))
+        }
+    }
+
+    pub fn delete_tracks(&self, paths: &[String]) -> Result<usize, String> {
+        let mut deleted = 0usize;
+        let mut errors = Vec::new();
+        for path in paths {
+            match fs::remove_file(path) {
+                Ok(()) => deleted += 1,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => deleted += 1,
+                Err(error) => errors.push(format!("{}: {error}", path)),
+            }
+        }
+        if let Ok(mut tracks) = self.tracks.lock() {
+            tracks.retain(|track| !paths.contains(&track.path));
+        }
+        if let Ok(mut cache) = self.cover_cache.lock() {
+            for path in paths {
+                cache.remove(path);
+            }
+        }
+        if errors.is_empty() {
+            Ok(deleted)
+        } else {
+            Err(format!("Удалено {deleted}. Ошибки: {}", errors.join("; ")))
+        }
     }
 }
 
@@ -161,8 +234,23 @@ fn read_cover(path: &Path) -> Option<String> {
         .mime_type()
         .map(|mime| mime.to_string())
         .unwrap_or_else(|| "image/jpeg".into());
-    let encoded = base64::engine::general_purpose::STANDARD.encode(picture.data());
-    Some(format!("data:{mime};base64,{encoded}"))
+    let extension = match mime.as_str() {
+        "image/png" => "png",
+        "image/webp" => "webp",
+        "image/gif" => "gif",
+        _ => "jpg",
+    };
+    let base = std::env::var("LOCALAPPDATA").unwrap_or_else(|_| ".".into());
+    let directory = PathBuf::from(base).join("ONYX").join("artwork");
+    fs::create_dir_all(&directory).ok()?;
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    path.to_string_lossy().hash(&mut hasher);
+    let file = directory.join(format!("{:016x}.{extension}", hasher.finish()));
+    if !file.exists() {
+        fs::write(&file, picture.data()).ok()?;
+    }
+    Some(file.to_string_lossy().to_string())
 }
 
 #[cfg(test)]

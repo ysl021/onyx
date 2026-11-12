@@ -72,11 +72,11 @@
 - Хаб ONYX: HTTP 8787 + UDP 8788, сопряжение по коду, presence,
   плейлисты/лайки/файлы, протокол совместим с Android (`SyncModels.kt`).
 - Discord Rich Presence: трек, исполнитель, альбом, прогресс.
-  Обложка ищется сначала локально, потом по треку, потом по альбому
+  Обложка ищется локально, потом по треку, потом по альбому
   (Deezer / iTunes), кэшируется в `cover-cache.json`. Локальная
   обложка загружается на pomf/catbox.
-- Автообновление: `tauri-plugin-updater`, minisign-подпись,
-  `latest.json` на GitHub Releases.
+- Автообновление отключено до релиза 1.0. Публичный релиз
+  `desktop-latest` удалён, установщики больше не публикуются.
 
 ## Требования
 
@@ -113,19 +113,12 @@ $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = Get-Content "$env:USERPROFILE\.onyx\on
 npm run tauri build
 ```
 
-## Автообновление
+## Обновления
 
-- Публичный ключ лежит в `src-tauri/tauri.conf.json`.
-- Приватный ключ и пароль — в `%USERPROFILE%\.onyx\` (не в git).
-- Endpoint: `https://github.com/ysl021/onyx/releases/download/desktop-latest/latest.json`.
-- Публикация одной командой:
-
-```powershell
-.\scripts\publish-desktop.ps1
-```
-
-Скрипт собирает MSI/NSIS, создаёт `latest.json` с подписью и
-загружает всё в релиз `desktop-latest` через `gh`.
+- Автообновление и публикация ПК-релиза отключены до версии 1.0.
+- Релиз `desktop-latest` и все установщики удалены с GitHub.
+- Скрипт `scripts/publish-desktop.ps1` оставлен для будущего релиза 1.0,
+  но сейчас не используется.
 
 ## Структура
 

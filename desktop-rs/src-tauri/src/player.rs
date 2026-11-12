@@ -18,6 +18,9 @@ pub struct PlayerState {
     pub playing: bool,
     pub position_ms: u64,
     pub duration_ms: u64,
+    /// True when mpv reached the end of the current file. The frontend uses
+    /// this to advance the queue exactly once instead of guessing from time.
+    pub eof: bool,
 }
 
 /// Owns the mpv sidecar and talks to it over the Windows named pipe that mpv
@@ -82,6 +85,7 @@ impl PlayerHandle {
         let mut state = PlayerState {
             playing: true,
             path: path.to_string(),
+            eof: false,
             ..PlayerState::default()
         };
         if std::path::Path::new(path).exists() {
@@ -262,6 +266,21 @@ impl PlayerHandle {
                     "pause" => {
                         inner.state.playing = !data.as_bool().unwrap_or(false);
                     }
+                    "eof-reached" => {
+                        if data.as_bool().unwrap_or(false) {
+                            inner.state.eof = true;
+                            inner.state.playing = false;
+                            if inner.state.duration_ms > 0 {
+                                inner.state.position_ms = inner.state.duration_ms;
+                            }
+                        }
+                    }
+                    "idle-active" => {
+                        if data.as_bool().unwrap_or(false) {
+                            inner.state.eof = true;
+                            inner.state.playing = false;
+                        }
+                    }
                     "metadata" => {
                         let title = meta(&data, "title");
                         let artist = meta(&data, "artist");
@@ -286,6 +305,8 @@ impl PlayerHandle {
             (2, "duration"),
             (3, "pause"),
             (4, "metadata"),
+            (5, "eof-reached"),
+            (6, "idle-active"),
         ] {
             self.send(&serde_json::json!({
                 "command": ["observe_property", id, property]

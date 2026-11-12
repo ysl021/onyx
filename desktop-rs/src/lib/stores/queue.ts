@@ -1,9 +1,11 @@
 import { writable } from "svelte/store";
 import type { Track } from "./library";
 
+export type RepeatMode = "off" | "one" | "all";
+
 export const queue = writable<Track[]>([]);
 export const queueIndex = writable(0);
-export const repeatOne = writable(false);
+export const repeatMode = writable<RepeatMode>("off");
 export const shuffle = writable(false);
 
 export function setQueue(tracks: Track[], index: number) {
@@ -11,8 +13,14 @@ export function setQueue(tracks: Track[], index: number) {
   queueIndex.set(index);
 }
 
-export function toggleRepeat() {
-  repeatOne.update((value) => !value);
+export function cycleRepeat() {
+  repeatMode.update((mode) =>
+    mode === "off" ? "one" : mode === "one" ? "all" : "off",
+  );
+}
+
+export function setRepeatMode(mode: RepeatMode) {
+  repeatMode.set(mode);
 }
 
 export function toggleShuffle() {
@@ -39,16 +47,10 @@ export function previousQueueIndex(current: number, length: number): number {
   return (current - 1 + length) % length;
 }
 
-// The helpers below avoid importing `get` into every caller.
+// The helper below avoids importing `get` into every caller.
 let shuffleNow = false;
-let repeatNow = false;
 shuffle.subscribe((value) => (shuffleNow = value));
-repeatOne.subscribe((value) => (repeatNow = value));
 
-function shuffleValue() {
+export function shuffleValue() {
   return shuffleNow;
-}
-
-export function repeatValue() {
-  return repeatNow;
 }

@@ -19,6 +19,8 @@ export type Settings = {
   youtubeRelayUrl: string;
   youtubeMirrors: string;
   volumeStep: number;
+  repeat: "off" | "one" | "all";
+  confirmDelete: boolean;
   eqEnabled: boolean;
   eqBands: number[];
   musicFolders: string[];
@@ -40,6 +42,8 @@ const defaults: Settings = {
   youtubeRelayUrl: "",
   youtubeMirrors: "",
   volumeStep: 5,
+  repeat: "off",
+  confirmDelete: true,
   eqEnabled: false,
   eqBands: [0, 0, 0, 0, 0],
   musicFolders: [],
@@ -66,6 +70,10 @@ export async function loadSettings() {
     const youtubeRoute = (["auto", "direct", "relay", "mirror"].includes(rawRoute)
       ? rawRoute
       : "auto") as Settings["youtubeRoute"];
+    const rawRepeat = String(loaded.repeat ?? "off").toLowerCase();
+    const repeat = (["off", "one", "all"].includes(rawRepeat)
+      ? rawRepeat
+      : "off") as Settings["repeat"];
     settings.set({
       ...defaults,
       ...loaded,
@@ -75,6 +83,8 @@ export async function loadSettings() {
       youtubeRoute,
       youtubeRelayUrl: String(loaded.youtubeRelayUrl ?? ""),
       youtubeMirrors: String(loaded.youtubeMirrors ?? ""),
+      repeat,
+      confirmDelete: loaded.confirmDelete !== false,
     });
   } catch {
     // Keep defaults until the Rust backend is available.

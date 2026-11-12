@@ -99,7 +99,6 @@ pub fn resolve(title: &str, artist: &str, album: &str, path: Option<&str>) -> Op
     if url.is_none() {
         url = deezer_track(title, artist)
             .or_else(|| deezer_album(artist, album))
-            .or_else(|| deezer_title(title, artist))
             .or_else(|| itunes_track(title, artist))
             .or_else(|| itunes_album(artist, album));
     }
@@ -129,22 +128,6 @@ fn deezer_track(title: &str, artist: &str) -> Option<String> {
     data.data
         .into_iter()
         .find(|item| same(&item.artist.name, artist) && same(&item.title, title))
-        .and_then(|item| item.album.cover_xl.or(item.album.cover_big))
-}
-
-fn deezer_title(title: &str, artist: &str) -> Option<String> {
-    let response = client()
-        .get("https://api.deezer.com/search")
-        .query(&[("q", format!("track:\"{title}\""))])
-        .send()
-        .ok()?;
-    let data = response.json::<DeezerTracks>().ok()?;
-    data.data
-        .into_iter()
-        .find(|item| {
-            same(&item.title, title)
-                && (artist.trim().is_empty() || same(&item.artist.name, artist))
-        })
         .and_then(|item| item.album.cover_xl.or(item.album.cover_big))
 }
 

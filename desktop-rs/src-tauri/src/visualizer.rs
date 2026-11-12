@@ -2,7 +2,7 @@ use std::f32::consts::PI;
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
@@ -17,6 +17,7 @@ const WINDOW_BYTES: u64 = FFT_SIZE as u64 * FRAME_BYTES;
 /// track to a raw PCM file (`--ao=pcm`, wave header disabled). Decoding is much
 /// faster than realtime, so the analyser simply reads the window that matches
 /// the main player's position. Seeking therefore needs no extra synchronisation.
+#[derive(Clone)]
 pub struct Visualizer {
     inner: Arc<Mutex<Inner>>,
 }
@@ -80,7 +81,7 @@ impl Visualizer {
         let _ = child;
 
         let file_arg = format!("--ao-pcm-file={}", file.display());
-        let mut command = Command::new(&mpv);
+        let mut command = crate::process::hidden_command(&mpv);
         command.args([
             "--no-config",
             "--no-video",
@@ -93,6 +94,12 @@ impl Visualizer {
             "--audio-channels=stereo",
             "--volume=100",
         ]);
+        if path.starts_with("http") {
+            command.args([
+                "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+                "--referrer=https://www.youtube.com/",
+            ]);
+        }
         if let Some(proxy) = proxy {
             command.arg(format!("--http-proxy={proxy}"));
         }

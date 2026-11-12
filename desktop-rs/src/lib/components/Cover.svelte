@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { invoke } from "@tauri-apps/api/core";
+  import { convertFileSrc, invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
   import Icon from "./Icon.svelte";
 
@@ -58,8 +58,9 @@
     image = null;
     invoke<string | null>("track_cover", { path: key })
       .then((value) => {
-        cache.set(key, value);
-        image = value;
+        const url = value ? convertFileSrc(value) : null;
+        cache.set(key, url);
+        image = url;
       })
       .catch(() => cache.set(key, null));
   });

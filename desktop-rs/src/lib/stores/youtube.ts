@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { get, writable } from "svelte/store";
-import { currentPath, currentTrack, refreshPlayer } from "./player";
+import { cover, currentPath, currentTrack, refreshPlayer } from "./player";
 import { settings } from "./settings";
 
 export type Video = {
@@ -107,6 +107,7 @@ export async function playVideo(video: Video) {
   try {
     const id = `yt:${video.id}`;
     currentPath.set(id);
+    cover.set(video.thumbnail || null);
     currentTrack.set({
       id,
       path: id,

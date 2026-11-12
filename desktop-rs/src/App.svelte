@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
+  import { get } from "svelte/store";
   import { onMount } from "svelte";
   import NavDock from "./lib/components/NavDock.svelte";
   import LyricsScreen from "./lib/screens/LyricsScreen.svelte";
@@ -13,6 +14,7 @@
   import { loadFavorites, migrateLegacyFavorites } from "./lib/stores/favorites";
   import { loadTracks } from "./lib/stores/library";
   import { cover, refreshPlayer, startPolling } from "./lib/stores/player";
+  import { setRepeatMode } from "./lib/stores/queue";
   import { loadSettings, settings } from "./lib/stores/settings";
 
   let active = $state("player");
@@ -28,7 +30,7 @@
   };
 
   onMount(() => {
-    loadSettings();
+    loadSettings().then(() => setRepeatMode(get(settings).repeat));
     loadFavorites();
     loadTracks().then(() => migrateLegacyFavorites());
     refreshPlayer();

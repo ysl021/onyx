@@ -25,6 +25,9 @@ pub struct Settings {
     /// Extra Piped/Invidious API bases, one per line or comma separated.
     pub youtube_mirrors: String,
     pub volume_step: u8,
+    /// off | one | all
+    pub repeat: String,
+    pub confirm_delete: bool,
     pub eq_enabled: bool,
     pub eq_bands: Vec<f32>,
     pub music_folders: Vec<String>,
@@ -48,6 +51,8 @@ impl Default for Settings {
             youtube_relay_url: String::new(),
             youtube_mirrors: String::new(),
             volume_step: 5,
+            repeat: "off".into(),
+            confirm_delete: true,
             eq_enabled: false,
             eq_bands: vec![0.0; 5],
             music_folders: Vec::new(),
@@ -120,6 +125,11 @@ pub fn load() -> Settings {
     settings.youtube_route = match route.as_str() {
         "direct" | "relay" | "mirror" => route,
         _ => "auto".into(),
+    };
+    let repeat = settings.repeat.trim().to_lowercase();
+    settings.repeat = match repeat.as_str() {
+        "one" | "all" => repeat,
+        _ => "off".into(),
     };
     settings
 }

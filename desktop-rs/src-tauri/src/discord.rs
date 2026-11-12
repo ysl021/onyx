@@ -500,15 +500,19 @@ fn build_activity(
         });
     }
     let album = album.trim();
-    if let Some(url) = cover_url {
-        activity["assets"] = json!({ "large_image": url });
+    let usable_album = !album.is_empty()
+        && !album.eq_ignore_ascii_case("YouTube")
+        && !album.eq_ignore_ascii_case("YouTube Music")
+        && !is_source_label(&normalize(album));
+    let mut assets = json!({
+        "large_image": cover_url.unwrap_or("onyx_large"),
+        "small_image": if playing { "playing" } else { "pause" },
+        "small_text": if playing { "Playing" } else { "Paused" }
+    });
+    if usable_album {
+        assets["large_text"] = json!(truncate(album, 128));
     }
-    if !album.is_empty() {
-        if activity.get("assets").is_none() {
-            activity["assets"] = json!({});
-        }
-        activity["assets"]["large_text"] = json!(truncate(album, 128));
-    }
+    activity["assets"] = assets;
     activity
 }
 

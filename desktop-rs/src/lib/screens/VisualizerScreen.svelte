@@ -60,7 +60,7 @@
       } catch {
         // The backend is not ready yet.
       }
-    }, 50);
+    }, 66);
     raf = requestAnimationFrame(render);
   });
 
@@ -205,7 +205,7 @@
     flex-direction: column;
     align-items: center;
     height: 100%;
-    padding: 16px 20px 112px;
+    padding: 16px 20px 16px;
     background: radial-gradient(circle at 50% 46%, rgba(255, 255, 255, 0.08), transparent 62%);
     overflow: hidden;
   }

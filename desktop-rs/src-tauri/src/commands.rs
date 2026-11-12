@@ -28,42 +28,73 @@ pub fn save_settings(settings: Settings) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn player_state(player: State<'_, PlayerHandle>) -> PlayerState {
-    player.state()
+pub async fn player_state(player: State<'_, PlayerHandle>) -> Result<PlayerState, String> {
+    let player = player.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || player.state())
+        .await
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-pub fn player_toggle(player: State<'_, PlayerHandle>) -> Result<PlayerState, String> {
-    player.toggle()?;
-    Ok(player.state())
+pub async fn player_toggle(player: State<'_, PlayerHandle>) -> Result<PlayerState, String> {
+    let player = player.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        player.toggle()?;
+        Ok(player.state())
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-pub fn player_load(player: State<'_, PlayerHandle>, path: String) -> Result<(), String> {
-    let config = settings::load();
-    player.load(&path)?;
-    if !config.audio_device.trim().is_empty() && config.audio_device != "auto" {
-        let _ = player.set_audio_device(&config.audio_device);
-    }
-    if config.eq_enabled {
-        let _ = player.set_eq(true, &config.eq_bands);
-    }
-    Ok(())
+pub async fn player_load(
+    player: State<'_, PlayerHandle>,
+    path: String,
+) -> Result<(), String> {
+    let player = player.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let config = settings::load();
+        player.load(&path)?;
+        if !config.audio_device.trim().is_empty() && config.audio_device != "auto" {
+            let _ = player.set_audio_device(&config.audio_device);
+        }
+        if config.eq_enabled {
+            let _ = player.set_eq(true, &config.eq_bands);
+        }
+        Ok(())
+    })
+    .await
+    .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-pub fn player_seek(player: State<'_, PlayerHandle>, seconds: f64) -> Result<(), String> {
-    player.seek(seconds)
+pub async fn player_seek(
+    player: State<'_, PlayerHandle>,
+    seconds: f64,
+) -> Result<(), String> {
+    let player = player.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || player.seek(seconds))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-pub fn player_volume(player: State<'_, PlayerHandle>, volume: u8) -> Result<(), String> {
-    player.set_volume(volume)
+pub async fn player_volume(
+    player: State<'_, PlayerHandle>,
+    volume: u8,
+) -> Result<(), String> {
+    let player = player.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || player.set_volume(volume))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
-pub fn player_pause(player: State<'_, PlayerHandle>) -> Result<(), String> {
-    player.pause()
+pub async fn player_pause(player: State<'_, PlayerHandle>) -> Result<(), String> {
+    let player = player.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || player.pause())
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -91,19 +122,65 @@ pub fn missing_folders(folders: Vec<String>) -> Vec<String> {
 }
 
 #[tauri::command]
-pub fn track_cover(library: State<'_, Arc<Library>>, path: String) -> Option<String> {
-    library.cover(&path)
+pub async fn track_cover(
+    library: State<'_, Arc<Library>>,
+    path: String,
+) -> Result<Option<String>, String> {
+    let library = Arc::clone(library.inner());
+    tauri::async_runtime::spawn_blocking(move || library.cover(&path))
+        .await
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-pub fn track_update_tags(
+pub async fn track_update_tags(
     library: State<'_, Arc<Library>>,
     path: String,
     title: String,
     artist: String,
     album: String,
 ) -> Result<(), String> {
-    library.update_tags(&path, &title, &artist, &album)
+    let library = Arc::clone(library.inner());
+    tauri::async_runtime::spawn_blocking(move || {
+        library.update_tags(&path, &title, &artist, &album)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub async fn tracks_update_album(
+    library: State<'_, Arc<Library>>,
+    paths: Vec<String>,
+    album: String,
+) -> Result<usize, String> {
+    let library = Arc::clone(library.inner());
+    tauri::async_runtime::spawn_blocking(move || library.update_album_bulk(&paths, &album))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub async fn tracks_update_artist(
+    library: State<'_, Arc<Library>>,
+    paths: Vec<String>,
+    artist: String,
+) -> Result<usize, String> {
+    let library = Arc::clone(library.inner());
+    tauri::async_runtime::spawn_blocking(move || library.update_artist_bulk(&paths, &artist))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
+pub async fn tracks_delete(
+    library: State<'_, Arc<Library>>,
+    paths: Vec<String>,
+) -> Result<usize, String> {
+    let library = Arc::clone(library.inner());
+    tauri::async_runtime::spawn_blocking(move || library.delete_tracks(&paths))
+        .await
+        .map_err(|error| error.to_string())?
 }
 
 #[tauri::command]
@@ -270,12 +347,15 @@ pub fn visualizer_stop(visualizer: State<'_, Visualizer>) {
 }
 
 #[tauri::command]
-pub fn visualizer_bands(
+pub async fn visualizer_bands(
     visualizer: State<'_, Visualizer>,
     position_ms: u64,
     playing: bool,
-) -> Vec<f32> {
-    visualizer.bands(position_ms, playing)
+) -> Result<Vec<f32>, String> {
+    let visualizer = visualizer.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || visualizer.bands(position_ms, playing))
+        .await
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]

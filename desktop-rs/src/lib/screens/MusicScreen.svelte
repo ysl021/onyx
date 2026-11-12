@@ -14,7 +14,7 @@
     currentPath,
     playTrack,
   } from "../stores/player";
-  import { setQueue } from "../stores/queue";
+  import { setQueue, queue, queueIndex } from "../stores/queue";
   import {
     favoriteIdOf,
     favorites,
@@ -33,6 +33,17 @@
   let editTitle = $state("");
   let editArtist = $state("");
   let editAlbum = $state("");
+  let selecting = $state(false);
+  let selected = $state<string[]>([]);
+  let lastSelected = $state<number | null>(null);
+  let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+  let suppressClick = false;
+  let bulkAlbumOpen = $state(false);
+  let bulkAlbum = $state("");
+  let bulkArtistOpen = $state(false);
+  let bulkArtist = $state("");
+  let deleteOpen = $state(false);
+  let deleteBusy = $state(false);
 
   onMount(() => {
     loadTracks();
@@ -134,6 +145,149 @@
       error = String(e);
     }
   }
+
+  function startSelection(track?: Track) {
+    selecting = true;
+    if (track && !selected.includes(track.id)) {
+      selected = [...selected, track.id];
+    }
+  }
+
+  function toggleSelect(track: Track) {
+    selected = selected.includes(track.id)
+      ? selected.filter((id) => id !== track.id)
+      : [...selected, track.id];
+  }
+
+  function selectAll() {
+    selected = visible.map((track) => track.id);
+  }
+
+  function clearSelection() {
+    selected = [];
+    selecting = false;
+    lastSelected = null;
+    bulkAlbumOpen = false;
+    bulkArtistOpen = false;
+    deleteOpen = false;
+  }
+
+  function pointerDown(track: Track, event: PointerEvent) {
+    if (event.button !== 0 || selecting) return;
+    if (longPressTimer) clearTimeout(longPressTimer);
+    longPressTimer = setTimeout(() => {
+      suppressClick = true;
+      startSelection(track);
+    }, 450);
+  }
+
+  function pointerUp() {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+  }
+
+  function rowClick(track: Track, index: number, event: MouseEvent) {
+    if (suppressClick) {
+      suppressClick = false;
+      return;
+    }
+    if (!selecting) {
+      play(index);
+      return;
+    }
+    if (event.shiftKey && lastSelected !== null) {
+      const start = Math.min(lastSelected, index);
+      const end = Math.max(lastSelected, index);
+      const range = visible.slice(start, end + 1).map((item) => item.id);
+      selected = [...new Set([...selected, ...range])];
+    } else {
+      toggleSelect(track);
+    }
+    lastSelected = index;
+  }
+
+  function openBulkAlbum() {
+    const chosen = $tracks.filter((track) => selected.includes(track.id));
+    bulkAlbum = chosen.length === 1 ? chosen[0].album : "";
+    bulkAlbumOpen = true;
+  }
+
+  function openBulkArtist() {
+    const chosen = $tracks.filter((track) => selected.includes(track.id));
+    bulkArtist = chosen.length === 1 ? chosen[0].artist : "";
+    bulkArtistOpen = true;
+  }
+
+  async function applyBulkAlbum() {
+    if (selected.length === 0) return;
+    try {
+      await invoke("tracks_update_album", {
+        paths: selected,
+        album: bulkAlbum,
+      });
+      tracks.update((list) =>
+        list.map((track) =>
+          selected.includes(track.id) ? { ...track, album: bulkAlbum } : track,
+        ),
+      );
+      clearSelection();
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
+  async function applyBulkArtist() {
+    if (selected.length === 0) return;
+    try {
+      await invoke("tracks_update_artist", {
+        paths: selected,
+        artist: bulkArtist,
+      });
+      tracks.update((list) =>
+        list.map((track) =>
+          selected.includes(track.id) ? { ...track, artist: bulkArtist } : track,
+        ),
+      );
+      clearSelection();
+    } catch (e) {
+      error = String(e);
+    }
+  }
+
+  function requestDelete() {
+    if (selected.length === 0) return;
+    if ($settings.confirmDelete) {
+      deleteOpen = true;
+    } else {
+      performDelete();
+    }
+  }
+
+  async function performDelete() {
+    if (selected.length === 0) return;
+    const paths = [...selected];
+    deleteBusy = true;
+    try {
+      const removed = await invoke<number>("tracks_delete", { paths });
+      const removedSet = new Set(paths);
+      tracks.update((list) => list.filter((track) => !removedSet.has(track.id)));
+      queue.update((list) => list.filter((track) => !removedSet.has(track.path)));
+      const playing = $currentPath;
+      if (playing && removedSet.has(playing)) {
+        await invoke("player_pause").catch(() => {});
+        currentPath.set(null);
+        currentTrack.set(null);
+      }
+      clearSelection();
+      error = removed > 0 ? `Удалено: ${removed}` : "";
+    } catch (e) {
+      error = String(e);
+    } finally {
+      deleteBusy = false;
+    }
+  }
 </script>
 
 <div class="page music-page">
@@ -142,14 +296,29 @@
       <h1 class="page-title">Музыка</h1>
       <div class="page-sub">{$settings.musicFolders.length} папки</div>
     </div>
-    <button
-      class="circle"
-      aria-label="Обновить библиотеку"
-      onclick={refresh}
-      disabled={$scanning}
-    >
-      <Icon name="refresh" size={19} />
-    </button>
+    <div class="head-actions">
+      <button
+        class="pill"
+        class:selected={selecting}
+        onclick={() => {
+          if (selecting) {
+            clearSelection();
+          } else {
+            selecting = true;
+          }
+        }}
+      >
+        Выбрать
+      </button>
+      <button
+        class="circle"
+        aria-label="Обновить библиотеку"
+        onclick={refresh}
+        disabled={$scanning}
+      >
+        <Icon name="refresh" size={19} />
+      </button>
+    </div>
   </header>
 
   <div class="folder-pills">
@@ -199,6 +368,39 @@
     </button>
   </div>
 
+  {#if selecting}
+    <div class="selection-bar">
+      <Glass padding={12}>
+        <div class="selection-count">Выбрано {selected.length}</div>
+        <div class="selection-actions">
+          <button class="pill" onclick={selectAll}>Все</button>
+          <button
+            class="pill"
+            onclick={openBulkAlbum}
+            disabled={selected.length === 0}
+          >
+            Альбом
+          </button>
+          <button
+            class="pill"
+            onclick={openBulkArtist}
+            disabled={selected.length === 0}
+          >
+            Исполнитель
+          </button>
+          <button
+            class="pill danger"
+            onclick={requestDelete}
+            disabled={selected.length === 0}
+          >
+            Удалить
+          </button>
+          <button class="pill" onclick={clearSelection}>Отмена</button>
+        </div>
+      </Glass>
+    </div>
+  {/if}
+
   {#if error}
     <div class="error">{error}</div>
   {/if}
@@ -219,8 +421,25 @@
   {:else}
     <div class="track-list">
       {#each visible as track, index (track.id)}
-        <div class="track-row">
-          <button class="track-main" onclick={() => play(index)}>
+        <div class="track-row" class:selected={selecting && selected.includes(track.id)}>
+          <button
+            class="track-main"
+            onclick={(event) => rowClick(track, index, event)}
+            onpointerdown={(event) => pointerDown(track, event)}
+            onpointerup={pointerUp}
+            onpointerleave={pointerUp}
+            oncontextmenu={(event) => {
+              event.preventDefault();
+              startSelection(track);
+            }}
+          >
+            {#if selecting}
+              <span class="select-mark" class:on={selected.includes(track.id)}>
+                {#if selected.includes(track.id)}
+                  <Icon name="check" size={13} />
+                {/if}
+              </span>
+            {/if}
             <Cover path={track.path} size={56} radius={10} />
             <div class="track-meta">
               <div
@@ -293,6 +512,88 @@
   </div>
 {/if}
 
+{#if bulkAlbumOpen}
+  <div class="modal" role="presentation" onclick={() => (bulkAlbumOpen = false)}>
+    <div
+      class="modal-card"
+      role="dialog"
+      tabindex="-1"
+      onclick={(event) => event.stopPropagation()}
+      onkeydown={(event) => {
+        if (event.key === "Escape") bulkAlbumOpen = false;
+      }}
+    >
+      <div class="modal-head">
+        <div class="section-label">Альбом для {selected.length} треков</div>
+        <button class="icon-btn" aria-label="Закрыть" onclick={() => (bulkAlbumOpen = false)}>
+          <Icon name="close" size={16} />
+        </button>
+      </div>
+      <label class="field">
+        <span>Альбом</span>
+        <input bind:value={bulkAlbum} placeholder="Название альбома" />
+      </label>
+      <button class="pill selected save" onclick={applyBulkAlbum}>Сохранить</button>
+    </div>
+  </div>
+{/if}
+
+{#if bulkArtistOpen}
+  <div class="modal" role="presentation" onclick={() => (bulkArtistOpen = false)}>
+    <div
+      class="modal-card"
+      role="dialog"
+      tabindex="-1"
+      onclick={(event) => event.stopPropagation()}
+      onkeydown={(event) => {
+        if (event.key === "Escape") bulkArtistOpen = false;
+      }}
+    >
+      <div class="modal-head">
+        <div class="section-label">Исполнитель для {selected.length} треков</div>
+        <button class="icon-btn" aria-label="Закрыть" onclick={() => (bulkArtistOpen = false)}>
+          <Icon name="close" size={16} />
+        </button>
+      </div>
+      <label class="field">
+        <span>Исполнитель</span>
+        <input bind:value={bulkArtist} placeholder="Исполнитель" />
+      </label>
+      <button class="pill selected save" onclick={applyBulkArtist}>Сохранить</button>
+    </div>
+  </div>
+{/if}
+
+{#if deleteOpen}
+  <div class="modal" role="presentation" onclick={() => (deleteOpen = false)}>
+    <div
+      class="modal-card"
+      role="dialog"
+      tabindex="-1"
+      onclick={(event) => event.stopPropagation()}
+      onkeydown={(event) => {
+        if (event.key === "Escape") deleteOpen = false;
+      }}
+    >
+      <div class="modal-head">
+        <div class="section-label">Удаление</div>
+        <button class="icon-btn" aria-label="Закрыть" onclick={() => (deleteOpen = false)}>
+          <Icon name="close" size={16} />
+        </button>
+      </div>
+      <p class="modal-text">
+        Удалить {selected.length} трек(ов) с диска? Это действие нельзя отменить.
+      </p>
+      <div class="pill-row">
+        <button class="pill danger" onclick={performDelete} disabled={deleteBusy}>
+          {deleteBusy ? "Удаляю…" : "Удалить"}
+        </button>
+        <button class="pill" onclick={() => (deleteOpen = false)}>Отмена</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <style>
   .music-page {
     display: flex;
@@ -305,6 +606,12 @@
     align-items: flex-start;
     justify-content: space-between;
     gap: 12px;
+  }
+
+  .head-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
 
   .folder-pills {
@@ -467,5 +774,68 @@
   .save {
     width: 100%;
     margin-top: 16px;
+  }
+
+  .selection-bar {
+    position: sticky;
+    bottom: 12px;
+    z-index: 5;
+  }
+
+  .selection-bar :global(.glass) {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .selection-count {
+    color: var(--dim);
+    font-size: 12px;
+  }
+
+  .selection-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .pill.danger {
+    border-color: rgba(255, 100, 80, 0.35);
+    color: #ff8a5c;
+  }
+
+  .pill.danger:hover {
+    background: rgba(255, 100, 80, 0.12);
+    color: #ffb09a;
+  }
+
+  .track-row.selected {
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.06);
+  }
+
+  .select-mark {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    flex: 0 0 auto;
+    border: 1px solid var(--line-strong);
+    border-radius: 999px;
+    color: #08080a;
+  }
+
+  .select-mark.on {
+    border-color: transparent;
+    background: var(--accent);
+  }
+
+  .modal-text {
+    margin: 10px 0 16px;
+    color: var(--dim);
+    font-size: 13px;
+    line-height: 19px;
   }
 </style>
