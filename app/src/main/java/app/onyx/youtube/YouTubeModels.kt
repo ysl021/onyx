@@ -76,6 +76,7 @@ data class SavedTrack(
     val artist: String,
     val name: String,
     val savedAt: Long = System.currentTimeMillis(),
+    val videoId: String = "",
 )
 
 enum class JobStatus { Queued, Downloading, Splitting, Tagging, Saving, Done, Error }data class DownloadJob(

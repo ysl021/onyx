@@ -164,6 +164,18 @@ class LocalPlaylists(
         playlist.copy(trackIds = playlist.trackIds - trackId)
     }
 
+    /** A downloaded stream replaces its `yt:` entry in place. */
+    fun replaceStreamWithLocal(id: String, videoId: String, localId: String) =
+        editPlaylist(id) { playlist ->
+            val streamId = "yt:$videoId"
+            playlist.copy(
+                trackIds = playlist.trackIds
+                    .map { if (it == streamId) localId else it }
+                    .distinct(),
+                streamTracks = playlist.streamTracks.filterNot { it.videoId == videoId },
+            )
+        }
+
     fun moveTrack(playlistId: String, from: Int, to: Int) {
         scope.launch {
             mutate { s ->

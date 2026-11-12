@@ -11,6 +11,7 @@ import app.onyx.audio.SoundEffects
 import app.onyx.audio.VolumeController
 import app.onyx.core.Prefs
 import app.onyx.core.YouTubeDownloadEntry
+import app.onyx.imports.PlaylistImporter
 import app.onyx.lyrics.LyricsRepository
 import app.onyx.media.MediaRepository
 import app.onyx.media.NowPlaying
@@ -216,6 +217,92 @@ class AppController private constructor(context: Context) {
             }
         }
         startQueueIfNeeded(serviceRunning)
+    }
+
+    /** Downloads a whole playlist and replaces each `yt:` entry with the saved file. */
+    fun startPlaylistDownload(
+        videos: List<YtVideo>,
+        folderUri: String,
+        playlistId: String,
+        playlistName: String,
+    ) {
+        if (videos.isEmpty()) return
+        if (folderUri.isBlank()) {
+            toast(tr("Сначала выбери папку для сохранения", "Pick a folder to save into first"))
+            return
+        }
+        val serviceRunning = YouTubeDownloads.isProcessing()
+        YouTubeDownloads.enqueueWholeBatch(
+            videos = videos,
+            folderUri = folderUri,
+            album = playlistName,
+            onSaved = { saved ->
+                if (saved.videoId.isNotBlank()) {
+                    localPlaylists.replaceStreamWithLocal(
+                        playlistId,
+                        saved.videoId,
+                        saved.id,
+                    )
+                }
+            },
+            onAllFinished = { saved ->
+                localLibrary.rescan()
+                if (saved.isNotEmpty()) {
+                    toast(
+                        tr(
+                            "Скачано: ${saved.size}",
+                            "Saved: ${saved.size}",
+                        ),
+                    )
+                    scope.launch {
+                        prefs.addYouTubeDownloads(
+                            saved.map {
+                                YouTubeDownloadEntry(
+                                    it.id,
+                                    it.uri,
+                                    it.title,
+                                    it.artist,
+                                    it.name,
+                                    it.savedAt,
+                                )
+                            },
+                        )
+                    }
+                } else {
+                    toast(tr("Не удалось скачать треки", "Could not download the tracks"))
+                }
+            },
+        )
+        startQueueIfNeeded(serviceRunning)
+    }
+
+    /** Imports a playlist from a public link or pasted M3U/CSV text. */
+    fun importPlaylist(url: String) {
+        toast(tr("Импортирую плейлист…", "Importing playlist…"))
+        scope.launch(Dispatchers.IO) {
+            runCatching {
+                val imported = PlaylistImporter.load(url, spotify)
+                val matched = PlaylistImporter.match(imported, localLibrary)
+                localPlaylists.create(
+                    name = imported.name,
+                    description = imported.description,
+                    trackIds = matched.localIds,
+                ) { id ->
+                    if (matched.streams.isNotEmpty()) {
+                        localPlaylists.addStreamTracks(id, matched.streams)
+                    }
+                    val total = matched.localIds.size + matched.streams.size
+                    toast(
+                        tr(
+                            "Импортировано: $total, не найдено: ${matched.unresolved}",
+                            "Imported: $total, not found: ${matched.unresolved}",
+                        ),
+                    )
+                }
+            }.onFailure {
+                toast(it.message ?: tr("Не удалось импортировать", "Import failed"))
+            }
+        }
     }
 
     private fun startQueueIfNeeded(serviceRunning: Boolean) {

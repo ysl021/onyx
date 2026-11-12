@@ -49,8 +49,8 @@ import androidx.compose.material.icons.rounded.Translate
 import androidx.compose.material.icons.rounded.VideoLibrary
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -78,6 +78,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.onyx.core.PrefsData
 import app.onyx.core.ThemeMode
 import app.onyx.ui.HomeScreen
+import app.onyx.ui.AlbumScreen
+import app.onyx.ui.AlbumSelection
+import app.onyx.ui.LocalOpenAlbum
 import app.onyx.ui.AppLanguageState
 import app.onyx.ui.FontCatalog
 import app.onyx.ui.FontPickerDialog
@@ -162,6 +165,7 @@ fun OnyxApp() {
             runCatching { Tab.valueOf(controller.lastTab) }.getOrDefault(Tab.Player),
         )
     }
+    var albumSelection by remember { mutableStateOf<AlbumSelection?>(null) }
     LaunchedEffect(tab) { controller.lastTab = tab.name }
     var showIntro by rememberSaveable { mutableStateOf(true) }
     var showOnboarding by remember { mutableStateOf(false) }
@@ -308,45 +312,47 @@ fun OnyxApp() {
                                 onPrev = { shiftTab(-1) },
                             ),
                     ) {
-                        AnimatedContent(
-                            targetState = tab,
-                            transitionSpec = {
-                                val forward = targetState.ordinal > initialState.ordinal
-                                val dir = if (forward) 1 else -1
-                                (fadeIn(tween(220)) + slideInHorizontally(tween(260)) { it / 12 * dir })
-                                    .togetherWith(
-                                        fadeOut(tween(160)) + slideOutHorizontally(tween(200)) { -it / 16 * dir },
+                        CompositionLocalProvider(LocalOpenAlbum provides { albumSelection = it }) {
+                            AnimatedContent(
+                                targetState = tab,
+                                transitionSpec = {
+                                    val forward = targetState.ordinal > initialState.ordinal
+                                    val dir = if (forward) 1 else -1
+                                    (fadeIn(tween(220)) + slideInHorizontally(tween(260)) { it / 12 * dir })
+                                        .togetherWith(
+                                            fadeOut(tween(160)) + slideOutHorizontally(tween(200)) { -it / 16 * dir },
+                                        )
+                                },
+                                label = "tab",
+                            ) { current ->
+                                when (current) {
+                                    Tab.Player -> HomeScreen(
+                                        controller = controller,
+                                        onOpenLyrics = { tab = Tab.Lyrics },
+                                        onOpenSettings = { tab = Tab.Settings },
                                     )
-                            },
-                            label = "tab",
-                        ) { current ->
-                            when (current) {
-                                Tab.Player -> HomeScreen(
-                                    controller = controller,
-                                    onOpenLyrics = { tab = Tab.Lyrics },
-                                    onOpenSettings = { tab = Tab.Settings },
-                                )
-                                Tab.Lyrics -> LyricsScreen(
-                                    controller = controller,
-                                    onBack = { tab = Tab.Player },
-                                    onFullscreenChanged = { lyricsFullscreen = it },
-                                    hazeState = hazeState,
-                                )
-                                Tab.Playlists -> PlaylistsScreen(
-                                    controller = controller,
-                                    onBack = { tab = Tab.Player },
-                                    onOpenSettings = { tab = Tab.Settings },
-                                )
-                                Tab.Music -> MusicScreen(controller = controller)
-                                Tab.YouTube -> YouTubeScreen(
-                                    controller = controller,
-                                    onBack = { tab = Tab.Player },
-                                )
-                                Tab.Visualizer -> VisualizerScreen(controller = controller)
-                                Tab.Settings -> SettingsScreen(
-                                    controller = controller,
-                                    onBack = { tab = Tab.Player },
-                                )
+                                    Tab.Lyrics -> LyricsScreen(
+                                        controller = controller,
+                                        onBack = { tab = Tab.Player },
+                                        onFullscreenChanged = { lyricsFullscreen = it },
+                                        hazeState = hazeState,
+                                    )
+                                    Tab.Playlists -> PlaylistsScreen(
+                                        controller = controller,
+                                        onBack = { tab = Tab.Player },
+                                        onOpenSettings = { tab = Tab.Settings },
+                                    )
+                                    Tab.Music -> MusicScreen(controller = controller)
+                                    Tab.YouTube -> YouTubeScreen(
+                                        controller = controller,
+                                        onBack = { tab = Tab.Player },
+                                    )
+                                    Tab.Visualizer -> VisualizerScreen(controller = controller)
+                                    Tab.Settings -> SettingsScreen(
+                                        controller = controller,
+                                        onBack = { tab = Tab.Player },
+                                    )
+                                }
                             }
                         }
                     }
@@ -481,6 +487,14 @@ fun OnyxApp() {
                     OnboardingScreen(
                         controller = controller,
                         onDone = { showOnboarding = false },
+                    )
+                }
+
+                albumSelection?.let { selection ->
+                    AlbumScreen(
+                        selection = selection,
+                        controller = controller,
+                        onBack = { albumSelection = null },
                     )
                 }
 

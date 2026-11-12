@@ -4,7 +4,9 @@ import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -59,6 +61,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -109,6 +113,7 @@ fun MusicScreen(
     val library by controller.localLibrary.state.collectAsStateWithLifecycle()
     val playback by controller.localPlayer.state.collectAsStateWithLifecycle()
     val prefs by controller.prefs.data.collectAsStateWithLifecycle(initialValue = PrefsData())
+    val openAlbum = LocalOpenAlbum.current
     var view by remember { mutableStateOf(MusicView.TRACKS) }
     var openedArtist by remember { mutableStateOf<YtArtistPage?>(null) }
     var artistLoading by remember { mutableStateOf(false) }
@@ -428,6 +433,9 @@ fun MusicScreen(
                             }
                         },
                         onEdit = { editingTrack = track },
+                        onOpenAlbum = {
+                            if (!selectMode) openAlbum(albumSelectionOf(track))
+                        },
                         liked = prefs.likedTracks.any { it.id == track.id },
                         onLike = {
                             scope.launch {
@@ -841,6 +849,7 @@ private fun LikedTrack.toSearchResult(): YtSearchResult? {
     )
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun TrackRow(
     track: LocalTrack,
@@ -848,11 +857,13 @@ private fun TrackRow(
     playing: Boolean,
     onClick: () -> Unit,
     onEdit: () -> Unit,
+    onOpenAlbum: () -> Unit,
     liked: Boolean = false,
     onLike: () -> Unit = {},
     selectMode: Boolean = false,
     selected: Boolean = false,
 ) {
+    val haptic = LocalHapticFeedback.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -883,12 +894,25 @@ private fun TrackRow(
             }
             Spacer(Modifier.width(10.dp))
         }
-        AsyncArt(
-            model = track.artPath?.let { File(it) },
+        Box(
             modifier = Modifier
                 .size(46.dp)
-                .clip(RoundedCornerShape(10.dp)),
-        )
+                .clip(RoundedCornerShape(10.dp))
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = {
+                        if (!selectMode) {
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            onOpenAlbum()
+                        }
+                    },
+                ),
+        ) {
+            AsyncArt(
+                model = track.artPath?.let { File(it) },
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
         Spacer(Modifier.width(11.dp))
         Column(Modifier.weight(1f)) {
             Text(

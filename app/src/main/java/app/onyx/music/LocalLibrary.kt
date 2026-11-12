@@ -45,6 +45,9 @@ data class LocalTrack(
     val artPath: String? = null,
     val folderUri: String = "",
     val folderName: String = "",
+    val albumId: Long = 0L,
+    val trackNo: Int = 0,
+    val year: Int = 0,
     val custom: Boolean = false,
     /** Last-modified time and size, used to skip unchanged files on rescans. */
     val modified: Long = 0L,
@@ -361,6 +364,8 @@ class LocalLibrary(
             MediaStore.Audio.Media.DATE_MODIFIED,
             MediaStore.Audio.Media.DISPLAY_NAME,
             MediaStore.Audio.Media.ALBUM_ID,
+            MediaStore.Audio.Media.TRACK,
+            MediaStore.Audio.Media.YEAR,
             MediaStore.Audio.Media.RELATIVE_PATH,
             MediaStore.Audio.Media.BUCKET_DISPLAY_NAME,
         )
@@ -389,6 +394,8 @@ class LocalLibrary(
                 val modifiedIndex = cursor.getColumnIndex(MediaStore.Audio.Media.DATE_MODIFIED)
                 val nameIndex = cursor.getColumnIndex(MediaStore.Audio.Media.DISPLAY_NAME)
                 val albumIdIndex = cursor.getColumnIndex(MediaStore.Audio.Media.ALBUM_ID)
+                val trackIndex = cursor.getColumnIndex(MediaStore.Audio.Media.TRACK)
+                val yearIndex = cursor.getColumnIndex(MediaStore.Audio.Media.YEAR)
                 while (cursor.moveToNext()) {
                     val mediaId = cursor.getLong(idIndex)
                     if (mediaId <= 0L) continue
@@ -408,6 +415,8 @@ class LocalLibrary(
                     val size = if (sizeIndex >= 0) cursor.getLong(sizeIndex) else 0L
                     val modified = if (modifiedIndex >= 0) cursor.getLong(modifiedIndex) * 1000L else 0L
                     val albumId = if (albumIdIndex >= 0) cursor.getLong(albumIdIndex) else 0L
+                    val trackNo = if (trackIndex >= 0) cursor.getInt(trackIndex) else 0
+                    val year = if (yearIndex >= 0) cursor.getInt(yearIndex) else 0
                     out += LocalTrack(
                         id = sha1("media:$uri"),
                         uri = uri.toString(),
@@ -420,6 +429,9 @@ class LocalLibrary(
                         folderName = folder.name,
                         modified = modified,
                         size = size,
+                        albumId = albumId,
+                        trackNo = trackNo,
+                        year = year,
                     )
                 }
             }
@@ -462,6 +474,10 @@ class LocalLibrary(
                 ?.trim().orEmpty()
             val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                 ?.toLongOrNull() ?: 0L
+            val trackNo = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER)
+                ?.substringBefore('/')?.trim()?.toIntOrNull() ?: 0
+            val year = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_YEAR)
+                ?.take(4)?.toIntOrNull() ?: 0
             val art = retriever.embeddedPicture?.let { bytes ->
                 runCatching {
                     val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -488,6 +504,8 @@ class LocalLibrary(
                 folderName = folder.name,
                 modified = modified,
                 size = size,
+                trackNo = trackNo,
+                year = year,
             )
         } catch (_: Exception) {
             null

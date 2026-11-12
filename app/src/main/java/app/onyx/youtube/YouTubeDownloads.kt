@@ -32,6 +32,8 @@ object YouTubeDownloads {
         val jobIds: List<String>,
         val onFinished: (List<SavedTrack>) -> Unit,
         val whole: Boolean = false,
+        /** Save directly into the chosen folder, without a per-video subfolder. */
+        val flat: Boolean = false,
     )
 
     private val main = Handler(Looper.getMainLooper())
@@ -108,6 +110,53 @@ object YouTubeDownloads {
                     whole = true,
                 ),
             )
+        }
+    }
+
+    /** Downloads a whole playlist into the chosen folder, one batch per track. */
+    fun enqueueWholeBatch(
+        videos: List<YtVideo>,
+        folderUri: String,
+        album: String,
+        onSaved: (SavedTrack) -> Unit,
+        onAllFinished: (List<SavedTrack>) -> Unit,
+    ) {
+        if (videos.isEmpty()) return
+        val remaining = java.util.concurrent.atomic.AtomicInteger(videos.size)
+        val all = java.util.Collections.synchronizedList(ArrayList<SavedTrack>())
+        synchronized(lock) {
+            videos.forEach { video ->
+                val job = DownloadJob(
+                    id = UUID.randomUUID().toString(),
+                    videoId = video.id,
+                    videoTitle = video.title,
+                    channel = video.channel,
+                    sectionTitle = video.title,
+                    index = 0,
+                    total = 1,
+                    startMs = 0L,
+                    endMs = video.durationMs,
+                )
+                _state.update { it.copy(jobs = it.jobs + job, busy = true) }
+                queue.addLast(
+                    Batch(
+                        video = video,
+                        sections = listOf(YtSection(video.title, 0L, video.durationMs)),
+                        folderUri = folderUri,
+                        album = album,
+                        jobIds = listOf(job.id),
+                        onFinished = { saved ->
+                            all.addAll(saved)
+                            saved.forEach(onSaved)
+                            if (remaining.decrementAndGet() == 0) {
+                                onAllFinished(all.toList())
+                            }
+                        },
+                        whole = true,
+                        flat = true,
+                    ),
+                )
+            }
         }
     }
 
@@ -220,6 +269,7 @@ object YouTubeDownloads {
                 ?: throw IllegalStateException("РџР°РїРєР° РЅРµРґРѕСЃС‚СѓРїРЅР° / folder is not available")
             val existing = root.findFile(safeVideoTitle)
             val folder = when {
+                batch.flat -> root
                 existing == null -> root.createDirectory(safeVideoTitle) ?: root
                 existing.isDirectory -> existing
                 else -> root
@@ -258,7 +308,7 @@ object YouTubeDownloads {
                     context.contentResolver.openOutputStream(document.uri)?.use { output ->
                         source.inputStream().use { input -> input.copyTo(output) }
                     } ?: throw IllegalStateException("openOutputStream failed")
-                    created += SavedTrack(sha1(document.uri.toString()), document.uri.toString(), title, batch.video.channel, document.name ?: displayName)
+                    created += SavedTrack(sha1(document.uri.toString()), document.uri.toString(), title, batch.video.channel, document.name ?: displayName, videoId = batch.video.id)
                     update(jobId) {
                         it.copy(
                             status = JobStatus.Done,
@@ -318,7 +368,7 @@ object YouTubeDownloads {
                         temp.inputStream().use { input -> input.copyTo(output) }
                     } ?: throw IllegalStateException("openOutputStream failed")
 
-                    created += SavedTrack(sha1(document.uri.toString()), document.uri.toString(), title, batch.video.channel, document.name ?: displayName)
+                    created += SavedTrack(sha1(document.uri.toString()), document.uri.toString(), title, batch.video.channel, document.name ?: displayName, videoId = batch.video.id)
                     update(jobId) {
                         it.copy(
                             status = JobStatus.Done,

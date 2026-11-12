@@ -21,6 +21,7 @@ object YouTubeMusic {
     private const val CLIENT_VERSION = "1.20261104.00.00"
     private const val VIDEOS_PARAM = "EgWKAQIQAWoKEAoQAxAEEAkQBQ=="
     private const val ARTISTS_PARAM = "EgWKAQIgAWoKEAoQAxAEEAkQBQ=="
+    private const val ALBUMS_PARAM = "EgWKAQIYAWoKEAoQAxAEEAkQBQ=="
     private val JSON = "application/json; charset=utf-8".toMediaType()
 
     private val RANDOM_QUERIES = listOf(
@@ -65,6 +66,71 @@ object YouTubeMusic {
             items += YouTubeSearch.searchMusic(query).items
         }
         items.distinctBy { it.id }.shuffled().take(24)
+    }
+
+    suspend fun searchAlbum(query: String, artist: String): YtAlbum? = withContext(Dispatchers.IO) {
+        val term = listOf(artist, query).filter { it.isNotBlank() }.joinToString(" ")
+        if (term.isBlank()) return@withContext null
+        val root = post("search", searchBody(term, ALBUMS_PARAM)) ?: return@withContext null
+        val items = mutableListOf<JSONObject>()
+        collect(root, "musicTwoRowItemRenderer", items)
+        val albums = items.mapNotNull { parseAlbumOrVideo(it, artist)?.first }
+        albums.firstOrNull { album ->
+            query.isBlank() ||
+                album.title.contains(query, ignoreCase = true) ||
+                query.contains(album.title, ignoreCase = true)
+        } ?: albums.firstOrNull()
+    }
+
+    suspend fun playlistTracks(playlistId: String): List<YtSearchResult> =
+        withContext(Dispatchers.IO) {
+            if (playlistId.isBlank()) return@withContext emptyList()
+            val root = post("browse", browseBody("VL$playlistId", null))
+                ?: return@withContext emptyList()
+            val items = mutableListOf<JSONObject>()
+            collect(root, "musicResponsiveListItemRenderer", items)
+            val songs = items.mapNotNull { parseSong(it, "") }
+            if (songs.isNotEmpty()) return@withContext songs
+            val panels = mutableListOf<JSONObject>()
+            collect(root, "playlistPanelVideoRenderer", panels)
+            panels.mapNotNull { parsePlaylistPanel(it) }
+        }
+
+    private fun parsePlaylistPanel(obj: JSONObject): YtSearchResult? {
+        val id = obj.optString("videoId").takeIf { it.isNotBlank() } ?: return null
+        val title = textOf(obj.optJSONObject("title")).ifBlank { return null }
+        val channel = textOf(obj.optJSONObject("longBylineText"))
+            .ifBlank { textOf(obj.optJSONObject("shortBylineText")) }
+        val duration = parseDuration(textOf(obj.optJSONObject("lengthText")))
+        return YtSearchResult(
+            id = id,
+            url = "https://www.youtube.com/watch?v=$id",
+            title = title,
+            channel = channel,
+            durationMs = duration,
+            thumbnailUrl = anyThumb(obj),
+        )
+    }
+
+    private fun anyThumb(obj: JSONObject): String? {
+        val thumbs = obj.optJSONObject("thumbnail")?.optJSONArray("thumbnails")
+            ?: obj.optJSONObject("thumbnailRenderer")
+                ?.optJSONObject("musicThumbnailRenderer")
+                ?.optJSONObject("thumbnail")
+                ?.optJSONArray("thumbnails")
+            ?: return null
+        var best: String? = null
+        var bestWidth = -1
+        for (i in 0 until thumbs.length()) {
+            val item = thumbs.optJSONObject(i) ?: continue
+            val url = item.optString("url").takeIf { it.isNotBlank() } ?: continue
+            val width = item.optInt("width", 0)
+            if (width >= bestWidth) {
+                bestWidth = width
+                best = url
+            }
+        }
+        return best
     }
 
     suspend fun searchArtist(name: String): YtArtist? = withContext(Dispatchers.IO) {

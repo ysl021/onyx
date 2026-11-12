@@ -52,6 +52,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -63,7 +65,11 @@ import app.onyx.music.LocalPlaylist
 import app.onyx.music.LocalTrack
 import app.onyx.youtube.YouTubeClient
 import app.onyx.youtube.YouTubeStreamCache
+import app.onyx.youtube.YtVideo
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import app.onyx.music.PlaylistStreamTrack
@@ -134,6 +140,7 @@ fun MyPlaylistsContent(
     }
 
     var showCreate by remember { mutableStateOf(false) }
+    var showImport by remember { mutableStateOf(false) }
     var showCreateFolder by remember { mutableStateOf(false) }
     var openedFolder by rememberSaveable { mutableStateOf("") }
     var deleteTarget by remember { mutableStateOf<DeleteTarget?>(null) }
@@ -193,6 +200,13 @@ fun MyPlaylistsContent(
                     pendingCover.value = null
                     showCreate = true
                 },
+            )
+            Spacer(Modifier.width(8.dp))
+            GlassPill(
+                text = tr("Импорт", "Import"),
+                selected = false,
+                icon = Icons.Rounded.Download,
+                onClick = { showImport = true },
             )
         }
         Spacer(Modifier.height(10.dp))
@@ -329,6 +343,10 @@ fun MyPlaylistsContent(
                 }
             }
         }
+    }
+
+    if (showImport) {
+        ImportPlaylistDialog(controller) { showImport = false }
     }
 
     if (showCreate) {
@@ -505,6 +523,7 @@ private fun LocalPlaylistDetail(
     var showPicker by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val prefs by controller.prefs.data.collectAsStateWithLifecycle(initialValue = PrefsData())
+    val openAlbum = LocalOpenAlbum.current
 
     // Warm the first streams while the playlist is open.
     LaunchedEffect(playlist.id) {
@@ -518,13 +537,19 @@ private fun LocalPlaylistDetail(
             controller.toast(tr("Сначала выбери папку для сохранения", "Pick a folder to save into first"))
             return
         }
+        val videoId = track.id.removePrefix("yt:")
         scope.launch(Dispatchers.IO) {
             val video = runCatching {
-                YouTubeClient.resolve("https://www.youtube.com/watch?v=${track.id.removePrefix("yt:")}")
+                YouTubeClient.resolve("https://www.youtube.com/watch?v=$videoId")
             }.getOrNull()
             withContext(Dispatchers.Main) {
                 if (video != null) {
-                    controller.startYouTubeWhole(video, folder)
+                    controller.startPlaylistDownload(
+                        listOf(video),
+                        folder,
+                        playlist.id,
+                        playlist.name,
+                    )
                 } else {
                     controller.toast(tr("Не удалось получить трек", "Could not fetch the track"))
                 }
@@ -538,22 +563,52 @@ private fun LocalPlaylistDetail(
             controller.toast(tr("Сначала выбери папку для сохранения", "Pick a folder to save into first"))
             return
         }
-        if (playlist.streamTracks.isEmpty()) return
+        val entries = playlist.streamTracks.distinctBy { it.videoId }
+        if (entries.isEmpty()) return
         controller.toast(
             tr(
-                "Скачиваю ${playlist.streamTracks.size} треков",
-                "Downloading ${playlist.streamTracks.size} tracks",
+                "Скачиваю ${entries.size} треков",
+                "Downloading ${entries.size} tracks",
             ),
         )
         scope.launch(Dispatchers.IO) {
-            playlist.streamTracks.forEach { entry ->
-                val video = runCatching {
-                    YouTubeClient.resolve("https://www.youtube.com/watch?v=${entry.videoId}")
-                }.getOrNull()
-                if (video != null) {
-                    withContext(Dispatchers.Main) {
-                        controller.startYouTubeWhole(video, folder)
-                    }
+            val videos = mutableListOf<YtVideo>()
+            val failed = mutableListOf<String>()
+            entries.chunked(3).forEach { chunk ->
+                val resolved = coroutineScope {
+                    chunk.map { entry ->
+                        async {
+                            entry to runCatching {
+                                YouTubeClient.resolve(
+                                    "https://www.youtube.com/watch?v=${entry.videoId}",
+                                )
+                            }.getOrNull()
+                        }
+                    }.awaitAll()
+                }
+                resolved.forEach { (entry, video) ->
+                    if (video != null) videos += video else failed += entry.title
+                }
+            }
+            withContext(Dispatchers.Main) {
+                if (videos.isNotEmpty()) {
+                    controller.startPlaylistDownload(
+                        videos,
+                        folder,
+                        playlist.id,
+                        playlist.name,
+                    )
+                }
+                if (failed.isNotEmpty()) {
+                    controller.toast(
+                        tr(
+                            "Не удалось получить: ${failed.size}",
+                            "Could not fetch: ${failed.size}",
+                        ),
+                    )
+                }
+                if (videos.isEmpty()) {
+                    controller.toast(tr("Не удалось получить треки", "Could not fetch the tracks"))
                 }
             }
         }
@@ -802,6 +857,7 @@ private fun LocalPlaylistDetail(
                     PlaylistTrackRow(
                         track = track,
                         onDownload = { downloadStreamTrack(track) },
+                        onOpenAlbum = { openAlbum(albumSelectionOf(track)) },
                         onRemove = {
                             controller.localPlaylists.removeTrack(playlist.id, track.id)
                         },
@@ -863,12 +919,15 @@ private fun LocalPlaylistDetail(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun PlaylistTrackRow(
     track: LocalTrack,
     onDownload: () -> Unit,
+    onOpenAlbum: () -> Unit,
     onRemove: () -> Unit,
 ) {
+    val haptic = LocalHapticFeedback.current
     Row(
         modifier = Modifier
             .fillMaxSize()
@@ -876,12 +935,23 @@ private fun PlaylistTrackRow(
             .padding(horizontal = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        AsyncArt(
-            model = artModel(track.artPath),
+        Box(
             modifier = Modifier
                 .size(38.dp)
-                .clip(RoundedCornerShape(9.dp)),
-        )
+                .clip(RoundedCornerShape(9.dp))
+                .combinedClickable(
+                    onClick = {},
+                    onLongClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onOpenAlbum()
+                    },
+                ),
+        ) {
+            AsyncArt(
+                model = artModel(track.artPath),
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
         Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Text(
@@ -1224,3 +1294,60 @@ private fun PlaylistStreamTrack.toLocalTrack(): LocalTrack = LocalTrack(
     artPath = thumbnailUrl,
     folderName = "YouTube",
 )
+
+@Composable
+private fun ImportPlaylistDialog(controller: AppController, onDismiss: () -> Unit) {
+    var url by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(tr("Импорт плейлиста", "Import playlist"), color = OnyxWhite) },
+        text = {
+            Column {
+                Text(
+                    tr(
+                        "Вставь ссылку Spotify, YouTube, Deezer или Apple Music. Можно вставить M3U/CSV.",
+                        "Paste a Spotify, YouTube, Deezer or Apple Music link, or M3U/CSV text.",
+                    ),
+                    color = OnyxDim,
+                    fontSize = 12.sp,
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = url,
+                    onValueChange = { url = it },
+                    placeholder = { Text(tr("Ссылка на плейлист", "Playlist link"), color = OnyxFaint) },
+                    singleLine = false,
+                    minLines = 2,
+                    maxLines = 5,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = OnyxLine,
+                        unfocusedBorderColor = OnyxLine,
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        cursorColor = OnyxWhite,
+                    ),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    if (url.isNotBlank()) {
+                        controller.importPlaylist(url.trim())
+                        onDismiss()
+                    }
+                },
+                enabled = url.isNotBlank(),
+            ) {
+                Text(tr("Импортировать", "Import"), color = OnyxWhite)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(tr("Отмена", "Cancel"), color = OnyxFaint)
+            }
+        },
+        containerColor = OnyxBlack,
+    )
+}

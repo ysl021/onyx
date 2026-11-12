@@ -373,6 +373,11 @@ class SpotifyClient(private val context: Context, private val prefs: Prefs) {
         )?.items?.mapNotNull { it.track }
     }
 
+    suspend fun playlist(id: String): SpotifyPlaylist? {
+        val t = token() ?: return null
+        return apiGet<SpotifyPlaylist>("https://api.spotify.com/v1/playlists/$id", t)
+    }
+
     suspend fun addToPlaylist(playlistId: String, trackUri: String): Boolean {
         val t = token() ?: return false
         val uri = java.net.URLEncoder.encode(trackUri, "UTF-8")

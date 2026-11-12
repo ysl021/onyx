@@ -10,7 +10,9 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.Arrangement
@@ -65,6 +67,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -125,6 +129,7 @@ fun HomeScreen(
     val localQueueActive = localPlayback.current != null && localPlayback.queue.isNotEmpty()
     var playerPickerTrack by remember { mutableStateOf<LocalTrack?>(null) }
     val currentLocal = localPlayback.current
+    val openAlbum = LocalOpenAlbum.current
     val currentLiked = currentLocal?.let { track ->
         prefs.likedTracks.any { it.id == track.id }
     } == true
@@ -183,6 +188,17 @@ fun HomeScreen(
             Hero(
                 now = nowPlaying,
                 onOpenLyrics = onOpenLyrics,
+                onOpenAlbum = {
+                    openAlbum(
+                        AlbumSelection(
+                            albumId = currentLocal?.albumId ?: 0L,
+                            album = nowPlaying.album,
+                            artist = nowPlaying.artist,
+                            title = nowPlaying.title,
+                            artPath = currentLocal?.artPath,
+                        ),
+                    )
+                },
                 liked = currentLiked,
                 onLike = {
                     currentLocal?.let { track ->
@@ -354,14 +370,17 @@ private fun AccessBanner() {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun Hero(
     now: NowPlaying,
     onOpenLyrics: () -> Unit,
+    onOpenAlbum: () -> Unit,
     liked: Boolean,
     onLike: () -> Unit,
     onAddToPlaylist: () -> Unit,
 ) {
+    val haptic = LocalHapticFeedback.current
     Column(
         modifier = Modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -372,7 +391,13 @@ private fun Hero(
                 .aspectRatio(1f)
                 .clip(RoundedCornerShape(26.dp))
                 .background(OnyxWhite.copy(alpha = 0.04f))
-                .clickable { onOpenLyrics() },
+                .combinedClickable(
+                    onClick = onOpenLyrics,
+                    onLongClick = {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        onOpenAlbum()
+                    },
+                ),
             contentAlignment = Alignment.Center,
         ) {
             val model = now.art ?: now.artUri

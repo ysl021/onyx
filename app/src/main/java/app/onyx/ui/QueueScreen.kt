@@ -1,7 +1,9 @@
 package app.onyx.ui
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -60,6 +62,7 @@ fun QueueScreen(
     val media by controller.media.state.collectAsStateWithLifecycle()
     val prefs by controller.prefs.data.collectAsStateWithLifecycle(initialValue = PrefsData())
     val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val openAlbum = LocalOpenAlbum.current
     val connected = prefs.spotifyRefresh.isNotBlank() || prefs.spotifyAccess.isNotBlank()
     var queue by remember { mutableStateOf<QueueData?>(null) }
     var version by remember { mutableStateOf(0) }
@@ -205,6 +208,15 @@ fun QueueScreen(
                 QueueRow(
                     index = index + 1,
                     track = track,
+                    onOpenAlbum = {
+                        openAlbum(
+                            AlbumSelection(
+                                album = track.album,
+                                artist = track.artist,
+                                title = track.title,
+                            ),
+                        )
+                    },
                     onPlay = {
                         scope.launch {
                             val ok = controller.spotify.playTrack(track.uri)
@@ -285,8 +297,15 @@ private fun NowCard(title: String, artist: String, art: Any?) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun QueueRow(index: Int, track: TrackUi, onPlay: () -> Unit) {
+private fun QueueRow(
+    index: Int,
+    track: TrackUi,
+    onOpenAlbum: () -> Unit,
+    onPlay: () -> Unit,
+) {
+    val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -304,7 +323,14 @@ private fun QueueRow(index: Int, track: TrackUi, onPlay: () -> Unit) {
             Modifier
                 .size(46.dp)
                 .clip(RoundedCornerShape(10.dp))
-                .background(OnyxDim.copy(alpha = 0.10f)),
+                .background(OnyxDim.copy(alpha = 0.10f))
+                .combinedClickable(
+                    onClick = onPlay,
+                    onLongClick = {
+                        haptic.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                        onOpenAlbum()
+                    },
+                ),
         ) {
             if (track.art != null) {
                 AsyncImage(
