@@ -1,5 +1,6 @@
 <script lang="ts">
   import { invoke } from "@tauri-apps/api/core";
+  import { get } from "svelte/store";
   import { onMount } from "svelte";
   import Glass from "../components/Glass.svelte";
   import Icon from "../components/Icon.svelte";
@@ -272,8 +273,14 @@
     try {
       const removed = await invoke<number>("tracks_delete", { paths });
       const removedSet = new Set(paths);
+      const oldQueue = get(queue);
+      const oldIndex = get(queueIndex);
+      const removedBefore = oldQueue
+        .slice(0, oldIndex)
+        .filter((track) => removedSet.has(track.path)).length;
       tracks.update((list) => list.filter((track) => !removedSet.has(track.id)));
       queue.update((list) => list.filter((track) => !removedSet.has(track.path)));
+      queueIndex.set(Math.max(0, oldIndex - removedBefore));
       const playing = $currentPath;
       if (playing && removedSet.has(playing)) {
         await invoke("player_pause").catch(() => {});
