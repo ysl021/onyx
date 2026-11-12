@@ -19,7 +19,18 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - uses: android-actions/setup-android@v3
+      # The ubuntu-latest image already ships the Android SDK with accepted
+      # licenses. android-actions/setup-android@v3 fails on newer images
+      # (sdkmanager: Failed to find package 'tools'), so point Gradle at the
+      # preinstalled SDK instead of installing anything.
+      - name: Locate Android SDK
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          test -d "$SDK" || { echo "Android SDK not found"; exit 1; }
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "sdk.dir=$SDK" > local.properties
+          ls "$SDK/platforms" | tail -n 3
 
       - name: Restore release keystore
         env:
