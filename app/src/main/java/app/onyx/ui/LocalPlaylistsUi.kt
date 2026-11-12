@@ -102,6 +102,22 @@ private fun fmtMs(ms: Long): String {
     return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%d:%02d".format(m, s)
 }
 
+/** "5 плейлистов" with the right Russian ending. */
+private fun ruCount(count: Int, one: String, few: String, many: String): String {
+    val mod100 = count % 100
+    val mod10 = count % 10
+    val word = when {
+        mod100 in 11..14 -> many
+        mod10 == 1 -> one
+        mod10 in 2..4 -> few
+        else -> many
+    }
+    return "$count $word"
+}
+
+private fun enCount(count: Int, one: String, many: String): String =
+    "$count " + if (count == 1) one else many
+
 /** "1 ч 12 мин" style total duration for a playlist header. */
 private fun humanDuration(ms: Long): String {
     val totalMin = ms / 60000
@@ -150,6 +166,22 @@ fun MyPlaylistsContent(
     }
 
     Column(modifier.fillMaxSize()) {
+        val currentFolder = playlistsState.folders.firstOrNull { it.id == openedFolder }
+        val visible = if (openedFolder.isBlank()) {
+            playlistsState.playlists
+        } else {
+            playlistsState.playlists.filter { it.folderId == openedFolder }
+        }
+        val playlistsLabel = tr(
+            ruCount(visible.size, "плейлист", "плейлиста", "плейлистов"),
+            enCount(visible.size, "playlist", "playlists"),
+        )
+        val trackCount = visible.sumOf { it.trackIds.size }
+        val tracksLabel = tr(
+            ruCount(trackCount, "трек", "трека", "треков"),
+            enCount(trackCount, "track", "tracks"),
+        )
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -165,9 +197,8 @@ fun MyPlaylistsContent(
             )
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
-                val folder = playlistsState.folders.firstOrNull { it.id == openedFolder }
                 Text(
-                    folder?.name ?: tr("Мои плейлисты", "My playlists"),
+                    currentFolder?.name ?: tr("Мои плейлисты", "My playlists"),
                     color = OnyxWhite,
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Black,
@@ -175,13 +206,11 @@ fun MyPlaylistsContent(
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    if (folder == null) {
-                        tr("ONYX · локальные", "ONYX · local")
-                    } else {
-                        tr("Папка", "Folder")
-                    },
+                    if (currentFolder == null) "$playlistsLabel · $tracksLabel" else playlistsLabel,
                     color = OnyxFaint,
                     fontSize = 10.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
             CircleButton(
@@ -191,9 +220,17 @@ fun MyPlaylistsContent(
                 iconSize = 17.dp,
                 onClick = { showCreateFolder = true },
             )
-            Spacer(Modifier.width(8.dp))
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(start = 18.dp, end = 18.dp, top = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             GlassPill(
-                text = tr("Плейлист", "Playlist"),
+                text = tr("Новый плейлист", "New playlist"),
                 selected = true,
                 icon = Icons.Rounded.Add,
                 onClick = {
@@ -201,7 +238,6 @@ fun MyPlaylistsContent(
                     showCreate = true
                 },
             )
-            Spacer(Modifier.width(8.dp))
             GlassPill(
                 text = tr("Импорт", "Import"),
                 selected = false,
@@ -210,12 +246,6 @@ fun MyPlaylistsContent(
             )
         }
         Spacer(Modifier.height(10.dp))
-
-        val visible = if (openedFolder.isBlank()) {
-            playlistsState.playlists
-        } else {
-            playlistsState.playlists.filter { it.folderId == openedFolder }
-        }
 
         LazyColumn(
             contentPadding = PaddingValues(start = 18.dp, end = 18.dp, bottom = 132.dp),
@@ -676,13 +706,26 @@ private fun LocalPlaylistDetail(
                     overflow = TextOverflow.Ellipsis,
                 )
                 val total = fullTracks.sumOf { it.durationMs }
-                val countText = tr("треков", "tracks")
+                val countText = tr(
+                    ruCount(fullTracks.size, "трек", "трека", "треков"),
+                    enCount(fullTracks.size, "track", "tracks"),
+                )
                 val totalLabel = if (total > 0) {
-                    "${fullTracks.size} $countText · ${humanDuration(total)}"
+                    "$countText · ${humanDuration(total)}"
                 } else {
-                    "${fullTracks.size} $countText"
+                    countText
                 }
                 Text(totalLabel, color = OnyxFaint, fontSize = 10.sp)
+            }
+            if (playlist.streamTracks.isNotEmpty()) {
+                CircleButton(
+                    icon = Icons.Rounded.Download,
+                    contentDescription = tr("Скачать плейлист", "Download playlist"),
+                    size = 38.dp,
+                    iconSize = 16.dp,
+                    onClick = { downloadAll() },
+                )
+                Spacer(Modifier.width(8.dp))
             }
             CircleButton(
                 icon = Icons.Rounded.PushPin,
@@ -739,15 +782,6 @@ private fun LocalPlaylistDetail(
                     text = tr("Правка", "Edit"),
                     selected = false,
                     onClick = { showEdit = true },
-                )
-                Spacer(Modifier.width(8.dp))
-                GlassPill(
-                    text = "",
-                    selected = false,
-                    icon = Icons.Rounded.Download,
-                    iconDescription = tr("Скачать плейлист", "Download playlist"),
-                    enabled = playlist.streamTracks.isNotEmpty(),
-                    onClick = { downloadAll() },
                 )
             }
             Spacer(Modifier.height(12.dp))
