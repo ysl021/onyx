@@ -317,9 +317,15 @@ fun OnyxApp() {
                         modifier = Modifier
                             .fillMaxSize()
                             .statusBarsPadding()
-                            .tabSwipe(
-                                onNext = { openLyrics(true) },
-                                onPrev = { openLyrics(false) },
+                            .then(
+                                if (tab == Tab.Player && !showQueue && !showVisualizer && !showHealth) {
+                                    Modifier.tabSwipe(
+                                        onNext = { openLyrics(true) },
+                                        onPrev = { openLyrics(false) },
+                                    )
+                                } else {
+                                    Modifier
+                                },
                             ),
                     ) {
                         CompositionLocalProvider(LocalOpenAlbum provides { albumSelection = it }) {

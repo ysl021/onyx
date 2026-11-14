@@ -36,7 +36,7 @@ jobs:
         env:
           KEYSTORE_BASE64: ${{ secrets.ONYX_KEYSTORE_BASE64 }}
           STORE_PASSWORD: ${{ secrets.ONYX_STORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ONYX_KEY_ALIAS }}
+          KEY_ALIAS: ${{ secrets.ONYX_KEY_ALIAS || 'onyx' }}
           KEY_PASSWORD: ${{ secrets.ONYX_KEY_PASSWORD }}
         run: |
           set -euo pipefail
