@@ -74,6 +74,7 @@ import app.onyx.core.LikedArtist
 import app.onyx.core.LikedTrack
 import app.onyx.core.PrefsData
 import app.onyx.music.LocalPlaylist
+import app.onyx.music.LocalSearch
 import app.onyx.music.LocalTrack
 import app.onyx.music.PlaylistStreamTrack
 import app.onyx.music.TagWriter
@@ -106,6 +107,7 @@ private enum class MusicView { TRACKS, FAVORITES }
 @Composable
 fun MusicScreen(
     controller: AppController,
+    seedQuery: String = "",
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -118,7 +120,7 @@ fun MusicScreen(
     var openedArtist by remember { mutableStateOf<YtArtistPage?>(null) }
     var artistLoading by remember { mutableStateOf(false) }
     var streamPicker by remember { mutableStateOf<PlaylistStreamTrack?>(null) }
-    var query by remember { mutableStateOf("") }
+    var query by remember(seedQuery) { mutableStateOf(seedQuery) }
 
     fun openArtist(name: String) {
         if (name.isBlank()) return
@@ -142,17 +144,15 @@ fun MusicScreen(
     var showDeleteConfirm by remember { mutableStateOf(false) }
 
     val folders = library.folders
-    val filtered = remember(library.tracks, query, selectedFolder) {
-        val base = library.tracks.filter { track ->
+    val base = remember(library.tracks, selectedFolder) {
+        library.tracks.filter { track ->
             selectedFolder == null || track.folderUri == selectedFolder
         }
-        if (query.isBlank()) base
-        else base.filter {
-            it.title.contains(query, ignoreCase = true) ||
-                it.artist.contains(query, ignoreCase = true) ||
-                it.album.contains(query, ignoreCase = true)
-        }
     }
+    val searchResult = remember(base, query) {
+        if (query.isBlank()) LocalSearch.Result(base, null) else LocalSearch.search(base, query, 2000)
+    }
+    val filtered = searchResult.tracks
     androidx.compose.runtime.LaunchedEffect(folders) {
         if (selectedFolder != null && folders.none { it.uri == selectedFolder }) selectedFolder = null
     }
@@ -321,6 +321,18 @@ fun MusicScreen(
                 cursorColor = OnyxWhite,
             ),
         )
+
+        if (query.isNotBlank() && searchResult.via != null) {
+            Text(
+                text = tr(
+                    "Искал как «${searchResult.via}»",
+                    "Searched as «${searchResult.via}»",
+                ),
+                color = OnyxFaint,
+                fontSize = 10.sp,
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 2.dp),
+            )
+        }
 
         if (selectMode) {
             Row(

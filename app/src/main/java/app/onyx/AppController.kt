@@ -136,9 +136,23 @@ class AppController private constructor(context: Context) {
         sleepJob?.cancel()
         sleepJob = null
         _sleepRemainingMs.value = 0L
+        localPlayer.setVolume(1f)
     }
 
-    private fun pauseAllForSleep() {
+    /**
+     * Fades the local player out over the last ~20 seconds instead of cutting
+     * the music mid-phrase. Spotify playback is only paused at the end: a
+     * notification-listener remote has no volume channel.
+     */
+    private suspend fun pauseAllForSleep() {
+        if (localPlayer.state.value.isPlaying) {
+            val steps = 28
+            for (step in steps downTo 0) {
+                localPlayer.setVolume(step / steps.toFloat())
+                delay(700)
+            }
+            localPlayer.setVolume(1f)
+        }
         localPlayer.pause()
         media.pause()
     }

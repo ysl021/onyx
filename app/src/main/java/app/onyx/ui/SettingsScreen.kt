@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
@@ -113,6 +114,7 @@ private const val REDIRECT = "http://127.0.0.1:8899/callback"
 fun SettingsScreen(
     controller: AppController,
     onBack: () -> Unit,
+    onOpenHealth: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -381,10 +383,12 @@ fun SettingsScreen(
 
         Row(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
         ) {
             GlassPill(
-                text = tr("Основные", "General"),
+                text = tr("Звук", "Sound"),
                 selected = section == 0,
                 onClick = { section = 0 },
             )
@@ -394,9 +398,19 @@ fun SettingsScreen(
                 onClick = { section = 1 },
             )
             GlassPill(
-                text = tr("Интеграции", "Integrations"),
+                text = tr("Подключения", "Connections"),
                 selected = section == 2,
                 onClick = { section = 2 },
+            )
+            GlassPill(
+                text = tr("Библиотека", "Library"),
+                selected = section == 3,
+                onClick = { section = 3 },
+            )
+            GlassPill(
+                text = tr("Данные", "Data"),
+                selected = section == 4,
+                onClick = { section = 4 },
             )
         }
 
@@ -911,18 +925,26 @@ fun SettingsScreen(
                 },
             )
         }
+        }
 
+        if (section == 3) {
         GlassCard(modifier = Modifier.fillMaxWidth()) {
             SectionLabel(tr("Локальная музыка", "Local music"))
             Spacer(Modifier.height(10.dp))
             Text(
                 tr(
-                    "Папки, плейлисты и нарезка YouTube-миксов теперь живут на вкладке «YouTube».",
-                    "Folders, playlists and YouTube mix splitting now live on the YouTube tab.",
+                    "Папки, плейлисты и нарезка YouTube-миксов теперь живут во вкладке «Библиотека» и «Поиск».",
+                    "Folders, playlists and YouTube mix splitting now live in the Library and Search tabs.",
                 ),
                 color = OnyxDim,
                 fontSize = 12.sp,
                 lineHeight = 17.sp,
+            )
+            Spacer(Modifier.height(10.dp))
+            GlassPill(
+                text = tr("Состояние медиатеки", "Library health"),
+                selected = false,
+                onClick = onOpenHealth,
             )
         }
         }
@@ -1017,7 +1039,9 @@ fun SettingsScreen(
                 lineHeight = 15.sp,
             )
         }
+        }
 
+        if (section == 3) {
         // ------------------------------------------------------------- System
         GlassCard(modifier = Modifier.fillMaxWidth()) {
             SectionLabel(tr("Доступы", "Permissions"))
@@ -1198,7 +1222,9 @@ fun SettingsScreen(
                 lineHeight = 15.sp,
             )
         }
+        }
 
+        if (section == 4) {
         GlassCard(modifier = Modifier.fillMaxWidth()) {
             SectionLabel(tr("Данные", "Data"))
             Spacer(Modifier.height(10.dp))
@@ -1345,7 +1371,9 @@ fun SettingsScreen(
                 letterSpacing = 0.6.sp,
             )
         }
-        } else if (section == 1) {
+        }
+
+        if (section == 1) {
             AppearanceSection(
                 controller = controller,
                 prefs = prefs,

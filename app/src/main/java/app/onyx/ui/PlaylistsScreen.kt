@@ -59,6 +59,7 @@ fun PlaylistsScreen(
     controller: AppController,
     onBack: () -> Unit,
     onOpenSettings: () -> Unit,
+    embedded: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val scope = rememberCoroutineScope()
@@ -115,6 +116,7 @@ fun PlaylistsScreen(
             MyPlaylistsContent(
                 controller = controller,
                 onBack = onBack,
+                embedded = embedded,
                 modifier = Modifier.weight(1f),
             )
         } else {
@@ -124,14 +126,16 @@ fun PlaylistsScreen(
                 .padding(start = 18.dp, end = 18.dp, top = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            CircleButton(
-                icon = Icons.AutoMirrored.Rounded.ArrowBack,
-                contentDescription = tr("Назад", "Back"),
-                size = 40.dp,
-                iconSize = 18.dp,
-                onClick = { if (selected != null) selected = null else onBack() },
-            )
-            Spacer(Modifier.width(12.dp))
+            if (!embedded) {
+                CircleButton(
+                    icon = Icons.AutoMirrored.Rounded.ArrowBack,
+                    contentDescription = tr("Назад", "Back"),
+                    size = 40.dp,
+                    iconSize = 18.dp,
+                    onClick = { if (selected != null) selected = null else onBack() },
+                )
+                Spacer(Modifier.width(12.dp))
+            }
             Column(Modifier.weight(1f)) {
                 Text(
                     selected?.name ?: tr("Плейлисты", "Playlists"),

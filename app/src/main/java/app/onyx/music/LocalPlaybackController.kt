@@ -164,6 +164,11 @@ class LocalPlaybackController(
         if (c.isPlaying) c.pause()
     }
 
+    /** Volume used by the sleep timer's fade-out. */
+    fun setVolume(value: Float) {
+        controller?.volume = value.coerceIn(0f, 1f)
+    }
+
     fun next() {
         controller?.seekToNextMediaItem()
     }

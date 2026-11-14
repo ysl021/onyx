@@ -33,6 +33,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
+import androidx.compose.material.icons.rounded.BarChart
 import androidx.compose.material.icons.rounded.Bluetooth
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Cast
@@ -111,6 +112,8 @@ fun HomeScreen(
     controller: AppController,
     onOpenLyrics: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenQueue: () -> Unit = {},
+    onOpenVisualizer: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -168,6 +171,8 @@ fun HomeScreen(
         ) {
             Header(
                 discordEnabled = prefs.discordBridgeEnabled,
+                onOpenQueue = onOpenQueue,
+                onOpenVisualizer = onOpenVisualizer,
                 onToggleDiscord = {
                     val next = !prefs.discordBridgeEnabled
                     if (next && prefs.discordBridgeHost.isBlank()) {
@@ -303,7 +308,12 @@ fun HomeScreen(
 }
 
 @Composable
-private fun Header(discordEnabled: Boolean, onToggleDiscord: () -> Unit) {
+private fun Header(
+    discordEnabled: Boolean,
+    onOpenQueue: () -> Unit,
+    onOpenVisualizer: () -> Unit,
+    onToggleDiscord: () -> Unit,
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -323,6 +333,22 @@ private fun Header(discordEnabled: Boolean, onToggleDiscord: () -> Unit) {
                 letterSpacing = 2.4.sp,
             )
         }
+        CircleButton(
+            icon = Icons.AutoMirrored.Rounded.QueueMusic,
+            contentDescription = tr("Очередь", "Queue"),
+            size = 38.dp,
+            iconSize = 18.dp,
+            onClick = onOpenQueue,
+        )
+        Spacer(Modifier.width(8.dp))
+        CircleButton(
+            icon = Icons.Rounded.BarChart,
+            contentDescription = tr("Визуализатор", "Visualizer"),
+            size = 38.dp,
+            iconSize = 18.dp,
+            onClick = onOpenVisualizer,
+        )
+        Spacer(Modifier.width(8.dp))
         CircleButton(
             icon = Icons.Rounded.Cast,
             contentDescription = tr(

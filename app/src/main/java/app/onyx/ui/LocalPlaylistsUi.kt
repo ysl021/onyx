@@ -140,6 +140,7 @@ private fun humanDuration(ms: Long): String {
 fun MyPlaylistsContent(
     controller: AppController,
     onBack: () -> Unit = {},
+    embedded: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     val playlistsState by controller.localPlaylists.state.collectAsStateWithLifecycle()
@@ -188,14 +189,16 @@ fun MyPlaylistsContent(
                 .padding(start = 18.dp, end = 18.dp, top = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            CircleButton(
-                icon = Icons.AutoMirrored.Rounded.ArrowBack,
-                contentDescription = tr("Назад", "Back"),
-                size = 40.dp,
-                iconSize = 18.dp,
-                onClick = { if (openedFolder.isNotBlank()) openedFolder = "" else onBack() },
-            )
-            Spacer(Modifier.width(12.dp))
+            if (!embedded) {
+                CircleButton(
+                    icon = Icons.AutoMirrored.Rounded.ArrowBack,
+                    contentDescription = tr("Назад", "Back"),
+                    size = 40.dp,
+                    iconSize = 18.dp,
+                    onClick = { if (openedFolder.isNotBlank()) openedFolder = "" else onBack() },
+                )
+                Spacer(Modifier.width(12.dp))
+            }
             Column(Modifier.weight(1f)) {
                 Text(
                     currentFolder?.name ?: tr("Мои плейлисты", "My playlists"),

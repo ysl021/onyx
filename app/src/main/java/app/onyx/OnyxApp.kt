@@ -38,10 +38,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.automirrored.rounded.PlaylistPlay
 import androidx.compose.material.icons.rounded.BarChart
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.GraphicEq
 import androidx.compose.material.icons.rounded.LibraryMusic
 import androidx.compose.material.icons.rounded.Refresh
+import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material.icons.rounded.TextFields
 import androidx.compose.material.icons.rounded.Tune
@@ -88,9 +90,13 @@ import app.onyx.ui.IntroScreen
 import app.onyx.ui.OnboardingScreen
 import app.onyx.ui.LocalAppLanguage
 import app.onyx.ui.tr
+import app.onyx.ui.LibraryHealthScreen
+import app.onyx.ui.LibraryScreen
 import app.onyx.ui.LyricsScreen
-import app.onyx.ui.MusicMiniPlayer
 import app.onyx.ui.MusicScreen
+import app.onyx.ui.MusicMiniPlayer
+import app.onyx.ui.QueueScreen
+import app.onyx.ui.SearchScreen
 import app.onyx.ui.PlaylistsScreen
 import app.onyx.ui.SettingsScreen
 import app.onyx.ui.VisualizerScreen
@@ -110,7 +116,7 @@ import app.onyx.ui.theme.OnyxWhite
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-private enum class Tab { Player, Lyrics, Playlists, Music, YouTube, Visualizer, Settings }
+private enum class Tab { Player, Library, Search, Settings }
 
 @Composable
 fun OnyxApp() {
@@ -161,12 +167,18 @@ fun OnyxApp() {
         controller.isAppearanceLightNavigationBars = effectiveLight
     }
     var tab by remember {
-        mutableStateOf(
-            runCatching { Tab.valueOf(controller.lastTab) }.getOrDefault(Tab.Player),
-        )
+        mutableStateOf(legacyRootTab(controller.lastTab))
     }
+    // Lyrics used to be a bottom-tab of its own; it now lives inside the player
+    // and is one swipe (or one tap on the cover) away.
+    var lyricsOpen by rememberSaveable { mutableStateOf(controller.lastTab == "Lyrics") }
+    var showQueue by remember { mutableStateOf(false) }
+    var showVisualizer by remember { mutableStateOf(false) }
+    var showHealth by remember { mutableStateOf(false) }
     var albumSelection by remember { mutableStateOf<AlbumSelection?>(null) }
-    LaunchedEffect(tab) { controller.lastTab = tab.name }
+    LaunchedEffect(tab, lyricsOpen) {
+        controller.lastTab = if (tab == Tab.Player && lyricsOpen) "Lyrics" else tab.name
+    }
     var showIntro by rememberSaveable { mutableStateOf(true) }
     var showOnboarding by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
@@ -180,20 +192,15 @@ fun OnyxApp() {
     var lyricsFullscreen by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
 
-    // Horizontal swipe moves one tab left/right (Player <-> Lyrics is the common case).
-    fun shiftTab(delta: Int) {
-        val order = Tab.entries
-        val index = order.indexOf(tab)
-        val next = (index + delta).coerceIn(0, order.lastIndex)
-        if (next != index) {
-            lyricsFullscreen = false
-            tab = order[next]
-        }
+    // Horizontal swipe inside the player flips between the deck and the lyrics.
+    // Root tabs are switched by the dock only, so a horizontal list or a cover
+    // swipe never teleports the user to another section.
+    fun openLyrics(open: Boolean) {
+        if (tab != Tab.Player) return
+        lyricsFullscreen = false
+        lyricsOpen = open
     }
     val spotifyConnected = prefs.spotifyRefresh.isNotBlank() || prefs.spotifyAccess.isNotBlank()
-    LaunchedEffect(spotifyConnected) {
-        if (!spotifyConnected && tab == Tab.Playlists) tab = Tab.Player
-    }
 
     LaunchedEffect(controller) {
         controller.messages.collect { msg ->
@@ -207,8 +214,14 @@ fun OnyxApp() {
         }
     }
 
-    BackHandler(enabled = tab != Tab.Player) {
-        tab = Tab.Player
+    BackHandler(enabled = tab != Tab.Player || lyricsOpen || showQueue || showVisualizer || showHealth) {
+        when {
+            showHealth -> showHealth = false
+            showVisualizer -> showVisualizer = false
+            showQueue -> showQueue = false
+            lyricsOpen -> lyricsOpen = false
+            else -> tab = Tab.Player
+        }
     }
 
     AppLanguageState.current = prefs.language
@@ -228,12 +241,9 @@ fun OnyxApp() {
                     .graphicsLayer { alpha = languageFade.value },
             ) {
                 val pageKey = when (tab) {
-                    Tab.Player -> "player"
-                    Tab.Lyrics -> "lyrics"
-                    Tab.Playlists -> "playlists"
-                    Tab.Music -> "music"
-                    Tab.YouTube -> "youtube"
-                    Tab.Visualizer -> "visualizer"
+                    Tab.Player -> if (lyricsOpen) "lyrics" else "player"
+                    Tab.Library -> "music"
+                    Tab.Search -> "youtube"
                     Tab.Settings -> "settings"
                 }
                 val pageCover = prefs.coverPages.split(',').contains(pageKey)
@@ -308,8 +318,8 @@ fun OnyxApp() {
                             .fillMaxSize()
                             .statusBarsPadding()
                             .tabSwipe(
-                                onNext = { shiftTab(1) },
-                                onPrev = { shiftTab(-1) },
+                                onNext = { openLyrics(true) },
+                                onPrev = { openLyrics(false) },
                             ),
                     ) {
                         CompositionLocalProvider(LocalOpenAlbum provides { albumSelection = it }) {
@@ -326,31 +336,46 @@ fun OnyxApp() {
                                 label = "tab",
                             ) { current ->
                                 when (current) {
-                                    Tab.Player -> HomeScreen(
+                                    Tab.Player -> AnimatedContent(
+                                        targetState = lyricsOpen,
+                                        transitionSpec = {
+                                            val dir = if (targetState) 1 else -1
+                                            (fadeIn(tween(220)) + slideInHorizontally(tween(260)) { it / 8 * dir })
+                                                .togetherWith(
+                                                    fadeOut(tween(160)) + slideOutHorizontally(tween(200)) { -it / 10 * dir },
+                                                )
+                                        },
+                                        label = "playerMode",
+                                    ) { showLyrics ->
+                                        if (showLyrics) {
+                                            LyricsScreen(
+                                                controller = controller,
+                                                onBack = { lyricsOpen = false },
+                                                onFullscreenChanged = { lyricsFullscreen = it },
+                                                hazeState = hazeState,
+                                            )
+                                        } else {
+                                            HomeScreen(
+                                                controller = controller,
+                                                onOpenLyrics = { lyricsOpen = true },
+                                                onOpenSettings = { tab = Tab.Settings },
+                                                onOpenQueue = { showQueue = true },
+                                                onOpenVisualizer = { showVisualizer = true },
+                                            )
+                                        }
+                                    }
+                                    Tab.Library -> LibraryScreen(
                                         controller = controller,
-                                        onOpenLyrics = { tab = Tab.Lyrics },
                                         onOpenSettings = { tab = Tab.Settings },
                                     )
-                                    Tab.Lyrics -> LyricsScreen(
-                                        controller = controller,
-                                        onBack = { tab = Tab.Player },
-                                        onFullscreenChanged = { lyricsFullscreen = it },
-                                        hazeState = hazeState,
-                                    )
-                                    Tab.Playlists -> PlaylistsScreen(
-                                        controller = controller,
-                                        onBack = { tab = Tab.Player },
-                                        onOpenSettings = { tab = Tab.Settings },
-                                    )
-                                    Tab.Music -> MusicScreen(controller = controller)
-                                    Tab.YouTube -> YouTubeScreen(
+                                    Tab.Search -> SearchScreen(
                                         controller = controller,
                                         onBack = { tab = Tab.Player },
                                     )
-                                    Tab.Visualizer -> VisualizerScreen(controller = controller)
                                     Tab.Settings -> SettingsScreen(
                                         controller = controller,
                                         onBack = { tab = Tab.Player },
+                                        onOpenHealth = { showHealth = true },
                                     )
                                 }
                             }
@@ -358,7 +383,7 @@ fun OnyxApp() {
                     }
                 }
 
-                if (tab != Tab.Lyrics || !lyricsFullscreen) {
+                if (!(tab == Tab.Player && lyricsOpen && lyricsFullscreen)) {
                     Box(
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
@@ -382,7 +407,7 @@ fun OnyxApp() {
                 // Mini-player for local music. Drawn outside the haze source (like
                 // BottomNav) so its own text stays sharp while the backdrop and the
                 // track list behind it are blurred.
-                if (tab == Tab.Music) {
+                if (tab == Tab.Library) {
                     AnimatedVisibility(
                         visible = localPlayback.current != null,
                         enter = fadeIn() + slideInVertically(initialOffsetY = { it / 3 }),
@@ -405,7 +430,7 @@ fun OnyxApp() {
 
                 // Lyrics toolbar. Rendered outside the haze source for the same
                 // reason: only the backdrop and the lyrics behind it are blurred.
-                if (tab == Tab.Lyrics) {
+                if (tab == Tab.Player && lyricsOpen) {
                     AnimatedVisibility(
                         visible = !lyricsFullscreen && prefs.lyricsToolbarVisible,
                         enter = fadeIn() + slideInVertically(initialOffsetY = { it / 3 }),
@@ -466,7 +491,7 @@ fun OnyxApp() {
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .navigationBarsPadding()
-                        .padding(bottom = if (tab == Tab.Lyrics) 84.dp else 104.dp)
+                        .padding(bottom = if (tab == Tab.Player && lyricsOpen) 84.dp else 104.dp)
                         .padding(horizontal = 22.dp),
                 ) {
                     GlassSurface(
@@ -496,6 +521,35 @@ fun OnyxApp() {
                         controller = controller,
                         onBack = { albumSelection = null },
                     )
+                }
+
+                if (showQueue) {
+                    Box(Modifier.fillMaxSize().background(OnyxBlack)) {
+                        QueueScreen(
+                            controller = controller,
+                            onOpenSettings = {
+                                showQueue = false
+                                tab = Tab.Settings
+                            },
+                        )
+                        OverlayClose { showQueue = false }
+                    }
+                }
+
+                if (showVisualizer) {
+                    Box(Modifier.fillMaxSize().background(OnyxBlack)) {
+                        VisualizerScreen(controller = controller)
+                        OverlayClose { showVisualizer = false }
+                    }
+                }
+
+                if (showHealth) {
+                    Box(Modifier.fillMaxSize().background(OnyxBlack)) {
+                        LibraryHealthScreen(
+                            controller = controller,
+                            onBack = { showHealth = false },
+                        )
+                    }
                 }
 
                 if (showIntro) {
@@ -539,39 +593,18 @@ private fun BottomNav(
                 onClick = { onSelect(Tab.Player) },
             )
             NavItem(
-                icon = Icons.Rounded.Translate,
-                label = tr("Текст", "Lyrics"),
-                selected = tab == Tab.Lyrics,
-                modifier = Modifier.weight(1f),
-                onClick = { onSelect(Tab.Lyrics) },
-            )
-            NavItem(
-                icon = Icons.AutoMirrored.Rounded.PlaylistPlay,
-                label = tr("Плейлист", "Playlist"),
-                selected = tab == Tab.Playlists,
-                modifier = Modifier.weight(1f),
-                onClick = { onSelect(Tab.Playlists) },
-            )
-            NavItem(
                 icon = Icons.Rounded.LibraryMusic,
-                label = tr("Музыка", "Music"),
-                selected = tab == Tab.Music,
+                label = tr("Библиотека", "Library"),
+                selected = tab == Tab.Library,
                 modifier = Modifier.weight(1f),
-                onClick = { onSelect(Tab.Music) },
+                onClick = { onSelect(Tab.Library) },
             )
             NavItem(
-                icon = Icons.Rounded.VideoLibrary,
-                label = "YouTube",
-                selected = tab == Tab.YouTube,
+                icon = Icons.Rounded.Search,
+                label = tr("Поиск", "Search"),
+                selected = tab == Tab.Search,
                 modifier = Modifier.weight(1f),
-                onClick = { onSelect(Tab.YouTube) },
-            )
-            NavItem(
-                icon = Icons.Rounded.BarChart,
-                label = tr("Визуал", "Visual"),
-                selected = tab == Tab.Visualizer,
-                modifier = Modifier.weight(1f),
-                onClick = { onSelect(Tab.Visualizer) },
+                onClick = { onSelect(Tab.Search) },
             )
             NavItem(
                 icon = Icons.Rounded.Settings,
@@ -761,3 +794,30 @@ private fun Modifier.tabSwipe(onNext: () -> Unit, onPrev: () -> Unit): Modifier 
             change.consume()
         }
     }
+
+/** Close button for full-screen overlays (queue, visualizer). */
+@Composable
+private fun OverlayClose(onClose: () -> Unit) {
+    Box(Modifier.fillMaxSize()) {
+        CircleButton(
+            icon = Icons.Rounded.Close,
+            contentDescription = tr("Закрыть", "Close"),
+            size = 40.dp,
+            iconSize = 18.dp,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .statusBarsPadding()
+                .padding(18.dp),
+            onClick = onClose,
+        )
+    }
+}
+
+/** Maps a tab name saved by an older build onto the four root tabs. */
+private fun legacyRootTab(value: String?): Tab = when (value) {
+    "Lyrics", "Visualizer", "Player", null -> Tab.Player
+    "Music", "Playlists", "Library" -> Tab.Library
+    "YouTube", "Search" -> Tab.Search
+    "Settings" -> Tab.Settings
+    else -> runCatching { Tab.valueOf(value) }.getOrDefault(Tab.Player)
+}
