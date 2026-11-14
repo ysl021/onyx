@@ -136,86 +136,83 @@ private fun IconStage(index: Int, progress: Float) {
         Canvas(Modifier.fillMaxSize()) {
             drawParticles(progress, size.width, size.height)
         }
-        Canvas(Modifier.fillMaxSize()) {
-            drawDecor(index, progress, size.width, size.height)
-        }
-        Image(
-            painter = painterResource(appIconRes(index)),
-            contentDescription = null,
-            modifier = Modifier
-                .size(112.dp)
-                .graphicsLayer {
-                    val p = progress
-                    if (index in EXCLUSIVE_FIRST..EXCLUSIVE_LAST) {
-                        // Artist set: each mark has its own scripted motion.
-                        val m = markMotion(index, p)
-                        scaleX = m.scaleX
-                        scaleY = m.scaleY
-                        rotationZ = m.rotation
-                        translationX = m.dx.dp.toPx()
-                        translationY = m.dy.dp.toPx()
-                        alpha = m.alpha * (0.25f + 0.75f * p)
-                    } else {
-                    when (index) {
-                        1 -> { // equalizer: bounce + grow
-                            scaleX = 0.7f + 0.3f * p
-                            scaleY = 0.7f + 0.3f * p
-                            translationY = -8f * sin(p * PI.toFloat() * 3f)
-                        }
-                        2 -> { // rings: unwind from small
-                            val s = 0.45f + 0.55f * p
-                            scaleX = s
-                            scaleY = s
-                            rotationZ = -90f + 90f * p
-                        }
-                        3 -> { // vinyl: spin in
-                            scaleX = 0.6f + 0.4f * p
-                            scaleY = 0.6f + 0.4f * p
-                            rotationZ = 300f * p
-                        }
-                        4 -> { // waveform: slide in
-                            translationX = -90f * (1f - p)
-                            alpha = p
-                        }
-                        5 -> { // bolt: strike from above + flash
-                            translationY = -150f * (1f - p) * (1f - p)
-                            scaleX = 1.15f - 0.15f * p
-                            scaleY = 1.15f - 0.15f * p
-                        }
-                        6 -> { // star: fall + settle
-                            translationY = -190f * (1f - p) * (1f - p)
-                            rotationZ = -35f * (1f - p)
-                            scaleX = 0.85f + 0.15f * p
-                            scaleY = 0.85f + 0.15f * p
-                        }
-                        7 -> { // moon: rise
-                            translationY = 70f * (1f - p)
-                            alpha = 0.35f + 0.65f * p
-                        }
-                        8 -> { // diamond: turn into place
-                            rotationZ = 45f * (1f - p)
-                            scaleX = 0.55f + 0.45f * p
-                            scaleY = 0.55f + 0.45f * p
-                        }
-                        9 -> { // play: pop
-                            val s = if (p < 0.75f) 0.6f + 0.53f * p else 1.0f - 0.03f * (p - 0.75f) * 4f
-                            scaleX = s
-                            scaleY = s
-                        }
-                        else -> { // eye: blink
-                            val blink = when {
-                                p < 0.45f -> 1f
-                                p < 0.55f -> 0.12f + 0.88f * ((p - 0.45f) / 0.10f)
-                                else -> 1f
+        if (index in EXCLUSIVE_FIRST..EXCLUSIVE_LAST) {
+            ExclusiveMark(
+                index = index,
+                progress = progress,
+                modifier = Modifier.fillMaxSize(0.88f),
+            )
+        } else {
+            Canvas(Modifier.fillMaxSize()) {
+                drawDecor(index, progress, size.width, size.height)
+            }
+            Image(
+                painter = painterResource(appIconRes(index)),
+                contentDescription = null,
+                modifier = Modifier
+                    .size(112.dp)
+                    .graphicsLayer {
+                        val p = progress
+                        when (index) {
+                            1 -> { // equalizer: bounce + grow
+                                scaleX = 0.7f + 0.3f * p
+                                scaleY = 0.7f + 0.3f * p
+                                translationY = -8f * sin(p * PI.toFloat() * 3f)
                             }
-                            scaleX = 0.7f + 0.3f * p
-                            scaleY = (0.7f + 0.3f * p) * blink
+                            2 -> { // rings: unwind from small
+                                val s = 0.45f + 0.55f * p
+                                scaleX = s
+                                scaleY = s
+                                rotationZ = -90f + 90f * p
+                            }
+                            3 -> { // vinyl: spin in
+                                scaleX = 0.6f + 0.4f * p
+                                scaleY = 0.6f + 0.4f * p
+                                rotationZ = 300f * p
+                            }
+                            4 -> { // waveform: slide in
+                                translationX = -90f * (1f - p)
+                                alpha = p
+                            }
+                            5 -> { // bolt: strike from above + flash
+                                translationY = -150f * (1f - p) * (1f - p)
+                                scaleX = 1.15f - 0.15f * p
+                                scaleY = 1.15f - 0.15f * p
+                            }
+                            6 -> { // star: fall + settle
+                                translationY = -190f * (1f - p) * (1f - p)
+                                rotationZ = -35f * (1f - p)
+                                scaleX = 0.85f + 0.15f * p
+                                scaleY = 0.85f + 0.15f * p
+                            }
+                            7 -> { // moon: rise
+                                translationY = 70f * (1f - p)
+                                alpha = 0.35f + 0.65f * p
+                            }
+                            8 -> { // diamond: turn into place
+                                rotationZ = 45f * (1f - p)
+                                scaleX = 0.55f + 0.45f * p
+                                scaleY = 0.55f + 0.45f * p
+                            }
+                            9 -> { // play: pop
+                                val s = if (p < 0.75f) 0.6f + 0.53f * p else 1.0f - 0.03f * (p - 0.75f) * 4f
+                                scaleX = s
+                                scaleY = s
+                            }
+                            else -> { // eye: blink
+                                val blink = when {
+                                    p < 0.45f -> 1f
+                                    p < 0.55f -> 0.12f + 0.88f * ((p - 0.45f) / 0.10f)
+                                    else -> 1f
+                                }
+                                scaleX = 0.7f + 0.3f * p
+                                scaleY = (0.7f + 0.3f * p) * blink
+                            }
                         }
-                    }
-                    alpha *= (0.25f + 0.75f * p)
-                    }
-                },
-        )
+                        alpha *= (0.25f + 0.75f * p)
+                    },
+            )
+        }
     }
 }
 
@@ -271,7 +268,6 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawDecor(
     val cy = h / 2f
     val white = Color.White
     when (index) {
-        in EXCLUSIVE_FIRST..EXCLUSIVE_LAST -> drawMarkDecor(index, p, w, h)
         1 -> { // equalizer icon: the icon itself is already bars, keep the stage clean
         }
         2 -> { // two rings expanding
