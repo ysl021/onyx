@@ -11,7 +11,9 @@ import android.content.pm.PackageManager
  */
 object IconSwitcher {
 
-    const val COUNT = 10
+    /** 1..10 are the built-in ONYX marks, 11..21 the exclusive artist set. */
+    const val COUNT = 21
+    const val FIRST_EXCLUSIVE = 11
 
     fun component(context: Context, index: Int): ComponentName =
         ComponentName(context, "app.onyx.Icon%02d".format(index.coerceIn(1, COUNT)))

@@ -279,7 +279,8 @@ class Prefs(private val context: Context) {
     suspend fun setThemeMode(v: ThemeMode) = edit { it[K.themeMode] = v.name }
     suspend fun setCustomThemes(v: String) = edit { it[K.customThemes] = v }
     suspend fun setCustomThemeId(v: String) = edit { it[K.customThemeId] = v }
-    suspend fun setAppIcon(v: Int) = edit { it[K.appIcon] = v }
+    suspend fun setAppIcon(v: Int) =
+        edit { it[K.appIcon] = v.coerceIn(1, IconSwitcher.COUNT) }
     suspend fun setVolumeStep(v: Int) = edit { it[K.volumeStep] = v }
     suspend fun setRepeatMode(v: Int) = edit { it[K.repeatMode] = v.coerceIn(0, 2) }
     suspend fun setDiscordBridgeEnabled(v: Boolean) = edit { it[K.discordBridgeEnabled] = v }
@@ -477,7 +478,7 @@ class Prefs(private val context: Context) {
         prefs[K.themeMode] = data.themeMode.name
         prefs[K.customThemes] = data.customThemes
         prefs[K.customThemeId] = data.customThemeId
-        prefs[K.appIcon] = data.appIcon
+        prefs[K.appIcon] = data.appIcon.coerceIn(1, IconSwitcher.COUNT)
         prefs[K.volumeStep] = data.volumeStep
         prefs[K.repeatMode] = data.repeatMode
         prefs[K.discordBridgeEnabled] = data.discordBridgeEnabled

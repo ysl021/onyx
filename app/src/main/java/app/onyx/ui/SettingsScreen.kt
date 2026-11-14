@@ -1327,6 +1327,16 @@ fun SettingsScreen(
             Spacer(Modifier.height(8.dp))
             Text(
                 text = tr(
+                    "Эксклюзивный набор иконок — в коллаборации с художницей.",
+                    "Exclusive icon set — in collaboration with the artist.",
+                ),
+                color = OnyxFaint,
+                fontSize = 10.sp,
+                lineHeight = 14.sp,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = tr(
                     "Версия ${app.onyx.BuildConfig.VERSION_NAME} (сборка ${app.onyx.BuildConfig.VERSION_CODE})",
                     "Version ${app.onyx.BuildConfig.VERSION_NAME} (build ${app.onyx.BuildConfig.VERSION_CODE})",
                 ),
@@ -1510,6 +1520,7 @@ private fun AppearanceSection(
         (savedThemes + app.onyx.core.BuiltInThemes).distinctBy { it.id }
     }
     var showThemeEditor by remember { mutableStateOf(false) }
+    var showIconPicker by remember { mutableStateOf(false) }
     var editingTheme by remember { mutableStateOf<CustomTheme?>(null) }
     var exportTheme by remember { mutableStateOf<CustomTheme?>(null) }
     val themeImporter = androidx.activity.compose.rememberLauncherForActivityResult(
@@ -1817,6 +1828,52 @@ private fun AppearanceSection(
 
     GlassCard(modifier = Modifier.fillMaxWidth()) {
         SectionLabel(tr("Иконка приложения", "App icon"))
+        Spacer(Modifier.height(10.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color.Black)
+                    .border(1.dp, OnyxLine, RoundedCornerShape(16.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Image(
+                    painter = painterResource(appIconRes(prefs.appIcon)),
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(0.82f),
+                )
+            }
+            Spacer(Modifier.size(12.dp))
+            Column(Modifier.weight(1f)) {
+                val exclusive = prefs.appIcon >= IconSwitcher.FIRST_EXCLUSIVE
+                Text(
+                    text = if (exclusive) {
+                        "EXCLUSIVE · ${markCaption(prefs.appIcon)}"
+                    } else {
+                        "ONYX %02d".format(prefs.appIcon)
+                    },
+                    color = OnyxWhite,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = if (exclusive) {
+                        tr("В коллаборации с художницей", "In collaboration with the artist")
+                    } else {
+                        tr("Встроенный набор", "Built-in set")
+                    },
+                    color = OnyxFaint,
+                    fontSize = 9.sp,
+                )
+            }
+            GlassPill(
+                text = tr("Выбрать", "Choose"),
+                selected = false,
+                onClick = { showIconPicker = true },
+            )
+        }
         Spacer(Modifier.height(8.dp))
         Text(
             tr(
@@ -1827,32 +1884,19 @@ private fun AppearanceSection(
             fontSize = 10.sp,
             lineHeight = 14.sp,
         )
-        Spacer(Modifier.height(10.dp))
-        listOf(1..5, 6..10).forEach { row ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                row.forEach { index ->
-                    IconChoice(
-                        index = index,
-                        selected = prefs.appIcon == index,
-                        modifier = Modifier.weight(1f),
-                        onClick = {
-                            scope.launch { controller.prefs.setAppIcon(index) }
-                            IconSwitcher.apply(context, index)
-                            controller.toast(
-                                tr(
-                                    "Иконка изменена",
-                                    "App icon changed",
-                                ),
-                            )
-                        },
-                    )
-                }
-            }
-            Spacer(Modifier.height(8.dp))
-        }
+    }
+
+    if (showIconPicker) {
+        IconPickerDialog(
+            current = prefs.appIcon,
+            onPick = { index ->
+                scope.launch { controller.prefs.setAppIcon(index) }
+                IconSwitcher.apply(context, index)
+                controller.toast(tr("Иконка изменена", "App icon changed"))
+                showIconPicker = false
+            },
+            onDismiss = { showIconPicker = false },
+        )
     }
 
     GlassCard(modifier = Modifier.fillMaxWidth()) {
@@ -2278,47 +2322,6 @@ private fun BackgroundPreviewDialog(
             }
         },
     )
-}
-
-@Composable
-private fun IconChoice(
-    index: Int,
-    selected: Boolean,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-) {
-    Box(
-        modifier = modifier
-            .aspectRatio(1f)
-            .clip(RoundedCornerShape(16.dp))
-            .background(Color.Black)
-            .border(
-                if (selected) 2.dp else 1.dp,
-                if (selected) OnyxWhite else OnyxLine,
-                RoundedCornerShape(16.dp),
-            )
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Image(
-            painter = painterResource(iconRes(index)),
-            contentDescription = null,
-            modifier = Modifier.fillMaxSize(0.82f),
-        )
-    }
-}
-
-private fun iconRes(index: Int): Int = when (index) {
-    1 -> R.drawable.ic_onyx_01
-    2 -> R.drawable.ic_onyx_02
-    3 -> R.drawable.ic_onyx_03
-    4 -> R.drawable.ic_onyx_04
-    5 -> R.drawable.ic_onyx_05
-    6 -> R.drawable.ic_onyx_06
-    7 -> R.drawable.ic_onyx_07
-    8 -> R.drawable.ic_onyx_08
-    9 -> R.drawable.ic_onyx_09
-    else -> R.drawable.ic_onyx_10
 }
 
 @Composable

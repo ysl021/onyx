@@ -146,6 +146,16 @@ private fun IconStage(index: Int, progress: Float) {
                 .size(112.dp)
                 .graphicsLayer {
                     val p = progress
+                    if (index in EXCLUSIVE_FIRST..EXCLUSIVE_LAST) {
+                        // Artist set: each mark has its own scripted motion.
+                        val m = markMotion(index, p)
+                        scaleX = m.scaleX
+                        scaleY = m.scaleY
+                        rotationZ = m.rotation
+                        translationX = m.dx.dp.toPx()
+                        translationY = m.dy.dp.toPx()
+                        alpha = m.alpha * (0.25f + 0.75f * p)
+                    } else {
                     when (index) {
                         1 -> { // equalizer: bounce + grow
                             scaleX = 0.7f + 0.3f * p
@@ -203,6 +213,7 @@ private fun IconStage(index: Int, progress: Float) {
                         }
                     }
                     alpha *= (0.25f + 0.75f * p)
+                    }
                 },
         )
     }
@@ -260,6 +271,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawDecor(
     val cy = h / 2f
     val white = Color.White
     when (index) {
+        in EXCLUSIVE_FIRST..EXCLUSIVE_LAST -> drawMarkDecor(index, p, w, h)
         1 -> { // equalizer icon: the icon itself is already bars, keep the stage clean
         }
         2 -> { // two rings expanding
@@ -389,6 +401,7 @@ private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawDecor(
 private val Float.absoluteValue: Float get() = if (this < 0f) -this else this
 
 private fun iconCaption(index: Int): String = when (index) {
+    in EXCLUSIVE_FIRST..EXCLUSIVE_LAST -> markCaption(index)
     1 -> tr("equalizer", "equalizer")
     2 -> tr("rings", "rings")
     3 -> tr("vinyl", "vinyl")
@@ -401,7 +414,10 @@ private fun iconCaption(index: Int): String = when (index) {
     else -> tr("eye", "eye")
 }
 
-internal fun appIconRes(index: Int): Int = when (index) {
+internal fun appIconRes(index: Int): Int =
+    if (index in EXCLUSIVE_FIRST..EXCLUSIVE_LAST) {
+        markRes(index)
+    } else when (index) {
     1 -> R.drawable.ic_onyx_01
     2 -> R.drawable.ic_onyx_02
     3 -> R.drawable.ic_onyx_03
