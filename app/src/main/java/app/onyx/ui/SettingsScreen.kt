@@ -929,12 +929,12 @@ fun SettingsScreen(
 
         if (section == 3) {
         GlassCard(modifier = Modifier.fillMaxWidth()) {
-            SectionLabel(tr("Локальная музыка", "Local music"))
+            SectionLabel(tr("Состояние медиатеки", "Library health"))
             Spacer(Modifier.height(10.dp))
             Text(
                 tr(
-                    "Папки, плейлисты и нарезка YouTube-миксов теперь живут во вкладке «Библиотека» и «Поиск».",
-                    "Folders, playlists and YouTube mix splitting now live in the Library and Search tabs.",
+                    "Проверка названий (кракозябры cp1251), дубликатов и треков без обложек. Файлы не изменяются.",
+                    "Checks titles (cp1251 mojibake), duplicates and tracks without covers. Files are not modified.",
                 ),
                 color = OnyxDim,
                 fontSize = 12.sp,
@@ -942,7 +942,7 @@ fun SettingsScreen(
             )
             Spacer(Modifier.height(10.dp))
             GlassPill(
-                text = tr("Состояние медиатеки", "Library health"),
+                text = tr("Открыть отчёт", "Open report"),
                 selected = false,
                 onClick = onOpenHealth,
             )
@@ -1195,7 +1195,9 @@ fun SettingsScreen(
                 lineHeight = 15.sp,
             )
         }
+        }
 
+        if (section == 0) {
         GlassCard(modifier = Modifier.fillMaxWidth()) {
             SectionLabel(tr("Звук", "Sound"))
             Spacer(Modifier.height(10.dp))
