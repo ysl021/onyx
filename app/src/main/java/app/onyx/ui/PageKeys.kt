@@ -23,3 +23,14 @@ val ONYX_PAGES: List<OnyxPage> = listOf(
 
 /** Keys that still draw a page backdrop; everything else is legacy. */
 val ONYX_PAGE_KEYS: Set<String> = ONYX_PAGES.map { it.key }.toSet()
+
+/**
+ * Old builds had separate Playlists and Visual pages. Their saved backdrops
+ * still exist in preferences; map them onto the page that absorbed them so a
+ * custom photo is not silently lost.
+ */
+fun normalizePageKey(key: String): String = when (key) {
+    "playlists" -> "music"
+    "visualizer", "queue" -> "player"
+    else -> key
+}

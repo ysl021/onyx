@@ -256,12 +256,14 @@ fun OnyxApp() {
                     Tab.Search -> "youtube"
                     Tab.Settings -> "settings"
                 }
-                val pageCover = prefs.coverPages.split(',').contains(pageKey)
+                val pageCover = prefs.coverPages.split(',')
+                    .map { app.onyx.ui.normalizePageKey(it) }
+                    .contains(pageKey)
                 val pageBackgrounds = remember(prefs.pageBackgrounds) {
                     prefs.pageBackgrounds.split('\u001E').mapNotNull { record ->
                         if (record.isBlank()) return@mapNotNull null
                         val parts = record.split('\u001F', limit = 2)
-                        val key = parts.getOrNull(0).orEmpty()
+                        val key = app.onyx.ui.normalizePageKey(parts.getOrNull(0).orEmpty())
                         val path = parts.getOrNull(1).orEmpty()
                         if (key.isBlank() || path.isBlank()) null else key to java.io.File(path)
                     }.toMap()
@@ -271,7 +273,7 @@ fun OnyxApp() {
                     prefs.pageBackgroundBlur.split('\u001E').mapNotNull { record ->
                         if (record.isBlank()) return@mapNotNull null
                         val parts = record.split('\u001F', limit = 2)
-                        val key = parts.getOrNull(0).orEmpty()
+                        val key = app.onyx.ui.normalizePageKey(parts.getOrNull(0).orEmpty())
                         val value = parts.getOrNull(1)?.toIntOrNull() ?: 0
                         if (key.isBlank()) null else key to value
                     }.toMap()

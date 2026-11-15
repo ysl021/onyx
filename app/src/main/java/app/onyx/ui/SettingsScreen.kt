@@ -1599,7 +1599,10 @@ private fun AppearanceSection(
     }
     var showUiFont by remember { mutableStateOf(false) }
     var showLyricFont by remember { mutableStateOf(false) }
-    val pages = prefs.coverPages.split(',').filter { it.isNotBlank() }.toSet()
+    val pages = prefs.coverPages.split(',')
+        .filter { it.isNotBlank() }
+        .map { normalizePageKey(it) }
+        .toSet()
 
     GlassCard(modifier = Modifier.fillMaxWidth()) {
         SectionLabel(tr("Язык", "Language"))
@@ -2453,13 +2456,19 @@ private fun ThemeField(label: String, value: String, onChange: (String) -> Unit)
 
 private fun decodeBackgrounds(raw: String): Map<String, String> {
     if (raw.isBlank()) return emptyMap()
-    return raw.split('\u001E').mapNotNull { record ->
+    val records = raw.split('\u001E').mapNotNull { record ->
         if (record.isBlank()) return@mapNotNull null
         val parts = record.split('\u001F', limit = 2)
         val key = parts.getOrNull(0).orEmpty()
         val path = parts.getOrNull(1).orEmpty()
         if (key.isBlank() || path.isBlank()) null else key to path
-    }.toMap()
+    }
+    // Legacy keys first, exact keys last: a real "player" backdrop wins over a
+    // migrated "visualizer" one when both exist.
+    val out = LinkedHashMap<String, String>()
+    records.filter { it.first != normalizePageKey(it.first) }.forEach { out[normalizePageKey(it.first)] = it.second }
+    records.filter { it.first == normalizePageKey(it.first) }.forEach { out[it.first] = it.second }
+    return out
 }
 
 private fun encodeBackgrounds(map: Map<String, String>): String =

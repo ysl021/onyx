@@ -26,6 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -41,6 +42,7 @@ import app.onyx.AppController
 import app.onyx.music.LocalTrack
 import app.onyx.music.Mood
 import app.onyx.music.Similarity
+import app.onyx.music.TrackAnalyzer
 import app.onyx.music.TrackFeatures
 import app.onyx.ui.components.CircleButton
 import app.onyx.ui.components.GlassCard
@@ -52,6 +54,7 @@ import app.onyx.ui.theme.OnyxLine
 import app.onyx.ui.theme.OnyxWhite
 import java.util.Locale
 import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
 /**
  * Two things built on the offline analysis: tracks similar to what is playing
@@ -67,6 +70,9 @@ fun SmartMixScreen(
     val library by controller.localLibrary.state.collectAsStateWithLifecycle()
     val playback by controller.localPlayer.state.collectAsStateWithLifecycle()
     val cache by controller.analysis.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var analyzingSeed by remember { mutableStateOf(false) }
     var mode by rememberSaveable { mutableIntStateOf(0) }
     var moodName by rememberSaveable { mutableStateOf(Mood.Deep.name) }
     var minutes by rememberSaveable { mutableIntStateOf(45) }
@@ -160,15 +166,42 @@ fun SmartMixScreen(
         if (mode == 0) {
             if (seed == null || featuresOf(seed) == null) {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(
-                        tr(
-                            "Включи локальный трек, который уже проанализирован,\nчтобы увидеть похожие.",
-                            "Play an analysed local track\nto see similar ones.",
-                        ),
-                        color = OnyxDim,
-                        fontSize = 12.sp,
-                        lineHeight = 17.sp,
-                    )
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            tr(
+                                "Нужен проанализированный локальный трек.\nВключи его и нажми кнопку ниже.",
+                                "An analysed local track is needed.\nPlay one and tap the button below.",
+                            ),
+                            color = OnyxDim,
+                            fontSize = 12.sp,
+                            lineHeight = 17.sp,
+                        )
+                        if (seed != null) {
+                            Spacer(Modifier.height(10.dp))
+                            GlassPill(
+                                text = if (analyzingSeed) {
+                                    "…"
+                                } else {
+                                    tr("Проанализировать трек", "Analyze this track")
+                                },
+                                selected = true,
+                                enabled = !analyzingSeed,
+                                onClick = {
+                                    analyzingSeed = true
+                                    scope.launch {
+                                        runCatching { TrackAnalyzer.analyze(context, seed.uri) }
+                                            .onSuccess { controller.analysis.put(seed, it) }
+                                            .onFailure {
+                                                controller.toast(
+                                                    tr("Не удалось проанализировать", "Analysis failed"),
+                                                )
+                                            }
+                                        analyzingSeed = false
+                                    }
+                                },
+                            )
+                        }
+                    }
                 }
                 return@Column
             }

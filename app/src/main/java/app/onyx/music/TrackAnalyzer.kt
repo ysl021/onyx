@@ -56,6 +56,18 @@ object TrackAnalyzer {
             }
             if (trackIndex < 0 || inputFormat == null) error("В файле нет аудиодорожки")
             extractor.selectTrack(trackIndex)
+            // Start a little inside long files: intros and silence make tempo
+            // and key estimates noisy, and 90 seconds is plenty for both.
+            val durationUs = if (inputFormat.containsKey(MediaFormat.KEY_DURATION)) {
+                inputFormat.getLong(MediaFormat.KEY_DURATION)
+            } else {
+                0L
+            }
+            if (durationUs > 180_000_000L) {
+                runCatching {
+                    extractor.seekTo((durationUs * 0.2).toLong(), MediaExtractor.SEEK_TO_CLOSEST_SYNC)
+                }
+            }
 
             val mime = inputFormat.getString(MediaFormat.KEY_MIME).orEmpty()
             val decoder = MediaCodec.createDecoderByType(mime)
@@ -70,7 +82,9 @@ object TrackAnalyzer {
             } else {
                 AudioFormat.ENCODING_PCM_16BIT
             }
-            val maxFrames = maxSeconds * sampleRate
+            // Cap the mono buffer at ~17 MB even for 96 kHz hi-res files: the
+            // DSP downsamples to 22 kHz anyway, so a shorter window is enough.
+            var maxFrames = maxSeconds * minOf(sampleRate, 48_000)
             val sink = Sink(minOf(maxFrames, sampleRate * 8))
 
             val info = MediaCodec.BufferInfo()
@@ -109,6 +123,7 @@ object TrackAnalyzer {
                         if (format.containsKey(MediaFormat.KEY_PCM_ENCODING)) {
                             encoding = format.getInteger(MediaFormat.KEY_PCM_ENCODING)
                         }
+                        maxFrames = maxSeconds * minOf(sampleRate, 48_000)
                     }
                     in 0..Int.MAX_VALUE -> {
                         val buffer = decoder.getOutputBuffer(outIndex)
