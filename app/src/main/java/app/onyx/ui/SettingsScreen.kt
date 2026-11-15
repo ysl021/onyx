@@ -785,9 +785,9 @@ fun SettingsScreen(
             Spacer(Modifier.height(8.dp))
             Text(
                 tr(
-                    "На ПК открой ONYX и включи хаб в Настройки → Интеграции → Устройства. " +
+                    "На ПК открой ONYX и включи хаб в Настройки → Подключения → Связка с ПК. " +
                         "Телефон и ПК должны быть в одной Wi-Fi сети.",
-                    "Open ONYX on the PC and enable the hub in Settings → Integrations → Devices. " +
+                    "Open ONYX on the PC and enable the hub in Settings → Connections → PC connection. " +
                         "Phone and PC must be on the same Wi-Fi.",
                 ),
                 color = OnyxFaint,
@@ -2036,16 +2036,7 @@ private fun AppearanceSection(
         Spacer(Modifier.height(12.dp))
         SectionLabel(tr("Где показывать", "Show background on"))
         Spacer(Modifier.height(8.dp))
-        val pageItems = listOf(
-            "player" to tr("Плеер", "Player"),
-            "lyrics" to tr("Текст", "Lyrics"),
-            "queue" to tr("Очередь", "Queue"),
-            "playlists" to tr("Плейлисты", "Playlists"),
-            "music" to tr("Музыка", "Music"),
-            "youtube" to tr("YouTube", "YouTube"),
-            "visualizer" to tr("Визуал", "Visual"),
-            "settings" to tr("Настройки", "Settings"),
-        )
+        val pageItems = ONYX_PAGES.map { it.key to it.label }
         pageItems.forEachIndexed { index, (key, label) ->
             ToggleRow(
                 title = label,
@@ -2064,16 +2055,7 @@ private fun AppearanceSection(
         SectionLabel(tr("Фоны страниц", "Page backgrounds"))
         Spacer(Modifier.height(10.dp))
         val backgrounds = decodeBackgrounds(prefs.pageBackgrounds)
-        val pages = listOf(
-            "player" to tr("Плеер", "Player"),
-            "lyrics" to tr("Текст", "Lyrics"),
-            "queue" to tr("Очередь", "Queue"),
-            "playlists" to tr("Плейлисты", "Playlists"),
-            "music" to tr("Музыка", "Music"),
-            "youtube" to tr("YouTube", "YouTube"),
-            "visualizer" to tr("Визуал", "Visual"),
-            "settings" to tr("Настройки", "Settings"),
-        )
+        val pages = ONYX_PAGES.map { it.key to it.label }
         pages.forEachIndexed { index, (key, label) ->
             Row(
                 modifier = Modifier.fillMaxWidth(),

@@ -42,21 +42,26 @@ fun SearchScreen(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             GlassPill(
-                text = "YouTube",
+                text = tr("Библиотека", "Library"),
                 selected = section == 0,
                 onClick = { section = 0 },
             )
             GlassPill(
-                text = tr("Открытые источники", "Open sources"),
+                text = "YouTube",
                 selected = section == 1,
                 onClick = { section = 1 },
             )
+            GlassPill(
+                text = tr("Открытые источники", "Open sources"),
+                selected = section == 2,
+                onClick = { section = 2 },
+            )
         }
         Box(Modifier.weight(1f)) {
-            if (section == 0) {
-                YouTubeScreen(controller = controller, onBack = onBack)
-            } else {
-                OpenSourcesScreen(controller = controller)
+            when (section) {
+                0 -> LocalSearchScreen(controller = controller)
+                1 -> YouTubeScreen(controller = controller, onBack = onBack)
+                else -> OpenSourcesScreen(controller = controller)
             }
         }
     }

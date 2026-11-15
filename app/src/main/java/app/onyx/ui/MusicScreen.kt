@@ -107,7 +107,6 @@ private enum class MusicView { TRACKS, FAVORITES }
 @Composable
 fun MusicScreen(
     controller: AppController,
-    seedQuery: String = "",
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -120,7 +119,7 @@ fun MusicScreen(
     var openedArtist by remember { mutableStateOf<YtArtistPage?>(null) }
     var artistLoading by remember { mutableStateOf(false) }
     var streamPicker by remember { mutableStateOf<PlaylistStreamTrack?>(null) }
-    var query by remember(seedQuery) { mutableStateOf(seedQuery) }
+    var query by remember { mutableStateOf("") }
 
     fun openArtist(name: String) {
         if (name.isBlank()) return
@@ -150,7 +149,11 @@ fun MusicScreen(
         }
     }
     val searchResult = remember(base, query) {
-        if (query.isBlank()) LocalSearch.Result(base, null) else LocalSearch.search(base, query, 2000)
+        if (query.isBlank()) {
+            LocalSearch.Grouped(tracks = base)
+        } else {
+            LocalSearch.searchGrouped(base, query, 2000)
+        }
     }
     val filtered = searchResult.tracks
     androidx.compose.runtime.LaunchedEffect(folders) {
@@ -331,6 +334,13 @@ fun MusicScreen(
                 color = OnyxFaint,
                 fontSize = 10.sp,
                 modifier = Modifier.padding(horizontal = 18.dp, vertical = 2.dp),
+            )
+        }
+
+        if (query.isNotBlank()) {
+            LocalSearchSections(
+                grouped = searchResult,
+                modifier = Modifier.padding(top = 2.dp, bottom = 4.dp),
             )
         }
 

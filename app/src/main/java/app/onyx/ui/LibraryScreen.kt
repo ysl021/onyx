@@ -64,8 +64,8 @@ fun LibraryScreen(
 ) {
     val library by controller.localLibrary.state.collectAsStateWithLifecycle()
     val openAlbum = LocalOpenAlbum.current
+    val openArtist = LocalOpenArtist.current
     var section by rememberSaveable { mutableStateOf(LibrarySection.Tracks) }
-    var artistFilter by rememberSaveable { mutableStateOf("") }
 
     Column(modifier.fillMaxSize()) {
         Row(
@@ -78,10 +78,7 @@ fun LibraryScreen(
             GlassPill(
                 text = tr("Треки", "Tracks"),
                 selected = section == LibrarySection.Tracks,
-                onClick = {
-                    artistFilter = ""
-                    section = LibrarySection.Tracks
-                },
+                onClick = { section = LibrarySection.Tracks },
             )
             GlassPill(
                 text = tr("Альбомы", "Albums"),
@@ -102,10 +99,7 @@ fun LibraryScreen(
 
         Box(Modifier.weight(1f)) {
             when (section) {
-                LibrarySection.Tracks -> MusicScreen(
-                    controller = controller,
-                    seedQuery = artistFilter,
-                )
+                LibrarySection.Tracks -> MusicScreen(controller = controller)
 
                 LibrarySection.Albums -> AlbumGrid(
                     tracks = library.tracks,
@@ -114,10 +108,7 @@ fun LibraryScreen(
 
                 LibrarySection.Artists -> ArtistList(
                     tracks = library.tracks,
-                    onOpen = { name ->
-                        artistFilter = name
-                        section = LibrarySection.Tracks
-                    },
+                    onOpen = { name -> openArtist(name) },
                 )
 
                 LibrarySection.Playlists -> PlaylistsScreen(

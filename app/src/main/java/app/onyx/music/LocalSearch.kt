@@ -21,6 +21,28 @@ object LocalSearch {
 
     data class Result(val tracks: List<LocalTrack>, val via: String? = null)
 
+    data class ArtistHit(
+        val name: String,
+        val count: Int,
+        val artPath: String?,
+    )
+
+    data class AlbumHit(
+        val album: String,
+        val artist: String,
+        val albumId: Long,
+        val artPath: String?,
+        val track: LocalTrack,
+        val count: Int,
+    )
+
+    data class Grouped(
+        val tracks: List<LocalTrack> = emptyList(),
+        val artists: List<ArtistHit> = emptyList(),
+        val albums: List<AlbumHit> = emptyList(),
+        val via: String? = null,
+    )
+
     private const val TYPO_TWO_FROM = 8
     private const val TYPO_ONE_FROM = 4
 
@@ -183,6 +205,89 @@ object LocalSearch {
             }
         }
         return Result(result.take(limit).map { it.second }, via)
+    }
+
+    /**
+     * The same query, but with artists and albums lifted into their own groups —
+     * the way a music search is expected to read. Track matching still decides
+     * which spelling of the query was meant (layout repair included).
+     */
+    fun searchGrouped(
+        tracks: List<LocalTrack>,
+        query: String,
+        trackLimit: Int = 500,
+        groupLimit: Int = 12,
+    ): Grouped {
+        val found = search(tracks, query, trackLimit)
+        val spelling = found.via ?: query
+        val phrase = latin(spelling)
+        val words = phrase.split(' ').filter { it.isNotBlank() }
+        if (words.isEmpty()) return Grouped(tracks = found.tracks, via = found.via)
+
+        val artistGroups = tracks
+            .filter { it.artist.isNotBlank() }
+            .groupBy { it.artist.lowercase() }
+        val artists = artistGroups.values.mapNotNull { group ->
+            val name = group.first().artist
+            val score = groupScore(words, phrase, name, "")
+            if (score <= 0.0) null else ArtistHit(
+                name = name,
+                count = group.size,
+                artPath = group.firstNotNullOfOrNull { it.artPath?.takeIf(String::isNotBlank) },
+            ) to score
+        }
+            .sortedByDescending { it.second }
+            .take(groupLimit)
+            .map { it.first }
+
+        val albumGroups = tracks
+            .filter { it.album.isNotBlank() }
+            .groupBy { it.album.lowercase() to it.artist.lowercase() }
+        val albums = albumGroups.values.mapNotNull { group ->
+            val first = group.first()
+            val score = groupScore(words, phrase, first.album, first.artist)
+            if (score <= 0.0) null else AlbumHit(
+                album = first.album,
+                artist = first.artist,
+                albumId = first.albumId,
+                artPath = group.firstNotNullOfOrNull { it.artPath?.takeIf(String::isNotBlank) },
+                track = first,
+                count = group.size,
+            ) to score
+        }
+            .sortedByDescending { it.second }
+            .take(groupLimit)
+            .map { it.first }
+
+        return Grouped(
+            tracks = found.tracks,
+            artists = artists,
+            albums = albums,
+            via = found.via,
+        )
+    }
+
+    /** How well a group name matches the query; [secondary] is the artist for albums. */
+    private fun groupScore(words: List<String>, phrase: String, primary: String, secondary: String): Double {
+        val primaryField = field(primary)
+        val secondaryField = field(secondary)
+        var total = 0.0
+        var missed = 0
+        for (word in words) {
+            val score = max(
+                wordScore(word, primaryField),
+                wordScore(word, secondaryField) * 0.55,
+            )
+            if (score <= 0.0) missed++ else total += score
+        }
+        if (missed > if (words.size >= 4) 1 else 0) return 0.0
+        val primaryPhrase = primaryField.words.joinToString(" ")
+        total += when {
+            primaryPhrase.startsWith(phrase) -> 1.0
+            primaryPhrase.contains(phrase) -> 0.6
+            else -> 0.0
+        }
+        return total
     }
 
     /** Damerau–Levenshtein with an early exit above [max]. */

@@ -92,6 +92,8 @@ import app.onyx.ui.LocalAppLanguage
 import app.onyx.ui.tr
 import app.onyx.ui.LibraryHealthScreen
 import app.onyx.ui.LibraryScreen
+import app.onyx.ui.LocalArtistScreen
+import app.onyx.ui.LocalOpenArtist
 import app.onyx.ui.LyricsScreen
 import app.onyx.ui.MusicScreen
 import app.onyx.ui.MusicMiniPlayer
@@ -176,6 +178,7 @@ fun OnyxApp() {
     var showVisualizer by remember { mutableStateOf(false) }
     var showHealth by remember { mutableStateOf(false) }
     var albumSelection by remember { mutableStateOf<AlbumSelection?>(null) }
+    var artistSelection by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(tab, lyricsOpen) {
         controller.lastTab = if (tab == Tab.Player && lyricsOpen) "Lyrics" else tab.name
     }
@@ -214,11 +217,12 @@ fun OnyxApp() {
         }
     }
 
-    BackHandler(enabled = tab != Tab.Player || lyricsOpen || showQueue || showVisualizer || showHealth) {
+    BackHandler(enabled = tab != Tab.Player || lyricsOpen || showQueue || showVisualizer || showHealth || artistSelection != null) {
         when {
             showHealth -> showHealth = false
             showVisualizer -> showVisualizer = false
             showQueue -> showQueue = false
+            artistSelection != null -> artistSelection = null
             lyricsOpen -> lyricsOpen = false
             else -> tab = Tab.Player
         }
@@ -328,7 +332,10 @@ fun OnyxApp() {
                                 },
                             ),
                     ) {
-                        CompositionLocalProvider(LocalOpenAlbum provides { albumSelection = it }) {
+                        CompositionLocalProvider(
+                            LocalOpenAlbum provides { albumSelection = it },
+                            LocalOpenArtist provides { artistSelection = it },
+                        ) {
                             AnimatedContent(
                                 targetState = tab,
                                 transitionSpec = {
@@ -521,12 +528,25 @@ fun OnyxApp() {
                     )
                 }
 
-                albumSelection?.let { selection ->
-                    AlbumScreen(
-                        selection = selection,
-                        controller = controller,
-                        onBack = { albumSelection = null },
-                    )
+                CompositionLocalProvider(
+                    LocalOpenAlbum provides { albumSelection = it },
+                    LocalOpenArtist provides { artistSelection = it },
+                ) {
+                    artistSelection?.let { name ->
+                        LocalArtistScreen(
+                            controller = controller,
+                            name = name,
+                            onBack = { artistSelection = null },
+                        )
+                    }
+
+                    albumSelection?.let { selection ->
+                        AlbumScreen(
+                            selection = selection,
+                            controller = controller,
+                            onBack = { albumSelection = null },
+                        )
+                    }
                 }
 
                 if (showQueue) {
