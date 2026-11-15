@@ -93,6 +93,7 @@ import app.onyx.ui.tr
 import app.onyx.ui.AnalysisScreen
 import app.onyx.ui.LibraryHealthScreen
 import app.onyx.ui.LibraryScreen
+import app.onyx.ui.SmartMixScreen
 import app.onyx.ui.LocalArtistScreen
 import app.onyx.ui.LocalOpenArtist
 import app.onyx.ui.LyricsScreen
@@ -179,6 +180,7 @@ fun OnyxApp() {
     var showVisualizer by remember { mutableStateOf(false) }
     var showHealth by remember { mutableStateOf(false) }
     var showAnalysis by remember { mutableStateOf(false) }
+    var showSmart by remember { mutableStateOf(false) }
     var albumSelection by remember { mutableStateOf<AlbumSelection?>(null) }
     var artistSelection by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(tab, lyricsOpen) {
@@ -219,8 +221,9 @@ fun OnyxApp() {
         }
     }
 
-    BackHandler(enabled = tab != Tab.Player || lyricsOpen || showQueue || showVisualizer || showHealth || showAnalysis || artistSelection != null) {
+    BackHandler(enabled = tab != Tab.Player || lyricsOpen || showQueue || showVisualizer || showHealth || showAnalysis || showSmart || artistSelection != null) {
         when {
+            showSmart -> showSmart = false
             showAnalysis -> showAnalysis = false
             showHealth -> showHealth = false
             showVisualizer -> showVisualizer = false
@@ -377,6 +380,7 @@ fun OnyxApp() {
                                                 onOpenSettings = { tab = Tab.Settings },
                                                 onOpenQueue = { showQueue = true },
                                                 onOpenVisualizer = { showVisualizer = true },
+                                                onOpenSmart = { showSmart = true },
                                             )
                                         }
                                     }
@@ -587,6 +591,15 @@ fun OnyxApp() {
                         AnalysisScreen(
                             controller = controller,
                             onBack = { showAnalysis = false },
+                        )
+                    }
+                }
+
+                if (showSmart) {
+                    Box(Modifier.fillMaxSize().background(OnyxBlack)) {
+                        SmartMixScreen(
+                            controller = controller,
+                            onBack = { showSmart = false },
                         )
                     }
                 }

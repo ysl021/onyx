@@ -34,6 +34,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.QueueMusic
 import androidx.compose.material.icons.rounded.BarChart
+import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Bluetooth
 import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Cast
@@ -114,6 +115,7 @@ fun HomeScreen(
     onOpenSettings: () -> Unit,
     onOpenQueue: () -> Unit = {},
     onOpenVisualizer: () -> Unit = {},
+    onOpenSmart: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -173,6 +175,7 @@ fun HomeScreen(
                 discordEnabled = prefs.discordBridgeEnabled,
                 onOpenQueue = onOpenQueue,
                 onOpenVisualizer = onOpenVisualizer,
+                onOpenSmart = onOpenSmart,
                 onToggleDiscord = {
                     val next = !prefs.discordBridgeEnabled
                     if (next && prefs.discordBridgeHost.isBlank()) {
@@ -312,6 +315,7 @@ private fun Header(
     discordEnabled: Boolean,
     onOpenQueue: () -> Unit,
     onOpenVisualizer: () -> Unit,
+    onOpenSmart: () -> Unit,
     onToggleDiscord: () -> Unit,
 ) {
     Row(
@@ -347,6 +351,14 @@ private fun Header(
             size = 38.dp,
             iconSize = 18.dp,
             onClick = onOpenVisualizer,
+        )
+        Spacer(Modifier.width(8.dp))
+        CircleButton(
+            icon = Icons.Rounded.AutoAwesome,
+            contentDescription = tr("Умный плейлист", "Smart mix"),
+            size = 38.dp,
+            iconSize = 18.dp,
+            onClick = onOpenSmart,
         )
         Spacer(Modifier.width(8.dp))
         CircleButton(
