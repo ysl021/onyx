@@ -527,7 +527,7 @@ private fun PlaylistRow(
 }
 
 @Composable
-private fun LocalPlaylistDetail(
+fun LocalPlaylistDetail(
     controller: AppController,
     playlistId: String,
     onBack: () -> Unit,

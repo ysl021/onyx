@@ -267,6 +267,14 @@ object LocalSearch {
         )
     }
 
+    /** Score for a standalone name (playlist, folder) using the same matching. */
+    fun nameScore(name: String, query: String): Double {
+        val phrase = latin(query)
+        val words = phrase.split(' ').filter { it.isNotBlank() }
+        if (words.isEmpty()) return 0.0
+        return groupScore(words, phrase, name, "")
+    }
+
     /** How well a group name matches the query; [secondary] is the artist for albums. */
     private fun groupScore(words: List<String>, phrase: String, primary: String, secondary: String): Double {
         val primaryField = field(primary)

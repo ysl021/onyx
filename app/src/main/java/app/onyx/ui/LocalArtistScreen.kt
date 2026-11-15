@@ -49,6 +49,9 @@ import java.io.File
 /** Opens the local artist page from anywhere inside the library. */
 val LocalOpenArtist = compositionLocalOf<(String) -> Unit> { {} }
 
+/** Opens a local playlist from the global search. */
+val LocalOpenPlaylist = compositionLocalOf<(String) -> Unit> { {} }
+
 /**
  * The local counterpart of the YouTube artist page: play/shuffle, the artist's
  * albums and every track, without leaving the library.

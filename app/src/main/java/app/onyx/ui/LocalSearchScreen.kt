@@ -1,5 +1,7 @@
 package app.onyx.ui
 
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,8 +12,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Search
@@ -33,6 +37,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.onyx.AppController
 import app.onyx.music.LocalSearch
+import app.onyx.ui.components.GlassCard
 import app.onyx.ui.components.SectionLabel
 import app.onyx.ui.theme.OnyxFaint
 import app.onyx.ui.theme.OnyxLine
@@ -49,12 +54,26 @@ fun LocalSearchScreen(
 ) {
     val library by controller.localLibrary.state.collectAsStateWithLifecycle()
     val playback by controller.localPlayer.state.collectAsStateWithLifecycle()
+    val playlistsState by controller.localPlaylists.state.collectAsStateWithLifecycle()
     var query by remember { mutableStateOf("") }
+    val openPlaylist = LocalOpenPlaylist.current
     val grouped = remember(library.tracks, query) {
         if (query.trim().length < 2) {
             LocalSearch.Grouped()
         } else {
             LocalSearch.searchGrouped(library.tracks, query)
+        }
+    }
+    val playlistHits = remember(playlistsState.playlists, query) {
+        val q = query.trim()
+        if (q.length < 2) {
+            emptyList()
+        } else {
+            playlistsState.playlists
+                .map { it to LocalSearch.nameScore(it.name, q) }
+                .filter { it.second > 0.0 }
+                .sortedByDescending { it.second }
+                .take(8)
         }
     }
 
@@ -111,11 +130,52 @@ fun LocalSearchScreen(
             )
         }
 
-        if (grouped.tracks.isEmpty() && grouped.artists.isEmpty() && grouped.albums.isEmpty()) {
+        if (grouped.tracks.isEmpty() && grouped.artists.isEmpty() &&
+            grouped.albums.isEmpty() && playlistHits.isEmpty()
+        ) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(tr("Ничего не нашлось", "Nothing found"), color = OnyxFaint, fontSize = 12.sp)
             }
             return@Column
+        }
+
+        if (playlistHits.isNotEmpty()) {
+            SectionLabel(
+                tr("Плейлисты · ${playlistHits.size}", "Playlists · ${playlistHits.size}"),
+                Modifier.padding(start = 18.dp, end = 18.dp, top = 6.dp, bottom = 2.dp),
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 18.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                playlistHits.forEach { (playlist, _) ->
+                    GlassCard(
+                        modifier = Modifier
+                            .width(150.dp)
+                            .clickable { openPlaylist(playlist.id) },
+                    ) {
+                        Text(
+                            text = playlist.name,
+                            color = OnyxWhite,
+                            fontSize = 12.sp,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            text = tr(
+                                "${playlist.trackIds.size} треков",
+                                "${playlist.trackIds.size} tracks",
+                            ),
+                            color = OnyxFaint,
+                            fontSize = 9.sp,
+                        )
+                    }
+                }
+            }
         }
 
         LocalSearchSections(

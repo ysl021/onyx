@@ -96,6 +96,8 @@ import app.onyx.ui.LibraryScreen
 import app.onyx.ui.SmartMixScreen
 import app.onyx.ui.LocalArtistScreen
 import app.onyx.ui.LocalOpenArtist
+import app.onyx.ui.LocalOpenPlaylist
+import app.onyx.ui.LocalPlaylistDetail
 import app.onyx.ui.LyricsScreen
 import app.onyx.ui.MusicScreen
 import app.onyx.ui.MusicMiniPlayer
@@ -183,6 +185,7 @@ fun OnyxApp() {
     var showSmart by remember { mutableStateOf(false) }
     var albumSelection by remember { mutableStateOf<AlbumSelection?>(null) }
     var artistSelection by remember { mutableStateOf<String?>(null) }
+    var playlistSelection by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(tab, lyricsOpen) {
         controller.lastTab = if (tab == Tab.Player && lyricsOpen) "Lyrics" else tab.name
     }
@@ -221,13 +224,14 @@ fun OnyxApp() {
         }
     }
 
-    BackHandler(enabled = tab != Tab.Player || lyricsOpen || showQueue || showVisualizer || showHealth || showAnalysis || showSmart || artistSelection != null) {
+    BackHandler(enabled = tab != Tab.Player || lyricsOpen || showQueue || showVisualizer || showHealth || showAnalysis || showSmart || artistSelection != null || playlistSelection != null) {
         when {
             showSmart -> showSmart = false
             showAnalysis -> showAnalysis = false
             showHealth -> showHealth = false
             showVisualizer -> showVisualizer = false
             showQueue -> showQueue = false
+            playlistSelection != null -> playlistSelection = null
             artistSelection != null -> artistSelection = null
             lyricsOpen -> lyricsOpen = false
             else -> tab = Tab.Player
@@ -343,6 +347,7 @@ fun OnyxApp() {
                         CompositionLocalProvider(
                             LocalOpenAlbum provides { albumSelection = it },
                             LocalOpenArtist provides { artistSelection = it },
+                            LocalOpenPlaylist provides { playlistSelection = it },
                         ) {
                             AnimatedContent(
                                 targetState = tab,
@@ -541,7 +546,16 @@ fun OnyxApp() {
                 CompositionLocalProvider(
                     LocalOpenAlbum provides { albumSelection = it },
                     LocalOpenArtist provides { artistSelection = it },
+                    LocalOpenPlaylist provides { playlistSelection = it },
                 ) {
+                    playlistSelection?.let { id ->
+                        LocalPlaylistDetail(
+                            controller = controller,
+                            playlistId = id,
+                            onBack = { playlistSelection = null },
+                        )
+                    }
+
                     artistSelection?.let { name ->
                         LocalArtistScreen(
                             controller = controller,
