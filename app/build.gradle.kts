@@ -140,4 +140,5 @@ dependencies {
     implementation("net.jthink:jaudiotagger:3.0.1")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
+    testImplementation("junit:junit:4.13.2")
 }

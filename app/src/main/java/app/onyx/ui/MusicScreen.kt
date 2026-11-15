@@ -100,6 +100,7 @@ import app.onyx.youtube.YouTubeMusic
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 import java.io.File
 
 private enum class MusicView { TRACKS, FAVORITES }
@@ -114,6 +115,7 @@ fun MusicScreen(
     val library by controller.localLibrary.state.collectAsStateWithLifecycle()
     val playback by controller.localPlayer.state.collectAsStateWithLifecycle()
     val prefs by controller.prefs.data.collectAsStateWithLifecycle(initialValue = PrefsData())
+    val analysis by controller.analysis.state.collectAsStateWithLifecycle()
     val openAlbum = LocalOpenAlbum.current
     var view by remember { mutableStateOf(MusicView.TRACKS) }
     var openedArtist by remember { mutableStateOf<YtArtistPage?>(null) }
@@ -464,6 +466,9 @@ fun MusicScreen(
                                 controller.prefs.toggleLikedTrack(track.toLiked())
                             }
                         },
+                        features = analysis[track.id]
+                            ?.takeIf { it.modified == track.modified }
+                            ?.features,
                     )
                 }
             }
@@ -884,6 +889,7 @@ private fun TrackRow(
     onLike: () -> Unit = {},
     selectMode: Boolean = false,
     selected: Boolean = false,
+    features: app.onyx.music.TrackFeatures? = null,
 ) {
     val haptic = LocalHapticFeedback.current
     Row(
@@ -945,8 +951,19 @@ private fun TrackRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            val subtitle = buildString {
+                append(track.artist.ifBlank { track.album })
+                features?.bpm?.let {
+                    if (isNotEmpty()) append(" · ")
+                    append(it.roundToInt()).append(" BPM")
+                }
+                features?.camelot?.let {
+                    if (isNotEmpty()) append(" · ")
+                    append(it)
+                }
+            }
             Text(
-                track.artist.ifBlank { track.album },
+                subtitle,
                 color = OnyxDim,
                 fontSize = 11.sp,
                 maxLines = 1,

@@ -90,6 +90,7 @@ import app.onyx.ui.IntroScreen
 import app.onyx.ui.OnboardingScreen
 import app.onyx.ui.LocalAppLanguage
 import app.onyx.ui.tr
+import app.onyx.ui.AnalysisScreen
 import app.onyx.ui.LibraryHealthScreen
 import app.onyx.ui.LibraryScreen
 import app.onyx.ui.LocalArtistScreen
@@ -177,6 +178,7 @@ fun OnyxApp() {
     var showQueue by remember { mutableStateOf(false) }
     var showVisualizer by remember { mutableStateOf(false) }
     var showHealth by remember { mutableStateOf(false) }
+    var showAnalysis by remember { mutableStateOf(false) }
     var albumSelection by remember { mutableStateOf<AlbumSelection?>(null) }
     var artistSelection by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(tab, lyricsOpen) {
@@ -217,8 +219,9 @@ fun OnyxApp() {
         }
     }
 
-    BackHandler(enabled = tab != Tab.Player || lyricsOpen || showQueue || showVisualizer || showHealth || artistSelection != null) {
+    BackHandler(enabled = tab != Tab.Player || lyricsOpen || showQueue || showVisualizer || showHealth || showAnalysis || artistSelection != null) {
         when {
+            showAnalysis -> showAnalysis = false
             showHealth -> showHealth = false
             showVisualizer -> showVisualizer = false
             showQueue -> showQueue = false
@@ -389,6 +392,7 @@ fun OnyxApp() {
                                         controller = controller,
                                         onBack = { tab = Tab.Player },
                                         onOpenHealth = { showHealth = true },
+                                        onOpenAnalysis = { showAnalysis = true },
                                     )
                                 }
                             }
@@ -574,6 +578,15 @@ fun OnyxApp() {
                         LibraryHealthScreen(
                             controller = controller,
                             onBack = { showHealth = false },
+                        )
+                    }
+                }
+
+                if (showAnalysis) {
+                    Box(Modifier.fillMaxSize().background(OnyxBlack)) {
+                        AnalysisScreen(
+                            controller = controller,
+                            onBack = { showAnalysis = false },
                         )
                     }
                 }

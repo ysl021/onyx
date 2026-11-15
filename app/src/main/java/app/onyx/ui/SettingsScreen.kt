@@ -115,6 +115,7 @@ fun SettingsScreen(
     controller: AppController,
     onBack: () -> Unit,
     onOpenHealth: () -> Unit = {},
+    onOpenAnalysis: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
@@ -941,11 +942,18 @@ fun SettingsScreen(
                 lineHeight = 17.sp,
             )
             Spacer(Modifier.height(10.dp))
-            GlassPill(
-                text = tr("Открыть отчёт", "Open report"),
-                selected = false,
-                onClick = onOpenHealth,
-            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                GlassPill(
+                    text = tr("Открыть отчёт", "Open report"),
+                    selected = false,
+                    onClick = onOpenHealth,
+                )
+                GlassPill(
+                    text = tr("Анализ треков", "Track analysis"),
+                    selected = false,
+                    onClick = onOpenAnalysis,
+                )
+            }
         }
         }
 

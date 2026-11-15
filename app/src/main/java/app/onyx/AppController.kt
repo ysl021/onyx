@@ -63,6 +63,7 @@ class AppController private constructor(context: Context) {
     val sound = SoundEffects(appContext, prefs)
     val volume = VolumeController(appContext)
     val localLibrary = LocalLibrary(appContext, prefs)
+    val analysis = app.onyx.music.AnalysisStore(appContext)
     val localPlayer = LocalPlaybackController(appContext, localLibrary)
     val localPlaylists = LocalPlaylists(appContext)
     val lyrics = LyricsRepository(appContext, prefs) { spotify.token() }
